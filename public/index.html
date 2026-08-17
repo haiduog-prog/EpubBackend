@@ -453,6 +453,12 @@
             <span>EpubBackend v2</span>
         </div>
 
+        <!-- Backend API Server URL Bar -->
+        <div class="api-config-bar" title="Đường link máy chủ Backend (Local hoặc Cloudflare Tunnel)">
+            <i class="fa-solid fa-server" style="color:#10b981; font-size:0.9rem;"></i>
+            <input type="text" id="backend-url-input" placeholder="Backend API (VD: https://...trycloudflare.com)" style="width:230px;" onchange="saveBackendUrl(this.value)">
+        </div>
+
         <!-- API Key Configuration Bar -->
         <div class="api-config-bar">
             <i class="fa-solid fa-key" style="color:#a5b4fc; font-size:0.9rem;"></i>
@@ -893,13 +899,38 @@
             ]
         };
 
+        function getApiBaseUrl() {
+            const inputEl = document.getElementById('backend-url-input');
+            const custom = (inputEl ? inputEl.value : localStorage.getItem('epub_backend_url') || '').trim();
+            if (custom) return custom.replace(/\/+$/, '');
+            if (window.location.hostname !== '127.0.0.1' && window.location.hostname !== 'localhost') {
+                return 'https://accordance-patch-potatoes-happy.trycloudflare.com';
+            }
+            return '';
+        }
+
+        function apiUrl(path) {
+            const base = getApiBaseUrl();
+            return base ? `${base}${path}` : path;
+        }
+
+        function saveBackendUrl(val) {
+            localStorage.setItem('epub_backend_url', (val || '').trim());
+            if (typeof loadLibraryNovels === 'function') loadLibraryNovels();
+            if (typeof loadDatabaseSummary === 'function') loadDatabaseSummary();
+        }
+
         window.addEventListener('DOMContentLoaded', () => {
             const savedProvider = localStorage.getItem('epub_provider') || 'gemini';
             const savedKey = localStorage.getItem('epub_api_key') || '';
             const savedModel = localStorage.getItem('epub_model');
+            const savedBackend = localStorage.getItem('epub_backend_url') || (window.location.hostname !== '127.0.0.1' && window.location.hostname !== 'localhost' ? 'https://accordance-patch-potatoes-happy.trycloudflare.com' : '');
 
             document.getElementById('api-provider').value = savedProvider;
             document.getElementById('api-key-input').value = savedKey;
+            if (document.getElementById('backend-url-input')) {
+                document.getElementById('backend-url-input').value = savedBackend;
+            }
 
             updateModelOptions(savedModel);
         });
@@ -978,7 +1009,7 @@
             const novelId = document.getElementById('paste-novel-id').value.trim() || undefined;
 
             try {
-                const response = await fetch('/api/v1/translate/text', {
+                const response = await fetch(apiUrl('/api/v1/translate/text'), {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -1069,7 +1100,7 @@
             document.getElementById('download-box').style.display = 'none';
 
             try {
-                const res = await fetch('/api/v1/translate/file', {
+                const res = await fetch(apiUrl('/api/v1/translate/file'), {
                     method: 'POST',
                     headers: {
                         'X-API-Key': apiKey,
@@ -1097,7 +1128,7 @@
 
             activePollInterval = setInterval(async () => {
                 try {
-                    const res = await fetch(`/api/v1/translate/job/${jobId}`);
+                    const res = await fetch(apiUrl(`/api/v1/translate/job/${jobId}`));
                     if (!res.ok) return;
 
                     const job = await res.json();
@@ -1113,7 +1144,7 @@
                         clearInterval(activePollInterval);
                         stepText.innerHTML = '<i class="fa-solid fa-circle-check" style="color:#10b981;"></i> Đã dịch xong thành công!';
                         document.getElementById('download-box').style.display = 'block';
-                        document.getElementById('btn-download-link').href = `/api/v1/translate/download/${jobId}`;
+                        document.getElementById('btn-download-link').href = apiUrl(`/api/v1/translate/download/${jobId}`);
                     } else if (job.status === 'failed') {
                         clearInterval(activePollInterval);
                         stepText.innerHTML = `<i class="fa-solid fa-circle-xmark" style="color:#ef4444;"></i> Thất bại: ${job.error_message}`;
@@ -1132,7 +1163,7 @@
             biblesBox.innerHTML = '<span style="color:var(--text-sub); font-size:0.85rem;"><i class="fa-solid fa-spinner spinner"></i> Đang tải...</span>';
 
             try {
-                const res = await fetch('/api/v1/admin/storage/summary');
+                const res = await fetch(apiUrl('/api/v1/admin/storage/summary'));
                 if (!res.ok) throw new Error("Không thể lấy dữ liệu storage");
                 
                 const data = await res.json();
@@ -1248,7 +1279,7 @@
             fd.append('auto_scan_characters', autoScanChars ? 'true' : 'false');
 
             try {
-                const res = await fetch('/api/v1/library/novels/import-epub', {
+                const res = await fetch(apiUrl('/api/v1/library/novels/import-epub'), {
                     method: 'POST',
                     headers: {
                         'X-API-Key': apiKey,
@@ -1275,7 +1306,7 @@
 
             activeImportPoll = setInterval(async () => {
                 try {
-                    const res = await fetch(`/api/v1/library/import-jobs/${jobId}`);
+                    const res = await fetch(apiUrl(`/api/v1/library/import-jobs/${jobId}`));
                     if (!res.ok) return;
 
                     const job = await res.json();
@@ -1329,7 +1360,7 @@
             }
 
             try {
-                const res = await fetch('/api/v1/library/novels', {
+                const res = await fetch(apiUrl('/api/v1/library/novels'), {
                     method: 'POST',
                     body: fd
                 });
@@ -1351,7 +1382,7 @@
             grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:2rem; color:var(--text-sub);"><i class="fa-solid fa-spinner spinner"></i> Đang tải danh sách truyện từ Cloudflare R2...</div>';
 
             try {
-                const res = await fetch('/api/v1/library/novels');
+                const res = await fetch(apiUrl('/api/v1/library/novels'));
                 if (!res.ok) throw new Error("Không thể tải danh sách truyện");
                 const novels = await res.json();
 
@@ -1413,7 +1444,7 @@
             document.getElementById('detail-chapters-tbody').innerHTML = '<tr><td colspan="5" style="padding:1.5rem; text-align:center; color:var(--text-sub);"><i class="fa-solid fa-spinner spinner"></i> Đang tải danh sách chương...</td></tr>';
 
             try {
-                const res = await fetch(`/api/v1/library/novels/${novelId}`);
+                const res = await fetch(apiUrl(`/api/v1/library/novels/${novelId}`));
                 if (!res.ok) throw new Error("Không thể tải thông tin truyện");
                 const novel = await res.json();
 
@@ -1484,7 +1515,7 @@
             container.innerHTML = '<span style="color:var(--text-sub); font-size:0.85rem;"><i class="fa-solid fa-spinner spinner"></i> Đang tải dữ liệu nhân vật...</span>';
 
             try {
-                const res = await fetch(`/api/v1/library/novels/${novelId}/bible`);
+                const res = await fetch(apiUrl(`/api/v1/library/novels/${novelId}/bible`));
                 if (!res.ok) throw new Error("Không thể tải Book Bible");
                 const bible = await res.json();
 
@@ -1530,7 +1561,7 @@
             btn.innerHTML = '<i class="fa-solid fa-spinner spinner"></i> Đang phân tích...';
 
             try {
-                const res = await fetch(`/api/v1/library/novels/${currentNovelId}/scan-characters?max_chapters=5`, {
+                const res = await fetch(apiUrl(`/api/v1/library/novels/${currentNovelId}/scan-characters?max_chapters=5`), {
                     method: 'POST',
                     headers: {
                         'X-API-Key': apiKey,
@@ -1568,7 +1599,7 @@
             container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-sub);"><i class="fa-solid fa-spinner spinner"></i> Đang tải dữ liệu hồ sơ nhân vật...</div>';
 
             try {
-                const res = await fetch(`/api/v1/library/novels/${currentNovelId}/chapters/${chIdx}/character-snapshot`);
+                const res = await fetch(apiUrl(`/api/v1/library/novels/${currentNovelId}/chapters/${chIdx}/character-snapshot`));
                 if (!res.ok) throw new Error("Không thể tải trạng thái nhân vật");
                 const data = await res.json();
 
@@ -1665,7 +1696,7 @@
 
         async function sendAddChapterReq(formData) {
             try {
-                const res = await fetch(`/api/v1/library/novels/${currentNovelId}/chapters`, {
+                const res = await fetch(apiUrl(`/api/v1/library/novels/${currentNovelId}/chapters`), {
                     method: 'POST',
                     body: formData
                 });
@@ -1699,7 +1730,7 @@
             }
 
             try {
-                const res = await fetch(`/api/v1/library/novels/${novelId}/chapters/${chapterIndex}/translate`, {
+                const res = await fetch(apiUrl(`/api/v1/library/novels/${novelId}/chapters/${chapterIndex}/translate`), {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -1731,7 +1762,7 @@
 
             try {
                 // Fetch original
-                const resOrig = await fetch(`/api/v1/library/novels/${novelId}/chapters/${chapterIndex}/content?version=original`);
+                const resOrig = await fetch(apiUrl(`/api/v1/library/novels/${novelId}/chapters/${chapterIndex}/content?version=original`));
                 if (resOrig.ok) {
                     const dataOrig = await resOrig.json();
                     document.getElementById('reader-orig-text').value = dataOrig.content || '';
@@ -1740,7 +1771,7 @@
                 }
 
                 // Fetch translated
-                const resTrans = await fetch(`/api/v1/library/novels/${novelId}/chapters/${chapterIndex}/content?version=translated`);
+                const resTrans = await fetch(apiUrl(`/api/v1/library/novels/${novelId}/chapters/${chapterIndex}/content?version=translated`));
                 if (resTrans.ok) {
                     const dataTrans = await resTrans.json();
                     document.getElementById('reader-trans-text').value = dataTrans.content || '';
@@ -1778,7 +1809,7 @@
             }
 
             try {
-                const res = await fetch(`/api/v1/library/novels/${novelId}`, {
+                const res = await fetch(apiUrl(`/api/v1/library/novels/${novelId}`), {
                     method: 'DELETE'
                 });
                 if (!res.ok) throw new Error("Không thể xóa truyện");

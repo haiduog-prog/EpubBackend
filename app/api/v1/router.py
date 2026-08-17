@@ -1,0 +1,14 @@
+from fastapi import APIRouter
+from app.api.v1.translate import router as translate_router
+from app.api.v1.book_bible import router as book_bible_router
+from app.api.v1.qa import router as qa_router
+from app.api.v1.admin import router as admin_router
+from app.api.v1.character_profiles import router as character_profiles_router
+
+api_v1_router = APIRouter(prefix="/api/v1")
+api_v1_router.include_router(translate_router)
+api_v1_router.include_router(book_bible_router)
+api_v1_router.include_router(qa_router)
+api_v1_router.include_router(admin_router)
+
+api_v1_router.include_router(character_profiles_router)

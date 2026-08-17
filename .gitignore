@@ -1,0 +1,22 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Temporary storage & uploaded files
+storage/
+serviceAccountKey.json
+*.epub
+*.txt
+!.gitignore
+!requirements.txt
+
+# Pytest cache
+.pytest_cache/

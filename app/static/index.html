@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EpubBackend v2 - Novel AI Translator UI</title>
+    <!-- Google Fonts & Font Awesome Icons -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        :root {
+            --bg-gradient: linear-gradient(135deg, #090d16 0%, #111827 50%, #1e1b4b 100%);
+            --card-bg: rgba(30, 41, 59, 0.65);
+            --card-border: rgba(255, 255, 255, 0.08);
+            --accent: #6366f1;
+            --accent-hover: #4f46e5;
+            --accent-glow: rgba(99, 102, 241, 0.35);
+            --text-main: #f8fafc;
+            --text-sub: #94a3b8;
+            --success: #10b981;
+            --warning: #f59e0b;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+
+        body {
+            background: var(--bg-gradient);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            padding: 1rem 2rem;
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--card-border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: 1.25rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #818cf8, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .api-config-bar {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            background: rgba(30, 41, 59, 0.7);
+            border: 1px solid var(--card-border);
+            padding: 0.4rem 0.8rem;
+            border-radius: 12px;
+            flex-wrap: wrap;
+        }
+
+        .api-config-bar select, .api-config-bar input {
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: #f1f5f9;
+            padding: 0.4rem 0.7rem;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            outline: none;
+        }
+
+        .api-config-bar input {
+            width: 240px;
+        }
+
+        .badge {
+            background: rgba(99, 102, 241, 0.2);
+            color: #a5b4fc;
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            font-size: 0.75rem;
+            padding: 0.25rem 0.6rem;
+            border-radius: 20px;
+            font-weight: 600;
+        }
+
+        main {
+            flex: 1;
+            max-width: 1400px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+            border-bottom: 1px solid var(--card-border);
+            padding-bottom: 0.5rem;
+        }
+
+        .tab-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-sub);
+            padding: 0.75rem 1.25rem;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .tab-btn:hover {
+            color: var(--text-main);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .tab-btn.active {
+            color: #fff;
+            background: var(--accent);
+            box-shadow: 0 4px 14px var(--accent-glow);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Grid Layout for Paste Mode */
+        .editor-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+        }
+
+        @media (max-width: 900px) {
+            .editor-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .card {
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .card-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #e2e8f0;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        textarea {
+            width: 100%;
+            height: 380px;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 1rem;
+            color: #f1f5f9;
+            font-size: 0.95rem;
+            line-height: 1.6;
+            resize: vertical;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        textarea:focus {
+            border-color: var(--accent);
+        }
+
+        .btn {
+            background: var(--accent);
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            font-size: 0.95rem;
+            font-weight: 600;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .btn:hover {
+            background: var(--accent-hover);
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px var(--accent-glow);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-main);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        /* Book Bible Card */
+        .bible-section {
+            margin-top: 1.5rem;
+        }
+
+        .bible-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .bible-card {
+            background: rgba(15, 23, 42, 0.7);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 1rem;
+        }
+
+        .bible-card-title {
+            font-size: 0.85rem;
+            color: #a5b4fc;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
+            font-weight: 700;
+        }
+
+        .tag {
+            display: inline-block;
+            background: rgba(99, 102, 241, 0.15);
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            color: #c7d2fe;
+            padding: 0.2rem 0.5rem;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            margin: 0.2rem;
+        }
+
+        /* Upload Area */
+        .upload-zone {
+            border: 2px dashed rgba(99, 102, 241, 0.4);
+            border-radius: 16px;
+            padding: 3rem 2rem;
+            text-align: center;
+            background: rgba(15, 23, 42, 0.4);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .upload-zone:hover, .upload-zone.dragover {
+            border-color: var(--accent);
+            background: rgba(99, 102, 241, 0.08);
+        }
+
+        .upload-icon {
+            font-size: 2.5rem;
+            color: #818cf8;
+            margin-bottom: 1rem;
+        }
+
+        .progress-container {
+            margin-top: 1.5rem;
+            display: none;
+        }
+
+        .progress-bar-bg {
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 10px;
+            height: 12px;
+            overflow: hidden;
+            margin-bottom: 0.5rem;
+        }
+
+        .progress-bar-fill {
+            background: linear-gradient(90deg, #6366f1, #c084fc);
+            height: 100%;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .status-text {
+            font-size: 0.9rem;
+            color: var(--text-sub);
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .spinner {
+            animation: rotate 1s linear infinite;
+        }
+
+        @keyframes rotate {
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="brand">
+            <i class="fa-solid fa-wand-magic-sparkles"></i>
+            <span>EpubBackend v2</span>
+        </div>
+
+        <!-- API Key Configuration Bar -->
+        <div class="api-config-bar">
+            <i class="fa-solid fa-key" style="color:#a5b4fc; font-size:0.9rem;"></i>
+            <select id="api-provider" onchange="updateModelOptions(); saveApiSettings();">
+                <option value="gemini">Gemini API (Google)</option>
+                <option value="anthropic">Claude API (Anthropic)</option>
+            </select>
+
+            <select id="api-model" onchange="saveApiSettings();">
+                <!-- Populated dynamically -->
+            </select>
+
+            <input type="password" id="api-key-input" placeholder="Nhập API Key (AIzaSy... / sk-ant-...)" onchange="saveApiSettings()">
+        </div>
+
+        <span class="badge"><i class="fa-solid fa-microchip"></i> Auto Quota Fallback</span>
+    </header>
+
+    <main>
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab(event, 'paste-tab')">
+                <i class="fa-solid fa-pen-to-square"></i> Dịch Trực Tiếp (Paste Text)
+            </button>
+            <button class="tab-btn" onclick="switchTab(event, 'file-tab')">
+                <i class="fa-solid fa-file-arrow-up"></i> Dịch File (TXT / EPUB)
+            </button>
+            <button class="tab-btn" onclick="switchTab(event, 'db-tab'); loadDatabaseSummary();">
+                <i class="fa-solid fa-database"></i> Dữ Liệu Đã Lưu (Database Inspector)
+            </button>
+        </div>
+
+        <!-- TAB 1: PASTE TEXT -->
+        <div id="paste-tab" class="tab-content active">
+            <div class="editor-grid">
+                <!-- Source Text -->
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title"><i class="fa-solid fa-language"></i> Văn bản gốc (Trung / Anh)</span>
+                        <div style="display:flex; gap:0.5rem; align-items:center;">
+                            <input type="text" id="paste-novel-id" placeholder="Tên bộ truyện (VD: DauPhaThuongKhung)..." style="background:rgba(15,23,42,0.8); border:1px solid var(--card-border); border-radius:6px; color:#fff; padding:0.3rem 0.6rem; font-size:0.8rem; outline:none; width:220px;">
+                            <button class="btn btn-secondary" onclick="clearText('source-text')" style="padding:0.4rem 0.8rem; font-size:0.8rem;">
+                                <i class="fa-solid fa-trash-can"></i> Xóa
+                            </button>
+                        </div>
+                    </div>
+                    <textarea id="source-text" placeholder="Dán văn bản truyện gốc vào đây (Tiếng Trung, Tiếng Anh...)...">萧炎看着面前的药老，轻声道：“老师，我们走吧。”
+药老微微一笑，抚了抚须：“好小子，老夫便陪你闯一闯这斗气大陆！”</textarea>
+                    <button class="btn" id="btn-translate-text" onclick="handleDirectTranslate()">
+                        <i class="fa-solid fa-bolt"></i> Dịch Thuần Việt
+                    </button>
+                </div>
+
+                <!-- Translated Text -->
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title"><i class="fa-solid fa-check-double"></i> Bản dịch thuần Việt (AI Output)</span>
+                        <button class="btn btn-secondary" onclick="copyText('translated-text')" style="padding:0.4rem 0.8rem; font-size:0.8rem;">
+                            <i class="fa-solid fa-copy"></i> Sao chép
+                        </button>
+                    </div>
+                    <textarea id="translated-text" readonly placeholder="Bản dịch thuần Việt sẽ hiển thị tại đây..."></textarea>
+                </div>
+            </div>
+
+            <!-- Book Bible Preview -->
+            <div class="card bible-section">
+                <div class="card-title">
+                    <i class="fa-solid fa-book-bookmark"></i> Book Bible trích xuất (Auto Merge Delta)
+                </div>
+                <div class="bible-grid" id="bible-grid">
+                    <div class="bible-card">
+                        <div class="bible-card-title">Nhân vật (Characters)</div>
+                        <div id="bible-chars"><span style="color:var(--text-sub); font-size:0.85rem;">Chưa có dữ liệu</span></div>
+                    </div>
+                    <div class="bible-card">
+                        <div class="bible-card-title">Địa danh (Places)</div>
+                        <div id="bible-places"><span style="color:var(--text-sub); font-size:0.85rem;">Chưa có dữ liệu</span></div>
+                    </div>
+                    <div class="bible-card">
+                        <div class="bible-card-title">Thuật ngữ / Cảnh giới (Terms)</div>
+                        <div id="bible-terms"><span style="color:var(--text-sub); font-size:0.85rem;">Chưa có dữ liệu</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 2: UPLOAD FILE -->
+        <div id="file-tab" class="tab-content">
+            <div class="card">
+                <div class="card-title"><i class="fa-solid fa-cloud-arrow-up"></i> Upload File Truyện (.txt hoặc .epub)</div>
+                <p style="color: var(--text-sub); font-size: 0.9rem;">
+                    Hệ thống sẽ tự động gộp HTML text nodes, tách chunk 1500–3000 từ, và thực hiện Prompt Caching breakpoints khi dịch.
+                </p>
+
+                <div class="upload-zone" id="upload-zone" onclick="document.getElementById('file-input').click()">
+                    <i class="fa-solid fa-file-epub upload-icon"></i>
+                    <h3 style="font-size: 1.1rem; font-weight:600; margin-bottom:0.5rem;">Kéo thả file hoặc Click để chọn file</h3>
+                    <p style="color: var(--text-sub); font-size:0.85rem;">Hỗ trợ định dạng .TXT hoặc .EPUB</p>
+                    <input type="file" id="file-input" accept=".txt,.epub" style="display: none;" onchange="handleFileSelected(event)">
+                </div>
+
+                <div id="selected-file-info" style="display: none; background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.3); padding: 1rem; border-radius: 10px; display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <i class="fa-solid fa-file-lines" style="color:#818cf8; margin-right:0.5rem;"></i>
+                        <span id="file-name-text" style="font-weight:600;">novel.epub</span>
+                    </div>
+                    <button class="btn" id="btn-start-file-job" onclick="startFileTranslation()">
+                        <i class="fa-solid fa-play"></i> Bắt đầu Dịch File
+                    </button>
+                </div>
+
+                <div class="progress-container" id="progress-container">
+                    <div class="status-text">
+                        <span id="status-step-text"><i class="fa-solid fa-spinner spinner"></i> Đang tải file...</span>
+                        <span id="status-pct-text">0%</span>
+                    </div>
+                    <div class="progress-bar-bg">
+                        <div class="progress-bar-fill" id="progress-bar-fill"></div>
+                    </div>
+                    <div id="download-box" style="display: none; margin-top: 1.5rem; text-align: center;">
+                        <a id="btn-download-link" class="btn" style="background:#10b981; text-decoration:none;" href="#" download>
+                            <i class="fa-solid fa-download"></i> Tải File Bản Dịch Về Máy
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 3: DATABASE INSPECTOR -->
+        <div id="db-tab" class="tab-content">
+            <div class="card" style="margin-bottom:1.5rem;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+                    <div class="card-title" style="margin-bottom:0;"><i class="fa-solid fa-database"></i> Quản Lý Dữ Liệu Đã Lưu (Database Inspector)</div>
+                    <button class="btn btn-secondary" onclick="loadDatabaseSummary()" style="padding:0.4rem 0.8rem; font-size:0.85rem;">
+                        <i class="fa-solid fa-rotate"></i> Làm mới Dữ liệu
+                    </button>
+                </div>
+                <p style="color: var(--text-sub); font-size: 0.88rem; margin-bottom: 1.5rem;">
+                    Kiểm tra trực quan các Job dịch file (.epub/.txt) và các bộ từ điển Book Bible đã được lưu trữ trong Backend.
+                </p>
+
+                <!-- Section: Jobs -->
+                <h4 style="color:#a5b4fc; font-size:0.95rem; margin-bottom:0.8rem;"><i class="fa-solid fa-list-check"></i> Các Job Dịch File (.epub / .txt)</h4>
+                <div style="overflow-x:auto;">
+                    <table style="width:100%; border-collapse:collapse; text-align:left; font-size:0.85rem;">
+                        <thead>
+                            <tr style="border-bottom:1px solid var(--card-border); color:var(--text-sub);">
+                                <th style="padding:0.6rem;">Job ID</th>
+                                <th style="padding:0.6rem;">Tên File</th>
+                                <th style="padding:0.6rem;">Định Dạng</th>
+                                <th style="padding:0.6rem;">Trạng Thái</th>
+                                <th style="padding:0.6rem;">Tiến Độ</th>
+                                <th style="padding:0.6rem;">Thao Tác</th>
+                            </tr>
+                        </thead>
+                        <tbody id="db-jobs-list">
+                            <tr><td colspan="6" style="padding:1rem; text-align:center; color:var(--text-sub);">Đang tải dữ liệu...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Section: Book Bibles -->
+                <h4 style="color:#a5b4fc; font-size:0.95rem; margin-top:2rem; margin-bottom:0.8rem;"><i class="fa-solid fa-book-journal-whills"></i> Danh Sách Book Bibles Đã Trích Xuất</h4>
+                <div id="db-bibles-container" class="bible-grid">
+                    <span style="color:var(--text-sub); font-size:0.85rem;">Đang tải dữ liệu...</span>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        let currentFile = null;
+        let activePollInterval = null;
+
+        const MODEL_MAP = {
+            gemini: [
+                { val: 'auto', text: '⚡ Tự động chọn Model khả dụng (Auto Fallback)' },
+                { val: 'gemini-flash-latest', text: 'gemini-flash-latest (Khuyên dùng - Nhanh & Mới nhất)' },
+                { val: 'gemini-flash-lite-latest', text: 'gemini-flash-lite-latest (Tiết kiệm Token)' },
+                { val: 'gemini-pro-latest', text: 'gemini-pro-latest (Chất lượng cao)' }
+            ],
+            anthropic: [
+                { val: 'claude-3-7-sonnet-20250219', text: 'Claude 3.7 Sonnet' },
+                { val: 'claude-3-5-haiku-20241022', text: 'Claude 3.5 Haiku' }
+            ]
+        };
+
+        window.addEventListener('DOMContentLoaded', () => {
+            const savedProvider = localStorage.getItem('epub_provider') || 'gemini';
+            const savedKey = localStorage.getItem('epub_api_key') || '';
+            const savedModel = localStorage.getItem('epub_model');
+
+            document.getElementById('api-provider').value = savedProvider;
+            document.getElementById('api-key-input').value = savedKey;
+
+            updateModelOptions(savedModel);
+        });
+
+        function updateModelOptions(preferredModel) {
+            const provider = document.getElementById('api-provider').value;
+            const modelSelect = document.getElementById('api-model');
+            modelSelect.innerHTML = '';
+
+            const options = MODEL_MAP[provider] || MODEL_MAP.gemini;
+            options.forEach(opt => {
+                const el = document.createElement('option');
+                el.value = opt.val;
+                el.innerText = opt.text;
+                modelSelect.appendChild(el);
+            });
+
+            if (preferredModel) {
+                modelSelect.value = preferredModel;
+            }
+        }
+
+        function saveApiSettings() {
+            const key = document.getElementById('api-key-input').value.trim();
+            const provider = document.getElementById('api-provider').value;
+            const model = document.getElementById('api-model').value;
+
+            localStorage.setItem('epub_api_key', key);
+            localStorage.setItem('epub_provider', provider);
+            localStorage.setItem('epub_model', model);
+        }
+
+        function switchTab(evt, tabId) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            
+            evt.currentTarget.classList.add('active');
+            document.getElementById(tabId).classList.add('active');
+        }
+
+        function clearText(id) {
+            document.getElementById(id).value = '';
+        }
+
+        function copyText(id) {
+            const textarea = document.getElementById(id);
+            textarea.select();
+            navigator.clipboard.writeText(textarea.value);
+            alert("Đã sao chép bản dịch vào bộ nhớ tạm!");
+        }
+
+        async function handleDirectTranslate() {
+            const srcText = document.getElementById('source-text').value.trim();
+            if (!srcText) {
+                alert("Vui lòng nhập văn bản gốc cần dịch!");
+                return;
+            }
+
+            const apiKey = document.getElementById('api-key-input').value.trim();
+            const provider = document.getElementById('api-provider').value;
+            const model = document.getElementById('api-model').value;
+
+            if (!apiKey) {
+                alert("Vui lòng nhập API Key (Google Gemini hoặc Anthropic Claude) ở thanh cấu hình phía trên!");
+                document.getElementById('api-key-input').focus();
+                return;
+            }
+
+            const btn = document.getElementById('btn-translate-text');
+            const outArea = document.getElementById('translated-text');
+            
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner spinner"></i> Đang dịch AI...';
+            outArea.value = `Hệ thống đang dịch qua model ${model}...`;
+
+            const novelId = document.getElementById('paste-novel-id').value.trim() || undefined;
+
+            try {
+                const response = await fetch('/api/v1/translate/text', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-API-Key': apiKey,
+                        'X-Provider': provider,
+                        'X-Model': model
+                    },
+                    body: JSON.stringify({
+                        text: srcText,
+                        novel_id: novelId,
+                        api_key: apiKey,
+                        provider: provider,
+                        model: model
+                    })
+                });
+
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.detail || "Lỗi khi gọi API dịch");
+                }
+
+                const data = await response.json();
+                outArea.value = data.translated_text;
+
+                renderBookBible(data.book_bible);
+            } catch (err) {
+                alert("Lỗi: " + err.message);
+                outArea.value = "[Lỗi thực thi dịch: " + err.message + "]";
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fa-solid fa-bolt"></i> Dịch Thuần Việt';
+            }
+        }
+
+        function renderBookBible(bible) {
+            const charBox = document.getElementById('bible-chars');
+            const placeBox = document.getElementById('bible-places');
+            const termBox = document.getElementById('bible-terms');
+
+            if (bible.characters && bible.characters.length > 0) {
+                charBox.innerHTML = bible.characters.map(c => `<span class="tag">${c.original_name} → ${c.vi_name}</span>`).join('');
+            } else {
+                charBox.innerHTML = '<span style="color:var(--text-sub); font-size:0.85rem;">Không phát hiện</span>';
+            }
+
+            if (bible.places && bible.places.length > 0) {
+                placeBox.innerHTML = bible.places.map(p => `<span class="tag">${p.original_name} → ${p.vi_name}</span>`).join('');
+            } else {
+                placeBox.innerHTML = '<span style="color:var(--text-sub); font-size:0.85rem;">Không phát hiện</span>';
+            }
+
+            if (bible.terms && bible.terms.length > 0) {
+                termBox.innerHTML = bible.terms.map(t => `<span class="tag">${t.original_name} → ${t.vi_name}</span>`).join('');
+            } else {
+                termBox.innerHTML = '<span style="color:var(--text-sub); font-size:0.85rem;">Không phát hiện</span>';
+            }
+        }
+
+        function handleFileSelected(event) {
+            const files = event.target.files;
+            if (files && files.length > 0) {
+                currentFile = files[0];
+                document.getElementById('file-name-text').innerText = `${currentFile.name} (${(currentFile.size / 1024).toFixed(1)} KB)`;
+                document.getElementById('selected-file-info').style.display = 'flex';
+            }
+        }
+
+        async function startFileTranslation() {
+            if (!currentFile) return;
+
+            const apiKey = document.getElementById('api-key-input').value.trim();
+            const provider = document.getElementById('api-provider').value;
+            const model = document.getElementById('api-model').value;
+
+            if (!apiKey) {
+                alert("Vui lòng nhập API Key ở thanh cấu hình phía trên trước khi bắt đầu dịch file!");
+                document.getElementById('api-key-input').focus();
+                return;
+            }
+
+            const btn = document.getElementById('btn-start-file-job');
+            btn.disabled = true;
+
+            const formData = new FormData();
+            formData.append('file', currentFile);
+
+            document.getElementById('progress-container').style.display = 'block';
+            document.getElementById('download-box').style.display = 'none';
+
+            try {
+                const res = await fetch('/api/v1/translate/file', {
+                    method: 'POST',
+                    headers: {
+                        'X-API-Key': apiKey,
+                        'X-Provider': provider,
+                        'X-Model': model
+                    },
+                    body: formData
+                });
+
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || "Không thể upload file");
+                }
+
+                const job = await res.json();
+                pollJobStatus(job.job_id);
+            } catch (err) {
+                alert("Lỗi: " + err.message);
+                btn.disabled = false;
+            }
+        }
+
+        function pollJobStatus(jobId) {
+            if (activePollInterval) clearInterval(activePollInterval);
+
+            activePollInterval = setInterval(async () => {
+                try {
+                    const res = await fetch(`/api/v1/translate/job/${jobId}`);
+                    if (!res.ok) return;
+
+                    const job = await res.json();
+                    const fill = document.getElementById('progress-bar-fill');
+                    const stepText = document.getElementById('status-step-text');
+                    const pctText = document.getElementById('status-pct-text');
+
+                    fill.style.width = `${job.progress_percentage}%`;
+                    pctText.innerText = `${job.progress_percentage}%`;
+                    stepText.innerHTML = `<i class="fa-solid fa-spinner spinner"></i> ${job.current_step || 'Đang xử lý...'}`;
+
+                    if (job.status === 'completed') {
+                        clearInterval(activePollInterval);
+                        stepText.innerHTML = '<i class="fa-solid fa-circle-check" style="color:#10b981;"></i> Đã dịch xong thành công!';
+                        document.getElementById('download-box').style.display = 'block';
+                        document.getElementById('btn-download-link').href = `/api/v1/translate/download/${jobId}`;
+                    } else if (job.status === 'failed') {
+                        clearInterval(activePollInterval);
+                        stepText.innerHTML = `<i class="fa-solid fa-circle-xmark" style="color:#ef4444;"></i> Thất bại: ${job.error_message}`;
+                    }
+                } catch (e) {
+                    console.error("Poll error", e);
+                }
+            }, 1500);
+        }
+
+        async function loadDatabaseSummary() {
+            const jobsBody = document.getElementById('db-jobs-list');
+            const biblesBox = document.getElementById('db-bibles-container');
+
+            jobsBody.innerHTML = '<tr><td colspan="6" style="padding:1rem; text-align:center; color:var(--text-sub);"><i class="fa-solid fa-spinner spinner"></i> Đang tải...</td></tr>';
+            biblesBox.innerHTML = '<span style="color:var(--text-sub); font-size:0.85rem;"><i class="fa-solid fa-spinner spinner"></i> Đang tải...</span>';
+
+            try {
+                const res = await fetch('/api/v1/admin/storage/summary');
+                if (!res.ok) throw new Error("Không thể lấy dữ liệu storage");
+                
+                const data = await res.json();
+                const jobs = data.jobs || [];
+                const bibles = data.bibles || {};
+
+                // Render Jobs
+                if (jobs.length === 0) {
+                    jobsBody.innerHTML = '<tr><td colspan="6" style="padding:1rem; text-align:center; color:var(--text-sub);">Chưa có Job dịch file nào trong Database</td></tr>';
+                } else {
+                    jobsBody.innerHTML = jobs.map(j => {
+                        let statusColor = '#94a3b8';
+                        if (j.status === 'completed') statusColor = '#10b981';
+                        else if (j.status === 'processing') statusColor = '#f59e0b';
+                        else if (j.status === 'failed') statusColor = '#ef4444';
+
+                        const downloadBtn = j.status === 'completed'
+                            ? `<a href="/api/v1/translate/download/${j.job_id}" class="btn" style="padding:0.25rem 0.6rem; font-size:0.75rem; background:#10b981; text-decoration:none;"><i class="fa-solid fa-download"></i> Tải Về</a>`
+                            : `<span style="color:var(--text-sub); font-size:0.8rem;">-</span>`;
+
+                        return `<tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                            <td style="padding:0.6rem; font-family:monospace; color:#c7d2fe;">${j.job_id.substring(0,8)}...</td>
+                            <td style="padding:0.6rem; font-weight:600;">${j.filename}</td>
+                            <td style="padding:0.6rem; text-transform:uppercase;">${j.input_type}</td>
+                            <td style="padding:0.6rem; color:${statusColor}; font-weight:600;">${j.status}</td>
+                            <td style="padding:0.6rem;">${j.progress_percentage}%</td>
+                            <td style="padding:0.6rem;">${downloadBtn}</td>
+                        </tr>`;
+                    }).join('');
+                }
+
+                // Render Book Bibles
+                const bibleKeys = Object.keys(bibles);
+                if (bibleKeys.length === 0) {
+                    biblesBox.innerHTML = '<span style="color:var(--text-sub); font-size:0.85rem;">Chưa có Book Bible nào được lưu trong Database</span>';
+                } else {
+                    biblesBox.innerHTML = bibleKeys.map(k => {
+                        const b = bibles[k];
+                        const chars = b.characters || [];
+                        const places = b.places || [];
+                        const terms = b.terms || [];
+
+                        const charTags = chars.slice(0, 10).map(c => `<span class="tag">${c.original_name} → ${c.vi_name}</span>`).join('');
+                        const extraChars = chars.length > 10 ? `<span style="font-size:0.75rem; color:var(--text-sub); margin-left:0.5rem;">+${chars.length - 10} nhân vật khác</span>` : '';
+
+                        return `<div class="bible-card">
+                            <div class="bible-card-title"><i class="fa-solid fa-book"></i> Novel / Job ID: ${k.substring(0,16)}...</div>
+                            <div style="font-size:0.8rem; color:var(--text-sub); margin-bottom:0.5rem;">
+                                <span>👥 ${chars.length} Nhân vật</span> | <span>🏛️ ${places.length} Địa danh</span> | <span>📜 ${terms.length} Thuật ngữ</span>
+                            </div>
+                            <div>${charTags || '<span style="font-size:0.8rem; color:var(--text-sub);">Không có nhân vật</span>'}${extraChars}</div>
+                        </div>`;
+                    }).join('');
+                }
+            } catch (err) {
+                jobsBody.innerHTML = `<tr><td colspan="6" style="padding:1rem; text-align:center; color:#ef4444;">Lỗi tải dữ liệu: ${err.message}</td></tr>`;
+                biblesBox.innerHTML = `<span style="color:#ef4444; font-size:0.85rem;">Lỗi: ${err.message}</span>`;
+            }
+        }
+    </script>
+</body>
+</html>

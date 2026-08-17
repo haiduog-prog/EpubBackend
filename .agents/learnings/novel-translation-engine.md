@@ -34,6 +34,11 @@
 - **Chi tiết**: Tách `book_id` chuẩn khỏi `edition_id` của từng EPUB; lưu thay đổi nhân vật bằng canonical append-only events và dựng snapshot theo canonical chapter. Android chỉ gửi edition/chapter đang mở; backend lọc mọi event tương lai. Projection/cache phục vụ đọc nhanh, còn event log giữ khả năng audit và rebuild.
 - **Files liên quan**: `app/schemas/character_profile.py`, `app/services/character_profile_service.py`, `docs/character-profile-book-bible-design.md`
 
+### Dual-Storage R2 Architecture & CDN Direct Download
+- **Ngày**: 2026-08-17
+- **Chi tiết**: Lưu trữ song song 2 tầng trên Cloudflare R2: `full.epub` nguyên cuốn để tải trọn bộ tốc độ cao qua R2 Public CDN Subdomain (`pub-*.r2.dev`), và các file Text từng chương (`original/ch_*.txt`, `translated/ch_*.txt`) để phục vụ đọc streaming, dịch từng chương và trích xuất Book Bible.
+- **Files liên quan**: `app/services/library_service.py`, `app/core/storage.py`, `app/api/v1/library.py`
+
 ### Temporal Identity and Shared Canonical Data
 - **Ngày**: 2026-08-17
 - **Chi tiết**: Alias/identity link cũng là event có mốc chương. Trước chương tiết lộ, hai nhân vật vẫn độc lập; sau link đã duyệt, snapshot mới merge state. Book Bible dùng chung nhưng không có personal overlay trong MVP.
@@ -71,6 +76,19 @@
 - **Fix**: Lưu identity link như event; resolver chỉ áp dụng link có `canonical_chapter <= requested_chapter`, có regression test cho reveal ở chương 300.
 - **Files liên quan**: `app/services/character_profile_service.py`, `tests/test_character_identity_timeline.py`
 
+### EPUB Export Timeout trên truyện dung lượng lớn
+- **Ngày**: 2026-08-17
+- **Vấn đề**: Tải file EPUB cho bộ truyện hơn 2.000 chương (10MB+) bị timeout qua Backend HTTP/Tunnel.
+- **Root cause**: Gom tuần tự hàng nghìn chương từ storage qua loop gây nghẽn kết nối và vượt quá timeout 5-30s của client.
+- **Fix**: Trả về `RedirectResponse(url=cdn_url, status_code=307)` để chuyển hướng tải trực tiếp từ Cloudflare R2 Public CDN (`pub-*.r2.dev`), giảm thời gian tải cả cuốn xuống 1-2 giây.
+- **Files liên quan**: `app/api/v1/library.py`, `app/services/library_service.py`
+
+### Non-ASCII UTF-8 Filename trong FileResponse Header
+- **Ngày**: 2026-08-17
+- **Vấn đề**: Tên truyện tiếng Việt (như *Cổ Chân Nhân.epub*) khiến trình duyệt mobile hoặc Starlette lỗi header `Content-Disposition`.
+- **Fix**: Mã hóa RFC 5987: `headers={"Content-Disposition": f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(utf8_name)}"}`.
+- **Files liên quan**: `app/api/v1/library.py`
+
 ## How-To
 
 ### Thêm LLM Provider Mới
@@ -88,7 +106,13 @@
   2. Mở trình duyệt tại `http://127.0.0.1:8000/` để test Paste Text và Upload File (.txt / .epub).
 - **Files liên quan**: `app/main.py`, `app/static/index.html`
 
----
+### Phát hành API ra Internet qua Cloudflare Tunnel cho Mobile App
+- **Ngày**: 2026-08-17
+- **Bước thực hiện**:
+  1. Chạy backend `uvicorn app.main:app --host 127.0.0.1 --port 8000`.
+  2. Chạy `tools\cloudflared.exe tunnel --url http://127.0.0.1:8000` (hoặc chạy file `start_tunnel.bat`).
+  3. Lấy URL `https://*.trycloudflare.com` gán vào `BASE_URL` trong mã nguồn Mobile App.
+- **Files liên quan**: `tools/cloudflared.exe`, `start_tunnel.bat`
 
 ### Tích hợp chapter-aware Book Bible API
 - **Ngày**: 2026-08-17
@@ -111,6 +135,11 @@
 
 ## Patterns
 
+### Asynchronous EPUB Import & Live Progress Polling
+- **Ngày**: 2026-08-17
+- **Chi tiết**: Tác vụ import EPUB chạy trên daemon background thread, trích xuất ảnh bìa và tách từng chương lưu vào R2 đồng thời cập nhật `ImportJobStatus` (`current_chapter`, `total_chapters`, `progress_percentage`, `current_step`). Web UI poll endpoint `GET /api/v1/library/import-jobs/{job_id}` mỗi 600ms để cập nhật giao diện người dùng.
+- **Files liên quan**: `app/services/library_service.py`, `app/schemas/library.py`, `app/static/index.html`
+
 ### Conservative evidence-group review
 - **Ngày**: 2026-08-17
 - **Chi tiết**: Candidate không được duyệt chỉ vì nhiều lần gọi cùng model trên cùng chapter. Một evidence group là một edition lineage + chapter fingerprint; cần tối thiểu hai group độc lập và confidence đủ cao. Candidate chưa duyệt không xuất hiện trong shared snapshot.
@@ -120,7 +149,6 @@
 - **Ngày**: 2026-08-17
 - **Chi tiết**: Thêm `character_events` là field optional vào `BookBibleDelta`; các payload extraction cũ vẫn hợp lệ. Service validate từng candidate bằng Pydantic rồi mới append canonical event. Event có `certainty`, `operation`, evidence và schema version để hỗ trợ correction/rebuild.
 - **Files liên quan**: `app/schemas/book_bible.py`, `app/schemas/character_profile.py`, `app/services/character_profile_service.py`
-
 
 ### Gemini Pydantic Structured Outputs
 - **Ngày**: 2026-08-10
@@ -139,3 +167,4 @@
   return response.parsed
   ```
 - **Files liên quan**: `app/llm/gemini_provider.py`
+

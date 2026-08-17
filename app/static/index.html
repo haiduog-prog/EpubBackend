@@ -338,6 +338,111 @@
         @keyframes rotate {
             100% { transform: rotate(360deg); }
         }
+
+        /* Library Grid & Cards */
+        .novel-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-top: 1.5rem;
+        }
+
+        .novel-card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+        }
+
+        .novel-card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(99, 102, 241, 0.4);
+            box-shadow: 0 8px 30px rgba(99, 102, 241, 0.2);
+        }
+
+        .novel-cover {
+            width: 100%;
+            height: 180px;
+            object-fit: cover;
+            background: linear-gradient(135deg, #1e1b4b, #312e81);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #818cf8;
+            font-size: 3rem;
+        }
+
+        .novel-body {
+            padding: 1.25rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
+            flex: 1;
+        }
+
+        .novel-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #f8fafc;
+        }
+
+        .novel-author {
+            font-size: 0.85rem;
+            color: var(--text-sub);
+        }
+
+        .novel-progress-bar {
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 6px;
+            height: 6px;
+            overflow: hidden;
+            margin: 0.4rem 0;
+        }
+
+        .novel-progress-fill {
+            background: linear-gradient(90deg, #10b981, #6366f1);
+            height: 100%;
+            width: 0%;
+        }
+
+        /* Modal Backdrop */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(8px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            padding: 1.5rem;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: #0f172a;
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            max-width: 900px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+            padding: 2rem;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+            display: flex;
+            flex-direction: column;
+            gap: 1.25rem;
+        }
     </style>
 </head>
 <body>
@@ -369,13 +474,16 @@
     <main>
         <div class="tabs">
             <button class="tab-btn active" onclick="switchTab(event, 'paste-tab')">
-                <i class="fa-solid fa-pen-to-square"></i> Dịch Trực Tiếp (Paste Text)
+                <i class="fa-solid fa-pen-to-square"></i> Dịch Trực Tiếp
             </button>
             <button class="tab-btn" onclick="switchTab(event, 'file-tab')">
-                <i class="fa-solid fa-file-arrow-up"></i> Dịch File (TXT / EPUB)
+                <i class="fa-solid fa-file-arrow-up"></i> Dịch File (TXT/EPUB)
+            </button>
+            <button class="tab-btn" onclick="switchTab(event, 'library-tab'); loadLibraryNovels();">
+                <i class="fa-solid fa-book-open"></i> Kho Truyện (R2 Library)
             </button>
             <button class="tab-btn" onclick="switchTab(event, 'db-tab'); loadDatabaseSummary();">
-                <i class="fa-solid fa-database"></i> Dữ Liệu Đã Lưu (Database Inspector)
+                <i class="fa-solid fa-database"></i> Dữ Liệu Đã Lưu
             </button>
         </div>
 
@@ -476,7 +584,36 @@
             </div>
         </div>
 
-        <!-- TAB 3: DATABASE INSPECTOR -->
+        <!-- TAB 3: NOVEL LIBRARY -->
+        <div id="library-tab" class="tab-content">
+            <div class="card">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
+                    <div>
+                        <div class="card-title" style="margin-bottom:0.2rem;"><i class="fa-solid fa-book-open"></i> Kho Truyện Trên Cloudflare R2</div>
+                        <p style="color:var(--text-sub); font-size:0.85rem;">Quản lý các bộ tiểu thuyết, từng chương, tự động dịch và đóng gói EPUB.</p>
+                    </div>
+                    <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                        <button class="btn btn-secondary" onclick="loadLibraryNovels()" style="padding:0.5rem 0.9rem; font-size:0.85rem;">
+                            <i class="fa-solid fa-rotate"></i> Làm Mới
+                        </button>
+                        <button class="btn btn-secondary" onclick="openImportEpubModal()" style="padding:0.5rem 1rem; font-size:0.85rem; background:rgba(99,102,241,0.2); border:1px solid rgba(99,102,241,0.4);">
+                            <i class="fa-solid fa-file-import" style="color:#a5b4fc;"></i> Nhập File EPUB Vào Kho
+                        </button>
+                        <button class="btn" onclick="openCreateNovelModal()" style="padding:0.5rem 1rem; font-size:0.85rem;">
+                            <i class="fa-solid fa-plus"></i> Tạo Truyện Mới
+                        </button>
+                    </div>
+                </div>
+
+                <div class="novel-grid" id="library-novels-grid">
+                    <div style="grid-column: 1 / -1; text-align:center; padding:2rem; color:var(--text-sub);">
+                        <i class="fa-solid fa-spinner spinner"></i> Đang tải danh sách truyện từ Cloudflare R2...
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 4: DATABASE INSPECTOR -->
         <div id="db-tab" class="tab-content">
             <div class="card" style="margin-bottom:1.5rem;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
@@ -513,6 +650,227 @@
                 <h4 style="color:#a5b4fc; font-size:0.95rem; margin-top:2rem; margin-bottom:0.8rem;"><i class="fa-solid fa-book-journal-whills"></i> Danh Sách Book Bibles Đã Trích Xuất</h4>
                 <div id="db-bibles-container" class="bible-grid">
                     <span style="color:var(--text-sub); font-size:0.85rem;">Đang tải dữ liệu...</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- MODAL: CREATE NOVEL -->
+        <div id="modal-create-novel" class="modal">
+            <div class="modal-content" style="max-width:550px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <h3 style="font-size:1.2rem; font-weight:700;"><i class="fa-solid fa-plus-circle" style="color:var(--accent);"></i> Tạo Bộ Truyện Mới</h3>
+                    <button onclick="closeModal('modal-create-novel')" style="background:none; border:none; color:var(--text-sub); font-size:1.2rem; cursor:pointer;"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <form id="form-create-novel" onsubmit="submitCreateNovel(event)" style="display:flex; flex-direction:column; gap:1rem;">
+                    <div>
+                        <label style="font-size:0.85rem; color:var(--text-sub); display:block; margin-bottom:0.3rem;">Tên truyện (Tiếng Việt) *</label>
+                        <input type="text" id="create-novel-title" required placeholder="VD: Phàm Nhân Tu Tiên" style="width:100%; background:rgba(15,23,42,0.8); border:1px solid var(--card-border); padding:0.6rem; border-radius:8px; color:#fff; outline:none;">
+                    </div>
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem;">
+                        <div>
+                            <label style="font-size:0.85rem; color:var(--text-sub); display:block; margin-bottom:0.3rem;">Tên gốc (Trung/Anh)</label>
+                            <input type="text" id="create-novel-orig-title" placeholder="VD: 凡人修仙传" style="width:100%; background:rgba(15,23,42,0.8); border:1px solid var(--card-border); padding:0.6rem; border-radius:8px; color:#fff; outline:none;">
+                        </div>
+                        <div>
+                            <label style="font-size:0.85rem; color:var(--text-sub); display:block; margin-bottom:0.3rem;">Tác giả</label>
+                            <input type="text" id="create-novel-author" placeholder="VD: Vong Ngữ" style="width:100%; background:rgba(15,23,42,0.8); border:1px solid var(--card-border); padding:0.6rem; border-radius:8px; color:#fff; outline:none;">
+                        </div>
+                    </div>
+                    <div>
+                        <label style="font-size:0.85rem; color:var(--text-sub); display:block; margin-bottom:0.3rem;">Thể loại (Cách nhau bởi dấu phẩy)</label>
+                        <input type="text" id="create-novel-genre" placeholder="VD: Tiên Hiệp, Tu Chân, Huyễn Tưởng" style="width:100%; background:rgba(15,23,42,0.8); border:1px solid var(--card-border); padding:0.6rem; border-radius:8px; color:#fff; outline:none;">
+                    </div>
+                    <div>
+                        <label style="font-size:0.85rem; color:var(--text-sub); display:block; margin-bottom:0.3rem;">Tóm tắt nội dung</label>
+                        <textarea id="create-novel-desc" rows="3" placeholder="Mô tả tóm tắt bộ truyện..." style="width:100%; height:80px; background:rgba(15,23,42,0.8); border:1px solid var(--card-border); padding:0.6rem; border-radius:8px; color:#fff; outline:none; font-size:0.85rem;"></textarea>
+                    </div>
+                    <div>
+                        <label style="font-size:0.85rem; color:var(--text-sub); display:block; margin-bottom:0.3rem;">Ảnh bìa truyện (Tùy chọn)</label>
+                        <input type="file" id="create-novel-cover" accept="image/*" style="font-size:0.85rem; color:var(--text-sub);">
+                    </div>
+                    <div style="display:flex; justify-content:flex-end; gap:0.5rem; margin-top:0.5rem;">
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('modal-create-novel')">Hủy</button>
+                        <button type="submit" class="btn" id="btn-submit-create-novel"><i class="fa-solid fa-check"></i> Lưu Bộ Truyện</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- MODAL: IMPORT EPUB -->
+        <div id="modal-import-epub" class="modal">
+            <div class="modal-content" style="max-width:600px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <h3 style="font-size:1.2rem; font-weight:700;"><i class="fa-solid fa-file-import" style="color:var(--accent);"></i> Nhập File EPUB Vào Kho</h3>
+                    <button onclick="closeModal('modal-import-epub')" style="background:none; border:none; color:var(--text-sub); font-size:1.2rem; cursor:pointer;"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <p style="color:var(--text-sub); font-size:0.85rem;">Hệ thống sẽ tự động bóc tách tên truyện, tác giả, ảnh bìa và toàn bộ các chương trong file EPUB vào Cloudflare R2.</p>
+                <form id="form-import-epub" onsubmit="submitImportEpub(event)" style="display:flex; flex-direction:column; gap:1rem;">
+                    <div>
+                        <label style="font-size:0.85rem; color:var(--text-sub); display:block; margin-bottom:0.3rem;">Chọn file EPUB *</label>
+                        <input type="file" id="import-epub-file" required accept=".epub" style="font-size:0.85rem; color:var(--text-sub);">
+                    </div>
+                    <div style="background:rgba(15,23,42,0.8); padding:1rem; border-radius:10px; border:1px solid var(--card-border);">
+                        <label style="font-size:0.85rem; font-weight:600; color:#cbd5e1; display:block; margin-bottom:0.5rem;">Trạng thái bản dịch của file EPUB:</label>
+                        <div style="display:flex; flex-direction:column; gap:0.5rem; font-size:0.85rem;">
+                            <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+                                <input type="radio" name="import_is_translated" value="true" checked>
+                                <span><strong>File này ĐÃ DỊCH sẵn</strong> (Lưu vào kho để đọc online & tải về)</span>
+                            </label>
+                            <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+                                <input type="radio" name="import_is_translated" value="false">
+                                <span><strong>File này là bản gốc RAW</strong> (Chưa dịch - để dịch dần từng chương)</span>
+                            </label>
+                        </div>
+                        <div style="margin-top:0.75rem; padding-top:0.75rem; border-top:1px solid rgba(255,255,255,0.08);">
+                            <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer; font-size:0.85rem; color:#a5b4fc;">
+                                <input type="checkbox" id="import-auto-scan-chars" checked>
+                                <span>⚡ Tự động quét nhân vật & lập Book Bible ban đầu (dùng API Key hiện tại)</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Live Progress Box -->
+                    <div id="import-epub-progress" style="display:none; background:rgba(30,41,59,0.7); padding:1rem; border-radius:10px; border:1px solid var(--card-border);">
+                        <div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:0.4rem;">
+                            <span id="import-progress-step" style="color:#a5b4fc; font-weight:600;"><i class="fa-solid fa-spinner spinner"></i> Đang chuẩn bị...</span>
+                            <span id="import-progress-pct" style="color:#10b981; font-weight:700;">0%</span>
+                        </div>
+                        <div class="novel-progress-bar" style="height:8px; margin:0.4rem 0;">
+                            <div id="import-progress-fill" class="novel-progress-fill" style="width:0%;"></div>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; font-size:0.78rem; color:var(--text-sub); margin-top:0.3rem;">
+                            <span>Chương: <strong id="import-progress-ch-curr" style="color:#fff;">0</strong> / <span id="import-progress-ch-total">0</span></span>
+                            <span id="import-progress-status-badge" style="color:#94a3b8;">Đang xử lý Cloudflare R2...</span>
+                        </div>
+                    </div>
+
+                    <div style="display:flex; justify-content:flex-end; gap:0.5rem; margin-top:0.5rem;">
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('modal-import-epub')">Hủy</button>
+                        <button type="submit" class="btn" id="btn-submit-import-epub"><i class="fa-solid fa-upload"></i> Bắt Đầu Nhập Vào Kho</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- MODAL: NOVEL DETAIL & CHAPTERS -->
+        <div id="modal-novel-detail" class="modal">
+            <div class="modal-content" style="max-width:1000px;">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; border-bottom:1px solid var(--card-border); padding-bottom:1rem;">
+                    <div style="display:flex; gap:1.25rem;">
+                        <div id="detail-cover-box" style="width:110px; height:150px; border-radius:10px; overflow:hidden; background:#1e1b4b; flex-shrink:0; display:flex; align-items:center; justify-content:center;">
+                            <i class="fa-solid fa-book" style="font-size:2.5rem; color:#818cf8;"></i>
+                        </div>
+                        <div style="display:flex; flex-direction:column; gap:0.3rem;">
+                            <h2 id="detail-novel-title" style="font-size:1.3rem; font-weight:700;">-</h2>
+                            <div style="font-size:0.85rem; color:var(--text-sub);">
+                                <span id="detail-novel-author">Tác giả: -</span> | <span id="detail-novel-orig">Gốc: -</span>
+                            </div>
+                            <div id="detail-novel-genres" style="display:flex; gap:0.3rem; flex-wrap:wrap; margin-top:0.2rem;"></div>
+                            <p id="detail-novel-desc" style="font-size:0.85rem; color:#cbd5e1; margin-top:0.3rem; max-height:60px; overflow-y:auto; line-height:1.4;">-</p>
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:0.5rem; align-items:center;">
+                        <button class="btn" id="btn-export-epub" style="padding:0.4rem 0.8rem; font-size:0.8rem; background:#10b981;">
+                            <i class="fa-solid fa-file-arrow-down"></i> Xuất EPUB
+                        </button>
+                        <button onclick="closeModal('modal-novel-detail')" style="background:none; border:none; color:var(--text-sub); font-size:1.4rem; cursor:pointer; margin-left:0.5rem;"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                </div>
+
+                <!-- Add Chapter Section -->
+                <div style="background:rgba(30,41,59,0.5); padding:1rem; border-radius:12px; border:1px solid var(--card-border);">
+                    <h4 style="font-size:0.95rem; font-weight:600; color:#a5b4fc; margin-bottom:0.75rem;"><i class="fa-solid fa-plus"></i> Thêm Chương Mới Vào Kho</h4>
+                    <form id="form-add-chapter" onsubmit="submitAddChapter(event)" style="display:grid; grid-template-columns:120px 1fr auto auto; gap:0.75rem; align-items:center;">
+                        <input type="number" id="add-chapter-index" min="1" required placeholder="Số thứ tự" style="background:rgba(15,23,42,0.8); border:1px solid var(--card-border); padding:0.5rem; border-radius:8px; color:#fff; font-size:0.85rem; outline:none;">
+                        <input type="text" id="add-chapter-title" required placeholder="Tiêu đề chương (VD: Chương 1: Sơn thôn thiếu niên)" style="background:rgba(15,23,42,0.8); border:1px solid var(--card-border); padding:0.5rem; border-radius:8px; color:#fff; font-size:0.85rem; outline:none;">
+                        <input type="file" id="add-chapter-file" accept=".txt" style="display:none;" onchange="handleChapterFilePicked(event)">
+                        <button type="button" class="btn btn-secondary" onclick="document.getElementById('add-chapter-file').click()" style="padding:0.5rem 0.8rem; font-size:0.8rem;">
+                            <i class="fa-solid fa-file-lines"></i> <span id="add-chapter-file-label">Chọn File TXT</span>
+                        </button>
+                        <button type="submit" class="btn" style="padding:0.5rem 1rem; font-size:0.85rem;">
+                            <i class="fa-solid fa-upload"></i> Lưu Chương
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Chapters Table -->
+                <h4 style="font-size:0.95rem; font-weight:600; color:#e2e8f0; margin-top:0.5rem;"><i class="fa-solid fa-list-ol"></i> Danh Sách Chương (<span id="detail-chapter-count">0</span>)</h4>
+                <div style="max-height:300px; overflow-y:auto; border:1px solid var(--card-border); border-radius:10px;">
+                    <table style="width:100%; border-collapse:collapse; text-align:left; font-size:0.85rem;">
+                        <thead style="position:sticky; top:0; background:#0f172a; border-bottom:1px solid var(--card-border); color:var(--text-sub);">
+                            <tr>
+                                <th style="padding:0.6rem;">STT</th>
+                                <th style="padding:0.6rem;">Tiêu Đề</th>
+                                <th style="padding:0.6rem;">Số Từ</th>
+                                <th style="padding:0.6rem;">Trạng Thái</th>
+                                <th style="padding:0.6rem; text-align:right;">Thao Tác</th>
+                            </tr>
+                        </thead>
+                        <tbody id="detail-chapters-tbody">
+                            <tr><td colspan="5" style="padding:1.5rem; text-align:center; color:var(--text-sub);">Chưa có chương nào</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Book Bible & Character Progression Section -->
+                <div style="background:rgba(15,23,42,0.6); border:1px solid var(--card-border); border-radius:12px; padding:1rem; margin-top:0.5rem;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.75rem;">
+                        <h4 style="font-size:0.95rem; font-weight:600; color:#a5b4fc; margin:0;"><i class="fa-solid fa-users"></i> Nhân Vật, Xưng Hô & Tiến Trình (Book Bible)</h4>
+                        <div style="display:flex; gap:0.4rem;">
+                            <button class="btn" onclick="openSnapshotModal()" style="padding:0.35rem 0.8rem; font-size:0.78rem; background:#3b82f6;">
+                                <i class="fa-solid fa-id-card"></i> 👤 Tra Cứu Trạng Thái Theo Chương
+                            </button>
+                            <button class="btn btn-secondary" id="btn-scan-novel-chars" onclick="scanCurrentNovelCharacters()" style="padding:0.35rem 0.8rem; font-size:0.78rem; background:rgba(99,102,241,0.2); border:1px solid rgba(99,102,241,0.4);">
+                                <i class="fa-solid fa-wand-magic-sparkles"></i> ⚡ Quét Nhân Vật Tự Động
+                            </button>
+                        </div>
+                    </div>
+                    <div id="detail-bible-container" style="display:flex; flex-wrap:wrap; gap:0.4rem; max-height:160px; overflow-y:auto; padding:0.3rem 0;">
+                        <span style="color:var(--text-sub); font-size:0.85rem;">Chưa có dữ liệu nhân vật. Bấm "Quét Nhân Vật Tự Động" để AI phân tích các chương đầu.</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- MODAL: CHARACTER SNAPSHOT BY CHAPTER -->
+        <div id="modal-character-snapshot" class="modal">
+            <div class="modal-content" style="max-width:800px; max-height:85vh;">
+                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--card-border); padding-bottom:0.75rem;">
+                    <h3 style="font-size:1.15rem; font-weight:700;"><i class="fa-solid fa-id-card" style="color:var(--accent);"></i> Tra Cứu Cảnh Giới & Đồ Đạc Nhân Vật Theo Chương</h3>
+                    <button onclick="closeModal('modal-character-snapshot')" style="background:none; border:none; color:var(--text-sub); font-size:1.2rem; cursor:pointer;"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                
+                <div style="display:flex; gap:0.75rem; align-items:center; background:rgba(30,41,59,0.6); padding:0.75rem 1rem; border-radius:10px; border:1px solid var(--card-border);">
+                    <span style="font-size:0.88rem; color:#cbd5e1; font-weight:600;">Xem trạng thái tại:</span>
+                    <input type="number" id="snapshot-input-chapter" min="1" value="1" style="width:110px; background:rgba(15,23,42,0.8); border:1px solid var(--card-border); padding:0.4rem 0.6rem; border-radius:8px; color:#fff; font-size:0.88rem; outline:none;" placeholder="Số chương">
+                    <button class="btn" onclick="fetchAndRenderSnapshot()" style="padding:0.4rem 0.9rem; font-size:0.85rem;">
+                        <i class="fa-solid fa-magnifying-glass"></i> Tra Cứu Ngay
+                    </button>
+                </div>
+
+                <!-- Snapshot Results Container -->
+                <div id="snapshot-results-container" style="display:flex; flex-direction:column; gap:1rem; overflow-y:auto; max-height:55vh;">
+                    <span style="color:var(--text-sub); font-size:0.85rem; text-align:center; padding:1.5rem;">Nhập số chương và bấm "Tra Cứu Ngay" để xem cảnh giới, pháp bảo và công pháp.</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- MODAL: CHAPTER READER -->
+        <div id="modal-chapter-reader" class="modal">
+            <div class="modal-content" style="max-width:1100px; height:85vh;">
+                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--card-border); padding-bottom:0.75rem;">
+                    <h3 id="reader-title" style="font-size:1.1rem; font-weight:700;"><i class="fa-solid fa-book-reader" style="color:var(--accent);"></i> Đọc So Sánh</h3>
+                    <button onclick="closeModal('modal-chapter-reader')" style="background:none; border:none; color:var(--text-sub); font-size:1.2rem; cursor:pointer;"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; flex:1; overflow:hidden;">
+                    <div style="display:flex; flex-direction:column; gap:0.5rem; height:100%;">
+                        <span style="font-size:0.85rem; font-weight:600; color:#94a3b8;">Văn bản gốc (Original)</span>
+                        <textarea id="reader-orig-text" readonly style="flex:1; height:100%; font-size:0.9rem; line-height:1.6;"></textarea>
+                    </div>
+                    <div style="display:flex; flex-direction:column; gap:0.5rem; height:100%;">
+                        <span style="font-size:0.85rem; font-weight:600; color:#10b981;">Bản dịch thuần Việt (Translated)</span>
+                        <textarea id="reader-trans-text" readonly style="flex:1; height:100%; font-size:0.9rem; line-height:1.6;"></textarea>
+                    </div>
                 </div>
             </div>
         </div>
@@ -832,6 +1190,601 @@
             } catch (err) {
                 jobsBody.innerHTML = `<tr><td colspan="6" style="padding:1rem; text-align:center; color:#ef4444;">Lỗi tải dữ liệu: ${err.message}</td></tr>`;
                 biblesBox.innerHTML = `<span style="color:#ef4444; font-size:0.85rem;">Lỗi: ${err.message}</span>`;
+            }
+        }
+
+        // ==========================================
+        // NOVEL LIBRARY MODULE
+        // ==========================================
+        let currentNovelId = null;
+        let selectedChapterFile = null;
+
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('active');
+        }
+
+        function openCreateNovelModal() {
+            document.getElementById('form-create-novel').reset();
+            document.getElementById('modal-create-novel').classList.add('active');
+        }
+
+        let activeImportPoll = null;
+
+        function openImportEpubModal() {
+            document.getElementById('form-import-epub').reset();
+            document.getElementById('import-epub-progress').style.display = 'none';
+            document.getElementById('btn-submit-import-epub').disabled = false;
+            document.getElementById('modal-import-epub').classList.add('active');
+        }
+
+        async function submitImportEpub(e) {
+            e.preventDefault();
+            const fileInput = document.getElementById('import-epub-file');
+            if (!fileInput.files || !fileInput.files[0]) {
+                alert("Vui lòng chọn 1 file .epub!");
+                return;
+            }
+
+            const isTranslatedVal = document.querySelector('input[name="import_is_translated"]:checked').value;
+            const autoScanChars = document.getElementById('import-auto-scan-chars').checked;
+            const btn = document.getElementById('btn-submit-import-epub');
+            const progress = document.getElementById('import-epub-progress');
+
+            const apiKey = document.getElementById('api-key-input').value.trim();
+            const provider = document.getElementById('api-provider').value;
+            const model = document.getElementById('api-model').value;
+
+            btn.disabled = true;
+            progress.style.display = 'block';
+            document.getElementById('import-progress-step').innerHTML = '<i class="fa-solid fa-spinner spinner"></i> Đang tải file lên máy chủ...';
+            document.getElementById('import-progress-pct').innerText = '0%';
+            document.getElementById('import-progress-fill').style.width = '0%';
+            document.getElementById('import-progress-ch-curr').innerText = '0';
+            document.getElementById('import-progress-ch-total').innerText = '...';
+
+            const fd = new FormData();
+            fd.append('file', fileInput.files[0]);
+            fd.append('is_translated', isTranslatedVal);
+            fd.append('auto_scan_characters', autoScanChars ? 'true' : 'false');
+
+            try {
+                const res = await fetch('/api/v1/library/novels/import-epub', {
+                    method: 'POST',
+                    headers: {
+                        'X-API-Key': apiKey,
+                        'X-Provider': provider,
+                        'X-Model': model
+                    },
+                    body: fd
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || "Khởi động nhập file thất bại");
+                }
+                const job = await res.json();
+                pollImportJob(job.job_id);
+            } catch (err) {
+                alert("Lỗi: " + err.message);
+                btn.disabled = false;
+                progress.style.display = 'none';
+            }
+        }
+
+        function pollImportJob(jobId) {
+            if (activeImportPoll) clearInterval(activeImportPoll);
+
+            activeImportPoll = setInterval(async () => {
+                try {
+                    const res = await fetch(`/api/v1/library/import-jobs/${jobId}`);
+                    if (!res.ok) return;
+
+                    const job = await res.json();
+                    document.getElementById('import-progress-step').innerHTML = `<i class="fa-solid fa-spinner spinner"></i> ${job.current_step || 'Đang xử lý...'}`;
+                    document.getElementById('import-progress-pct').innerText = `${job.progress_percentage}%`;
+                    document.getElementById('import-progress-fill').style.width = `${job.progress_percentage}%`;
+                    document.getElementById('import-progress-ch-curr').innerText = job.current_chapter || 0;
+                    document.getElementById('import-progress-ch-total').innerText = job.total_chapters || '...';
+
+                    if (job.status === 'completed') {
+                        clearInterval(activeImportPoll);
+                        document.getElementById('import-progress-step').innerHTML = `<i class="fa-solid fa-circle-check" style="color:#10b981;"></i> Hoàn tất!`;
+                        setTimeout(() => {
+                            closeModal('modal-import-epub');
+                            loadLibraryNovels();
+                            if (job.novel_id) {
+                                openNovelDetail(job.novel_id);
+                            }
+                        }, 800);
+                    } else if (job.status === 'failed') {
+                        clearInterval(activeImportPoll);
+                        document.getElementById('import-progress-step').innerHTML = `<i class="fa-solid fa-circle-xmark" style="color:#ef4444;"></i> Lỗi: ${job.error_message}`;
+                        document.getElementById('btn-submit-import-epub').disabled = false;
+                    }
+                } catch (e) {
+                    console.error("Poll import error", e);
+                }
+            }, 600);
+        }
+
+        async function submitCreateNovel(e) {
+            e.preventDefault();
+            const btn = document.getElementById('btn-submit-create-novel');
+            btn.disabled = true;
+
+            const title = document.getElementById('create-novel-title').value.trim();
+            const origTitle = document.getElementById('create-novel-orig-title').value.trim();
+            const author = document.getElementById('create-novel-author').value.trim();
+            const genre = document.getElementById('create-novel-genre').value.trim();
+            const desc = document.getElementById('create-novel-desc').value.trim();
+            const coverInput = document.getElementById('create-novel-cover');
+
+            const fd = new FormData();
+            fd.append('title', title);
+            if (origTitle) fd.append('original_title', origTitle);
+            if (author) fd.append('author', author);
+            if (genre) fd.append('genre', genre);
+            if (desc) fd.append('description', desc);
+            if (coverInput.files && coverInput.files[0]) {
+                fd.append('cover', coverInput.files[0]);
+            }
+
+            try {
+                const res = await fetch('/api/v1/library/novels', {
+                    method: 'POST',
+                    body: fd
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || "Không thể tạo bộ truyện");
+                }
+                closeModal('modal-create-novel');
+                loadLibraryNovels();
+            } catch (err) {
+                alert("Lỗi: " + err.message);
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function loadLibraryNovels() {
+            const grid = document.getElementById('library-novels-grid');
+            grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:2rem; color:var(--text-sub);"><i class="fa-solid fa-spinner spinner"></i> Đang tải danh sách truyện từ Cloudflare R2...</div>';
+
+            try {
+                const res = await fetch('/api/v1/library/novels');
+                if (!res.ok) throw new Error("Không thể tải danh sách truyện");
+                const novels = await res.json();
+
+                if (novels.length === 0) {
+                    grid.innerHTML = `<div style="grid-column:1/-1; text-align:center; padding:3rem; color:var(--text-sub);">
+                        <i class="fa-solid fa-folder-open" style="font-size:2.5rem; color:#6366f1; margin-bottom:0.75rem;"></i>
+                        <p style="font-size:1rem; font-weight:600; color:#cbd5e1;">Kho truyện đang trống</p>
+                        <p style="font-size:0.85rem; margin-top:0.3rem;">Bấm nút "+ Tạo Truyện Mới" để thêm bộ tiểu thuyết đầu tiên lên Cloudflare R2.</p>
+                    </div>`;
+                    return;
+                }
+
+                grid.innerHTML = novels.map(n => {
+                    const pct = n.total_chapters > 0 ? Math.round((n.translated_chapters / n.total_chapters) * 100) : 0;
+                    const coverHtml = n.cover_url
+                        ? `<img src="${n.cover_url}" class="novel-cover" alt="${n.title}" onerror="this.outerHTML='<div class=\\'novel-cover\\'><i class=\\'fa-solid fa-book\\'></i></div>'">`
+                        : `<div class="novel-cover"><i class="fa-solid fa-book"></i></div>`;
+
+                    const genresHtml = (n.genre || []).slice(0, 3).map(g => `<span class="tag" style="font-size:0.75rem;">${g}</span>`).join('');
+
+                    return `<div class="novel-card">
+                        ${coverHtml}
+                        <div class="novel-body">
+                            <div class="novel-title">${n.title}</div>
+                            <div class="novel-author">${n.author || 'Chưa rõ tác giả'} ${n.original_title ? '(' + n.original_title + ')' : ''}</div>
+                            <div>${genresHtml}</div>
+                            <div style="margin-top:auto;">
+                                <div style="display:flex; justify-content:space-between; font-size:0.8rem; color:var(--text-sub);">
+                                    <span>Tiến độ dịch</span>
+                                    <span>${n.translated_chapters}/${n.total_chapters} chương (${pct}%)</span>
+                                </div>
+                                <div class="novel-progress-bar">
+                                    <div class="novel-progress-fill" style="width:${pct}%"></div>
+                                </div>
+                                <div style="display:flex; gap:0.5rem; margin-top:0.75rem;">
+                                    <button class="btn" style="flex:1; padding:0.4rem 0.6rem; font-size:0.8rem;" onclick="openNovelDetail('${n.novel_id}')">
+                                        <i class="fa-solid fa-folder-open"></i> Quản Lý & Dịch
+                                    </button>
+                                    <button class="btn btn-secondary" style="padding:0.4rem 0.6rem; font-size:0.8rem; color:#ef4444;" onclick="deleteNovel('${n.novel_id}')" title="Xóa truyện">
+                                        <i class="fa-solid fa-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>`;
+                }).join('');
+
+            } catch (err) {
+                grid.innerHTML = `<div style="grid-column:1/-1; text-align:center; padding:2rem; color:#ef4444;">Lỗi: ${err.message}</div>`;
+            }
+        }
+
+        async function openNovelDetail(novelId) {
+            currentNovelId = novelId;
+            const modal = document.getElementById('modal-novel-detail');
+            modal.classList.add('active');
+
+            document.getElementById('detail-novel-title').innerText = 'Đang tải...';
+            document.getElementById('detail-chapters-tbody').innerHTML = '<tr><td colspan="5" style="padding:1.5rem; text-align:center; color:var(--text-sub);"><i class="fa-solid fa-spinner spinner"></i> Đang tải danh sách chương...</td></tr>';
+
+            try {
+                const res = await fetch(`/api/v1/library/novels/${novelId}`);
+                if (!res.ok) throw new Error("Không thể tải thông tin truyện");
+                const novel = await res.json();
+
+                document.getElementById('detail-novel-title').innerText = novel.title;
+                document.getElementById('detail-novel-author').innerText = `Tác giả: ${novel.author || 'Chưa rõ'}`;
+                document.getElementById('detail-novel-orig').innerText = `Gốc: ${novel.original_title || '-'}`;
+                document.getElementById('detail-novel-desc').innerText = novel.description || 'Chưa có mô tả.';
+                document.getElementById('detail-chapter-count').innerText = novel.chapters.length;
+
+                // Cover
+                const coverBox = document.getElementById('detail-cover-box');
+                if (novel.cover_url) {
+                    coverBox.innerHTML = `<img src="${novel.cover_url}" style="width:100%; height:100%; object-fit:cover;">`;
+                } else {
+                    coverBox.innerHTML = '<i class="fa-solid fa-book" style="font-size:2.5rem; color:#818cf8;"></i>';
+                }
+
+                // Genres
+                document.getElementById('detail-novel-genres').innerHTML = (novel.genre || []).map(g => `<span class="tag" style="font-size:0.75rem;">${g}</span>`).join('');
+
+                // Export EPUB button handler
+                document.getElementById('btn-export-epub').onclick = () => exportNovelEpub(novelId);
+
+                // Default next chapter index
+                document.getElementById('add-chapter-index').value = (novel.chapters.length + 1);
+                document.getElementById('add-chapter-title').value = `Chương ${novel.chapters.length + 1}: `;
+
+                // Render Chapters Table
+                if (novel.chapters.length === 0) {
+                    document.getElementById('detail-chapters-tbody').innerHTML = '<tr><td colspan="5" style="padding:1.5rem; text-align:center; color:var(--text-sub);">Chưa có chương nào trong kho. Hãy thêm chương mới ở khung phía trên!</td></tr>';
+                } else {
+                    document.getElementById('detail-chapters-tbody').innerHTML = novel.chapters.map(ch => {
+                        let statusBadge = '<span style="color:#94a3b8;"><i class="fa-regular fa-clock"></i> Chưa dịch</span>';
+                        if (ch.status === 'completed') statusBadge = '<span style="color:#10b981; font-weight:600;"><i class="fa-solid fa-circle-check"></i> Đã dịch</span>';
+                        else if (ch.status === 'translating') statusBadge = '<span style="color:#f59e0b; font-weight:600;"><i class="fa-solid fa-spinner spinner"></i> Đang dịch...</span>';
+                        else if (ch.status === 'failed') statusBadge = '<span style="color:#ef4444; font-weight:600;"><i class="fa-solid fa-triangle-exclamation"></i> Lỗi</span>';
+
+                        const translateBtn = ch.status === 'completed'
+                            ? `<button class="btn btn-secondary" onclick="triggerTranslateChapter('${novelId}', ${ch.chapter_index})" style="padding:0.25rem 0.6rem; font-size:0.75rem;"><i class="fa-solid fa-rotate-right"></i> Dịch lại</button>`
+                            : `<button class="btn" onclick="triggerTranslateChapter('${novelId}', ${ch.chapter_index})" style="padding:0.25rem 0.6rem; font-size:0.75rem;"><i class="fa-solid fa-bolt"></i> Dịch ngay</button>`;
+
+                        return `<tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                            <td style="padding:0.6rem; font-weight:600; color:#c7d2fe;">#${ch.chapter_index}</td>
+                            <td style="padding:0.6rem; font-weight:600;">${ch.chapter_title}</td>
+                            <td style="padding:0.6rem; color:var(--text-sub);">${ch.word_count} từ</td>
+                            <td style="padding:0.6rem;">${statusBadge}</td>
+                            <td style="padding:0.6rem; text-align:right; display:flex; gap:0.4rem; justify-content:flex-end;">
+                                <button class="btn btn-secondary" onclick="openChapterReader('${novelId}', ${ch.chapter_index})" style="padding:0.25rem 0.6rem; font-size:0.75rem;">
+                                    <i class="fa-solid fa-eye"></i> Đọc
+                                </button>
+                                ${translateBtn}
+                            </td>
+                        </tr>`;
+                    }).join('');
+                }
+
+                // Load Book Bible characters
+                loadNovelBible(novelId);
+
+            } catch (err) {
+                alert("Lỗi: " + err.message);
+                closeModal('modal-novel-detail');
+            }
+        }
+
+        async function loadNovelBible(novelId) {
+            const container = document.getElementById('detail-bible-container');
+            container.innerHTML = '<span style="color:var(--text-sub); font-size:0.85rem;"><i class="fa-solid fa-spinner spinner"></i> Đang tải dữ liệu nhân vật...</span>';
+
+            try {
+                const res = await fetch(`/api/v1/library/novels/${novelId}/bible`);
+                if (!res.ok) throw new Error("Không thể tải Book Bible");
+                const bible = await res.json();
+
+                const chars = bible.characters || [];
+                const terms = bible.terms || [];
+                const places = bible.places || [];
+
+                if (chars.length === 0 && terms.length === 0 && places.length === 0) {
+                    container.innerHTML = '<span style="color:var(--text-sub); font-size:0.85rem;">Chưa có dữ liệu nhân vật/thuật ngữ. Bấm "⚡ Quét Nhân Vật Tự Động" để AI phân tích.</span>';
+                    return;
+                }
+
+                const charTags = chars.map(c => {
+                    const roleText = c.role ? ` (${c.role})` : '';
+                    return `<span class="tag" style="background:rgba(99,102,241,0.2); border:1px solid rgba(99,102,241,0.4);" title="${c.voice_notes || ''}"><strong>${c.original_name}</strong> → <span style="color:#a5b4fc;">${c.vi_name}</span>${roleText}</span>`;
+                }).join('');
+
+                const placeTags = places.map(p => `<span class="tag" style="background:rgba(16,185,129,0.15); border:1px solid rgba(16,185,129,0.3); color:#6ee7b7;">🏛️ ${p.original_name} → ${p.vi_name}</span>`).join('');
+
+                const termTags = terms.map(t => `<span class="tag" style="background:rgba(245,158,11,0.15); border:1px solid rgba(245,158,11,0.3); color:#fde68a;">📜 ${t.original_name} → ${t.vi_name}</span>`).join('');
+
+                container.innerHTML = charTags + placeTags + termTags;
+            } catch (e) {
+                container.innerHTML = `<span style="color:#ef4444; font-size:0.85rem;">Lỗi tải nhân vật: ${e.message}</span>`;
+            }
+        }
+
+        async function scanCurrentNovelCharacters() {
+            if (!currentNovelId) return;
+
+            const apiKey = document.getElementById('api-key-input').value.trim();
+            const provider = document.getElementById('api-provider').value;
+            const model = document.getElementById('api-model').value;
+
+            if (!apiKey) {
+                alert("Vui lòng nhập API Key ở thanh cấu hình phía trên trước khi quét nhân vật!");
+                document.getElementById('api-key-input').focus();
+                return;
+            }
+
+            const btn = document.getElementById('btn-scan-novel-chars');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner spinner"></i> Đang phân tích...';
+
+            try {
+                const res = await fetch(`/api/v1/library/novels/${currentNovelId}/scan-characters?max_chapters=5`, {
+                    method: 'POST',
+                    headers: {
+                        'X-API-Key': apiKey,
+                        'X-Provider': provider,
+                        'X-Model': model
+                    }
+                });
+
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || "Quét nhân vật thất bại");
+                }
+
+                alert("Đã quét và trích xuất thành công tiến trình nhân vật vào Book Bible!");
+                loadNovelBible(currentNovelId);
+            } catch (err) {
+                alert("Lỗi: " + err.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> ⚡ Quét Nhân Vật Tự Động';
+            }
+        }
+
+        function openSnapshotModal() {
+            if (!currentNovelId) return;
+            document.getElementById('modal-character-snapshot').classList.add('active');
+            fetchAndRenderSnapshot();
+        }
+
+        async function fetchAndRenderSnapshot() {
+            if (!currentNovelId) return;
+            const chIdx = document.getElementById('snapshot-input-chapter').value || 1;
+            const container = document.getElementById('snapshot-results-container');
+
+            container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-sub);"><i class="fa-solid fa-spinner spinner"></i> Đang tải dữ liệu hồ sơ nhân vật...</div>';
+
+            try {
+                const res = await fetch(`/api/v1/library/novels/${currentNovelId}/chapters/${chIdx}/character-snapshot`);
+                if (!res.ok) throw new Error("Không thể tải trạng thái nhân vật");
+                const data = await res.json();
+
+                const chars = data.characters || [];
+                if (chars.length === 0) {
+                    container.innerHTML = `<div style="text-align:center; padding:2rem; color:var(--text-sub);">
+                        <p>Chưa có dữ liệu nhân vật nào được ghi nhận tại Chương ${chIdx}.</p>
+                        <p style="font-size:0.8rem; margin-top:0.3rem;">Hãy bấm nút "⚡ Quét Nhân Vật Tự Động" để AI phân tích.</p>
+                    </div>`;
+                    return;
+                }
+
+                container.innerHTML = chars.map(c => {
+                    const itemsHtml = (c.items && c.items.length > 0)
+                        ? c.items.map(i => `<span class="tag" style="background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.3); color:#fca5a5;">🎒 ${i}</span>`).join(' ')
+                        : '<span style="color:var(--text-sub); font-size:0.8rem;">Chưa ghi nhận</span>';
+
+                    const skillsHtml = (c.skills && c.skills.length > 0)
+                        ? c.skills.map(s => `<span class="tag" style="background:rgba(245,158,11,0.15); border:1px solid rgba(245,158,11,0.3); color:#fde68a;">📜 ${s}</span>`).join(' ')
+                        : '<span style="color:var(--text-sub); font-size:0.8rem;">Chưa ghi nhận</span>';
+
+                    const addressHtml = (c.address_terms && c.address_terms.length > 0)
+                        ? c.address_terms.map(a => `<span class="tag" style="font-size:0.75rem;">${a}</span>`).join(' ')
+                        : '<span style="color:var(--text-sub); font-size:0.8rem;">Chưa có</span>';
+
+                    return `<div style="background:rgba(30,41,59,0.7); border:1px solid var(--card-border); border-radius:12px; padding:1.2rem; display:flex; flex-direction:column; gap:0.6rem;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.06); padding-bottom:0.5rem;">
+                            <div style="font-size:1.1rem; font-weight:700; color:#fff;">
+                                👤 ${c.vi_name} <span style="font-size:0.85rem; color:var(--text-sub); font-weight:normal;">(${c.original_name})</span>
+                            </div>
+                            <span class="badge" style="background:rgba(99,102,241,0.3);">${c.role}</span>
+                        </div>
+
+                        <div style="display:grid; grid-template-columns:120px 1fr; gap:0.5rem; font-size:0.88rem; align-items:baseline;">
+                            <span style="color:#a5b4fc; font-weight:600;">⚡ Cảnh giới / Tu vi:</span>
+                            <span style="color:#f1f5f9; font-weight:600;">${c.realm}</span>
+                        </div>
+
+                        <div style="display:grid; grid-template-columns:120px 1fr; gap:0.5rem; font-size:0.88rem; align-items:baseline;">
+                            <span style="color:#f87171; font-weight:600;">🎒 Pháp bảo / Đồ đạc:</span>
+                            <div style="display:flex; flex-wrap:wrap; gap:0.3rem;">${itemsHtml}</div>
+                        </div>
+
+                        <div style="display:grid; grid-template-columns:120px 1fr; gap:0.5rem; font-size:0.88rem; align-items:baseline;">
+                            <span style="color:#fbbf24; font-weight:600;">📜 Công pháp / Kỹ năng:</span>
+                            <div style="display:flex; flex-wrap:wrap; gap:0.3rem;">${skillsHtml}</div>
+                        </div>
+
+                        <div style="display:grid; grid-template-columns:120px 1fr; gap:0.5rem; font-size:0.88rem; align-items:baseline;">
+                            <span style="color:var(--text-sub);">👥 Xưng hô theo ngữ cảnh:</span>
+                            <div style="display:flex; flex-wrap:wrap; gap:0.3rem;">${addressHtml}</div>
+                        </div>
+                    </div>`;
+                }).join('');
+
+            } catch (err) {
+                container.innerHTML = `<div style="color:#ef4444; text-align:center; padding:1.5rem;">Lỗi: ${err.message}</div>`;
+            }
+        }
+
+        function handleChapterFilePicked(e) {
+            const files = e.target.files;
+            if (files && files.length > 0) {
+                selectedChapterFile = files[0];
+                document.getElementById('add-chapter-file-label').innerText = selectedChapterFile.name;
+            }
+        }
+
+        async function submitAddChapter(e) {
+            e.preventDefault();
+            if (!currentNovelId) return;
+
+            const idx = document.getElementById('add-chapter-index').value;
+            const title = document.getElementById('add-chapter-title').value.trim();
+
+            if (!selectedChapterFile) {
+                const text = prompt("Nhập hoặc dán nội dung văn bản chương gốc:");
+                if (!text) return;
+                const fd = new FormData();
+                fd.append('chapter_index', idx);
+                fd.append('chapter_title', title);
+                fd.append('content', text);
+
+                await sendAddChapterReq(fd);
+            } else {
+                const fd = new FormData();
+                fd.append('chapter_index', idx);
+                fd.append('chapter_title', title);
+                fd.append('file', selectedChapterFile);
+
+                await sendAddChapterReq(fd);
+            }
+        }
+
+        async function sendAddChapterReq(formData) {
+            try {
+                const res = await fetch(`/api/v1/library/novels/${currentNovelId}/chapters`, {
+                    method: 'POST',
+                    body: formData
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || "Không thể lưu chương");
+                }
+                selectedChapterFile = null;
+                document.getElementById('add-chapter-file').value = '';
+                document.getElementById('add-chapter-file-label').innerText = 'Chọn File TXT';
+                openNovelDetail(currentNovelId);
+            } catch (err) {
+                alert("Lỗi: " + err.message);
+            }
+        }
+
+        async function triggerTranslateChapter(novelId, chapterIndex) {
+            const apiKey = document.getElementById('api-key-input').value.trim();
+            const provider = document.getElementById('api-provider').value;
+            const model = document.getElementById('api-model').value;
+
+            if (!apiKey) {
+                alert("Vui lòng nhập API Key ở thanh cấu hình phía trên trước khi dịch!");
+                document.getElementById('api-key-input').focus();
+                return;
+            }
+
+            const trRow = event.currentTarget.closest('tr');
+            if (trRow) {
+                trRow.style.opacity = '0.5';
+            }
+
+            try {
+                const res = await fetch(`/api/v1/library/novels/${novelId}/chapters/${chapterIndex}/translate`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-API-Key': apiKey,
+                        'X-Provider': provider,
+                        'X-Model': model
+                    },
+                    body: JSON.stringify({})
+                });
+
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || "Dịch chương thất bại");
+                }
+
+                alert(`Đã dịch xong thành công Chương ${chapterIndex}!`);
+                openNovelDetail(novelId);
+            } catch (err) {
+                alert("Lỗi: " + err.message);
+                openNovelDetail(novelId);
+            }
+        }
+
+        async function openChapterReader(novelId, chapterIndex) {
+            document.getElementById('reader-title').innerText = `Đọc So Sánh: Chương ${chapterIndex}`;
+            document.getElementById('reader-orig-text').value = 'Đang tải nội dung gốc...';
+            document.getElementById('reader-trans-text').value = 'Đang tải bản dịch...';
+            document.getElementById('modal-chapter-reader').classList.add('active');
+
+            try {
+                // Fetch original
+                const resOrig = await fetch(`/api/v1/library/novels/${novelId}/chapters/${chapterIndex}/content?version=original`);
+                if (resOrig.ok) {
+                    const dataOrig = await resOrig.json();
+                    document.getElementById('reader-orig-text').value = dataOrig.content || '';
+                } else {
+                    document.getElementById('reader-orig-text').value = 'Chưa có nội dung gốc.';
+                }
+
+                // Fetch translated
+                const resTrans = await fetch(`/api/v1/library/novels/${novelId}/chapters/${chapterIndex}/content?version=translated`);
+                if (resTrans.ok) {
+                    const dataTrans = await resTrans.json();
+                    document.getElementById('reader-trans-text').value = dataTrans.content || '';
+                } else {
+                    document.getElementById('reader-trans-text').value = 'Chưa có bản dịch cho chương này. Hãy bấm nút "Dịch ngay" để dịch!';
+                }
+            } catch (err) {
+                console.error("Reader load error", err);
+            }
+        }
+
+        function exportNovelEpub(novelId) {
+            const btn = document.getElementById('btn-export-epub');
+            const originalHtml = btn ? btn.innerHTML : '';
+            if (btn) {
+                btn.innerHTML = '<i class="fa-solid fa-spinner spinner"></i> Đang tải EPUB...';
+                btn.disabled = true;
+            }
+
+            // Direct Cloudflare R2 CDN download link (Super fast, no backend timeout)
+            const cdnUrl = `https://pub-698cb88b6743407a8590d8e8d2f5b65b.r2.dev/novels/${novelId}/full.epub`;
+            window.location.href = cdnUrl;
+
+            setTimeout(() => {
+                if (btn) {
+                    btn.innerHTML = originalHtml;
+                    btn.disabled = false;
+                }
+            }, 1500);
+        }
+
+        async function deleteNovel(novelId) {
+            if (!confirm(`Bạn có chắc chắn muốn xóa bộ truyện '${novelId}' và toàn bộ các chương trên Cloudflare R2?`)) {
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/v1/library/novels/${novelId}`, {
+                    method: 'DELETE'
+                });
+                if (!res.ok) throw new Error("Không thể xóa truyện");
+                loadLibraryNovels();
+            } catch (err) {
+                alert("Lỗi: " + err.message);
             }
         }
     </script>

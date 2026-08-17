@@ -108,3 +108,113 @@ def test_local_fallback_still_works_without_firestore():
     repository.save_job(job)
 
     assert repository.get_job("job-local") == job
+
+
+class FakeR2Client:
+    def __init__(self):
+        self.objects = {}
+
+    def put_object(self, Bucket, Key, Body, ContentType=None):
+        if isinstance(Body, bytes):
+            self.objects[Key] = Body
+        else:
+            self.objects[Key] = Body.encode("utf-8")
+
+    def get_object(self, Bucket, Key):
+        if Key not in self.objects:
+            err = Exception("NoSuchKey")
+            err.response = {"Error": {"Code": "NoSuchKey"}}
+            raise err
+        import io
+        return {"Body": io.BytesIO(self.objects[Key])}
+
+    def get_paginator(self, operation_name):
+        class FakePaginator:
+            def __init__(self, objects):
+                self._objects = objects
+            def paginate(self, Bucket, Prefix):
+                contents = [{"Key": k} for k in self._objects.keys() if k.startswith(Prefix)]
+                return [{"Contents": contents}]
+        return FakePaginator(self.objects)
+
+
+def make_r2_repository():
+    from app.config import settings
+    settings.cloudflare_r2_bucket_name = "test-bucket"
+    repository = StorageRepository.__new__(StorageRepository)
+    repository._jobs = {}
+    repository._bibles = {}
+    repository._locks = {}
+    repository._locks_guard = repository._get_lock("guard")
+    repository.firebase_enabled = False
+    repository.firestore_db = None
+    repository.r2_enabled = True
+    repository.r2_client = FakeR2Client()
+    return repository
+
+
+def test_r2_save_and_get_job_persists_across_cache_clear():
+    repository = make_r2_repository()
+    job = TranslationJob(
+        job_id="job-r2-1",
+        filename="novel.epub",
+        input_type=InputType.EPUB,
+        status=JobStatusEnum.COMPLETED,
+        progress_percentage=100.0,
+    )
+    repository.save_job(job)
+
+    assert "data/jobs/job-r2-1.json" in repository.r2_client.objects
+
+    # Simulate clearing in-memory cache (e.g. server restart)
+    repository._jobs.clear()
+
+    loaded = repository.get_job("job-r2-1")
+    assert loaded is not None
+    assert loaded.job_id == "job-r2-1"
+    assert loaded.filename == "novel.epub"
+    assert loaded.status == JobStatusEnum.COMPLETED
+
+
+def test_r2_save_and_get_bible_persists_across_cache_clear():
+    repository = make_r2_repository()
+    bible = BookBible(
+        novel_id="novel-r2-1",
+        characters=[
+            CharacterEntry(original_name="Alice", vi_name="A-lệ-ti")
+        ],
+    )
+    repository.save_bible("job-r2-1", bible)
+
+    assert "data/bibles/novel-r2-1.json" in repository.r2_client.objects
+
+    # Simulate clearing in-memory cache
+    repository._bibles.clear()
+
+    loaded = repository.get_bible("novel-r2-1")
+    assert loaded is not None
+    assert loaded.novel_id == "novel-r2-1"
+    assert len(loaded.characters) == 1
+    assert loaded.characters[0].vi_name == "A-lệ-ti"
+
+
+def test_r2_list_jobs_and_bibles():
+    repository = make_r2_repository()
+    job1 = TranslationJob(job_id="job-list-1", filename="1.txt", input_type=InputType.TXT)
+    job2 = TranslationJob(job_id="job-list-2", filename="2.txt", input_type=InputType.TXT)
+    repository.save_job(job1)
+    repository.save_job(job2)
+
+    bible1 = BookBible(novel_id="bible-1")
+    repository.save_bible("job-list-1", bible1)
+
+    repository._jobs.clear()
+    repository._bibles.clear()
+
+    jobs = repository.list_jobs()
+    assert len(jobs) == 2
+    job_ids = {j.job_id for j in jobs}
+    assert "job-list-1" in job_ids and "job-list-2" in job_ids
+
+    bibles = repository.list_bibles()
+    assert "bible-1" in bibles

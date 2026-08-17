@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import logging
 import os
 import uuid
@@ -118,6 +118,14 @@ async def run_translation_background_job(
         storage_repo.save_bible(job_id, bible)
         job.status = JobStatusEnum.COMPLETED
         job.translated_file_path = output_file_path
+        if storage_repo.r2_enabled:
+            try:
+                r2_key = f"outputs/{job_id}_{job.filename}"
+                r2_link = storage_repo.upload_file_to_r2(output_file_path, r2_key)
+                job.r2_url = r2_link
+                logger.info("Uploaded output to Cloudflare R2: %s", r2_link)
+            except Exception as r2_err:
+                logger.warning("Failed to upload output to Cloudflare R2: %s", r2_err)
         job.completed_at = datetime.utcnow().isoformat()
         job.progress_percentage = 100.0
         job.current_step = "Hoan thanh"

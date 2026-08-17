@@ -52,5 +52,6 @@ class TranslationJob(BaseModel):
     current_step: str = ""
     error_message: Optional[str] = None
     translated_file_path: Optional[str] = None
+    r2_url: Optional[str] = None
     created_at: str = ""
     completed_at: Optional[str] = None

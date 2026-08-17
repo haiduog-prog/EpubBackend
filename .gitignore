@@ -20,3 +20,7 @@ serviceAccountKey.json
 
 # Pytest cache
 .pytest_cache/
+
+# Executables & Tools
+tools/
+*.exe

@@ -53,7 +53,11 @@ Luồng chính là:
 
 ## 3. Các entry point
 
-### REST server
+### Web UI Live (Cloudflare Workers)
+- **Production URL**: [https://epubbackend.haiduog.workers.dev/](https://epubbackend.haiduog.workers.dev/)
+- **Cloudflare R2 Public CDN**: `https://pub-698cb88b6743407a8590d8e8d2f5b65b.r2.dev`
+
+### REST server cục bộ (Local)
 
 ```bash
 uvicorn app.main:app --host 127.0.0.1 --port 8000

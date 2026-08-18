@@ -8,7 +8,7 @@ import hmac
 import os
 from typing import Optional
 
-from fastapi import APIRouter, Header, HTTPException, Request, status
+from fastapi import APIRouter, Header, HTTPException, Query, Request, status
 
 from app.core import storage_repo
 from app.llm import create_llm_client

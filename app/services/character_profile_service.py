@@ -1167,9 +1167,11 @@ class CharacterProfileService:
             def jsonable(item):
                 if hasattr(item, "model_dump"):
                     return item.model_dump(mode="json")
+                if isinstance(item, datetime):
+                    return item.isoformat()
                 if isinstance(item, dict):
                     return {key: jsonable(v) for key, v in item.items()}
-                if isinstance(item, list):
+                if isinstance(item, (list, set, tuple)):
                     return [jsonable(v) for v in item]
                 return item
 

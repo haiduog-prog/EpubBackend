@@ -54,10 +54,12 @@ class CharacterProfileService:
     def __init__(
         self,
         firestore_db=None,
+        storage_repo=None,
         min_independent_sources: Optional[int] = None,
         auto_approve: Optional[bool] = None,
     ):
         self.firestore_db = firestore_db
+        self.storage_repo = storage_repo
         env_sources = int(os.getenv("BOOK_BIBLE_MIN_SOURCES", "2") or 2)
         self.min_independent_sources = max(1, min_independent_sources if min_independent_sources is not None else env_sources)
         env_auto = os.getenv("BOOK_BIBLE_AUTO_APPROVE", "false").lower() in {"1", "true", "yes"}
@@ -98,50 +100,87 @@ class CharacterProfileService:
         return f"edition-{_hash(raw, 24)}"
 
     def _load_book_from_firestore(self, book_id: str) -> None:
-        if not self.firestore_db:
-            return
-        try:
-            if book_id not in self.books:
-                snapshot = self.firestore_db.collection("profile_books").document(book_id).get()
-                if snapshot.exists:
-                    raw = snapshot.to_dict() or {}
-                    metadata = BookMetadata.model_validate(raw.get("metadata", {}))
+        if self.firestore_db:
+            try:
+                if book_id not in self.books:
+                    snapshot = self.firestore_db.collection("profile_books").document(book_id).get()
+                    if snapshot.exists:
+                        raw = snapshot.to_dict() or {}
+                        metadata = BookMetadata.model_validate(raw.get("metadata", {}))
+                        self.books[book_id] = {
+                            "book_id": book_id,
+                            "metadata": metadata,
+                            "title_key": _norm(metadata.title),
+                            "author_key": _norm(metadata.author),
+                            "sampled_chapters": raw.get("sampled_chapters", []),
+                            "created_at": raw.get("created_at"),
+                        }
+                        self._book_revisions.setdefault(book_id, 0)
+                for doc in self.firestore_db.collection("profile_editions").where("book_id", "==", book_id).stream():
+                    raw = doc.to_dict() or {}
+                    if raw.get("book_id") == book_id and doc.id not in self.editions:
+                        self.editions[doc.id] = EditionRecord.model_validate(raw)
+                for doc in self.firestore_db.collection("profile_events").where("book_id", "==", book_id).stream():
+                    raw = doc.to_dict() or {}
+                    if raw.get("book_id") != book_id or doc.id in self.events:
+                        continue
+                    event = CharacterEvent.model_validate(raw)
+                    self.events[event.event_id] = event
+                    candidate = CharacterEventCandidate(
+                        character_original_name=event.character_original_name,
+                        character_id=event.character_id,
+                        category=event.category,
+                        attribute_key=event.attribute_key,
+                        operation=event.operation,
+                        value=event.value,
+                        certainty=event.certainty,
+                        evidence=event.evidence,
+                        confidence=event.confidence,
+                    )
+                    key = self._event_key(book_id, event.character_id, event.canonical_chapter, candidate)
+                    self._event_keys[key] = event.event_id
+                    self._event_evidence_groups.setdefault(key, set()).add(event.source_group_id)
+                    self._book_revisions[book_id] = max(self._book_revisions.get(book_id, 0), 1 if event.status == "approved" else 0)
+            except Exception as exc:
+                logger.warning("Book profile Firestore hydration failed book=%s: %s", book_id, exc)
+
+        # Hydrate from R2 if active
+        if self.storage_repo and getattr(self.storage_repo, "is_r2_active", False):
+            try:
+                raw_book = self.storage_repo._r2_get_json(f"data/profile_books/{book_id}.json")
+                if raw_book and book_id not in self.books:
+                    metadata = BookMetadata.model_validate(raw_book["metadata"]) if isinstance(raw_book.get("metadata"), dict) else BookMetadata(title=str(raw_book.get("metadata", book_id)))
                     self.books[book_id] = {
                         "book_id": book_id,
                         "metadata": metadata,
                         "title_key": _norm(metadata.title),
                         "author_key": _norm(metadata.author),
-                        "sampled_chapters": raw.get("sampled_chapters", []),
-                        "created_at": raw.get("created_at"),
+                        "sampled_chapters": raw_book.get("sampled_chapters", []),
+                        "created_at": raw_book.get("created_at"),
                     }
                     self._book_revisions.setdefault(book_id, 0)
-            for doc in self.firestore_db.collection("profile_editions").where("book_id", "==", book_id).stream():
-                raw = doc.to_dict() or {}
-                if raw.get("book_id") == book_id and doc.id not in self.editions:
-                    self.editions[doc.id] = EditionRecord.model_validate(raw)
-            for doc in self.firestore_db.collection("profile_events").where("book_id", "==", book_id).stream():
-                raw = doc.to_dict() or {}
-                if raw.get("book_id") != book_id or doc.id in self.events:
-                    continue
-                event = CharacterEvent.model_validate(raw)
-                self.events[event.event_id] = event
-                candidate = CharacterEventCandidate(
-                    character_original_name=event.character_original_name,
-                    character_id=event.character_id,
-                    category=event.category,
-                    attribute_key=event.attribute_key,
-                    operation=event.operation,
-                    value=event.value,
-                    certainty=event.certainty,
-                    evidence=event.evidence,
-                    confidence=event.confidence,
-                )
-                key = self._event_key(book_id, event.character_id, event.canonical_chapter, candidate)
-                self._event_keys[key] = event.event_id
-                self._event_evidence_groups.setdefault(key, set()).add(event.source_group_id)
-                self._book_revisions[book_id] = max(self._book_revisions.get(book_id, 0), 1 if event.status == "approved" else 0)
+            except Exception as exc:
+                logger.debug("Book profile R2 hydration skipped: %s", exc)
+
+        # Hydrate from local disk cache
+        try:
+            base_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data")
+            book_file = os.path.join(base_dir, "profile_books", f"{book_id}.json")
+            if os.path.exists(book_file) and book_id not in self.books:
+                with open(book_file, "r", encoding="utf-8") as f:
+                    raw_book = json.load(f)
+                metadata = BookMetadata.model_validate(raw_book["metadata"]) if isinstance(raw_book.get("metadata"), dict) else BookMetadata(title=str(raw_book.get("metadata", book_id)))
+                self.books[book_id] = {
+                    "book_id": book_id,
+                    "metadata": metadata,
+                    "title_key": _norm(metadata.title),
+                    "author_key": _norm(metadata.author),
+                    "sampled_chapters": raw_book.get("sampled_chapters", []),
+                    "created_at": raw_book.get("created_at"),
+                }
+                self._book_revisions.setdefault(book_id, 0)
         except Exception as exc:
-            logger.warning("Book profile Firestore hydration failed book=%s: %s", book_id, exc)
+            logger.debug("Book profile local disk hydration skipped: %s", exc)
 
     def get_edition(self, edition_id: str) -> Optional[EditionRecord]:
         edition = self.editions.get(edition_id)
@@ -1010,21 +1049,44 @@ class CharacterProfileService:
         self._persist("profile_submissions", submission_id, submission)
 
     def _persist(self, collection: str, document_id: str, value: Any) -> None:
-        if not self.firestore_db:
-            return
         try:
             def jsonable(item):
                 if hasattr(item, "model_dump"):
                     return item.model_dump(mode="json")
                 if isinstance(item, dict):
-                    return {key: jsonable(value) for key, value in item.items()}
+                    return {key: jsonable(v) for key, v in item.items()}
                 if isinstance(item, list):
-                    return [jsonable(value) for value in item]
+                    return [jsonable(v) for v in item]
                 return item
+
             payload = jsonable(value)
-            self.firestore_db.collection(collection).document(document_id).set(payload, merge=True)
+
+            # 1. Sync to Firebase Firestore if active
+            if self.firestore_db:
+                try:
+                    self.firestore_db.collection(collection).document(document_id).set(payload, merge=True)
+                except Exception as exc:
+                    logger.warning("Book profile Firestore mirror failed collection=%s doc=%s: %s", collection, document_id, exc)
+
+            # 2. Sync to Cloudflare R2 bucket if active
+            if self.storage_repo and getattr(self.storage_repo, "is_r2_active", False):
+                try:
+                    self.storage_repo._r2_put_json(f"data/{collection}/{document_id}.json", payload)
+                except Exception as exc:
+                    logger.warning("Book profile R2 mirror failed collection=%s doc=%s: %s", collection, document_id, exc)
+
+            # 3. Always persist to local disk cache
+            try:
+                base_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", collection)
+                os.makedirs(base_dir, exist_ok=True)
+                file_path = os.path.join(base_dir, f"{document_id}.json")
+                with open(file_path, "w", encoding="utf-8") as f:
+                    json.dump(payload, f, ensure_ascii=False, indent=2)
+            except Exception as exc:
+                logger.debug("Local disk persistence skipped: %s", exc)
+
         except Exception as exc:
-            logger.warning("Book profile Firestore mirror failed collection=%s: %s", collection, exc)
+            logger.warning("Book profile _persist failed collection=%s doc=%s: %s", collection, document_id, exc)
 
 
 def candidates_from_legacy_bible(bible: BookBible) -> List[CharacterEventCandidate]:

@@ -34,7 +34,10 @@ from app.schemas.character_profile import (
 from app.services.character_profile_service import CharacterProfileService
 
 router = APIRouter(prefix="/book-bible", tags=["Chapter-aware Book Bible"])
-profile_service = CharacterProfileService(firestore_db=storage_repo.firestore_db)
+profile_service = CharacterProfileService(
+    firestore_db=storage_repo.firestore_db,
+    storage_repo=storage_repo,
+)
 
 
 def _require_trusted_client(client_key: Optional[str]) -> None:

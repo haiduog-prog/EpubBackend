@@ -77,6 +77,7 @@ class CharacterProfileService:
         self._processed_chapters: Dict[str, set[int]] = {}
         self._book_revisions: Dict[str, int] = {}
         self._snapshot_cache: Dict[Tuple[str, int, int], CharacterSnapshotResponse] = {}
+        self._hydrate_all_from_storage()
 
     # ------------------------------------------------------------------
     # Book and edition identity
@@ -144,43 +145,122 @@ class CharacterProfileService:
             except Exception as exc:
                 logger.warning("Book profile Firestore hydration failed book=%s: %s", book_id, exc)
 
-        # Hydrate from R2 if active
+    def _hydrate_all_from_storage(self) -> None:
+        # 1. Hydrate from Cloudflare R2
         if self.storage_repo and getattr(self.storage_repo, "is_r2_active", False):
             try:
-                raw_book = self.storage_repo._r2_get_json(f"data/profile_books/{book_id}.json")
-                if raw_book and book_id not in self.books:
-                    metadata = BookMetadata.model_validate(raw_book["metadata"]) if isinstance(raw_book.get("metadata"), dict) else BookMetadata(title=str(raw_book.get("metadata", book_id)))
-                    self.books[book_id] = {
-                        "book_id": book_id,
-                        "metadata": metadata,
-                        "title_key": _norm(metadata.title),
-                        "author_key": _norm(metadata.author),
-                        "sampled_chapters": raw_book.get("sampled_chapters", []),
-                        "created_at": raw_book.get("created_at"),
-                    }
-                    self._book_revisions.setdefault(book_id, 0)
+                # Books
+                for item in self.storage_repo._r2_list_json_objects("data/profile_books/"):
+                    book_id = item.get("book_id")
+                    if book_id and book_id not in self.books:
+                        meta = BookMetadata.model_validate(item["metadata"]) if isinstance(item.get("metadata"), dict) else BookMetadata(title=str(item.get("metadata", book_id)))
+                        self.books[book_id] = {
+                            "book_id": book_id,
+                            "metadata": meta,
+                            "title_key": _norm(meta.title),
+                            "author_key": _norm(meta.author),
+                            "sampled_chapters": item.get("sampled_chapters", []),
+                            "created_at": item.get("created_at"),
+                        }
+                        self._book_revisions.setdefault(book_id, 0)
+                # Editions
+                for item in self.storage_repo._r2_list_json_objects("data/profile_editions/"):
+                    ed_id = item.get("edition_id")
+                    if ed_id and ed_id not in self.editions:
+                        self.editions[ed_id] = EditionRecord.model_validate(item)
+                # Events
+                for item in self.storage_repo._r2_list_json_objects("data/profile_events/"):
+                    ev_id = item.get("event_id")
+                    if ev_id and ev_id not in self.events:
+                        event = CharacterEvent.model_validate(item)
+                        self.events[ev_id] = event
+                        candidate = CharacterEventCandidate(
+                            character_original_name=event.character_original_name,
+                            character_id=event.character_id,
+                            category=event.category,
+                            attribute_key=event.attribute_key,
+                            operation=event.operation,
+                            value=event.value,
+                            certainty=event.certainty,
+                            evidence=event.evidence,
+                            confidence=event.confidence,
+                        )
+                        key = self._event_key(event.book_id, event.character_id, event.canonical_chapter, candidate)
+                        self._event_keys[key] = ev_id
+                        self._event_evidence_groups.setdefault(key, set()).add(event.source_group_id)
+                        self._book_revisions[event.book_id] = max(self._book_revisions.get(event.book_id, 0), 1 if event.status == "approved" else 0)
+                # Submissions
+                for item in self.storage_repo._r2_list_json_objects("data/profile_submissions/"):
+                    sub_id = item.get("submission_id")
+                    if sub_id and sub_id not in self.submissions:
+                        sub = SubmissionRecord.model_validate(item)
+                        self.submissions[sub_id] = sub
+                        if sub.idempotency_key:
+                            self.submissions_by_key[sub.idempotency_key] = sub_id
             except Exception as exc:
-                logger.debug("Book profile R2 hydration skipped: %s", exc)
+                logger.warning("R2 global hydration failed: %s", exc)
 
-        # Hydrate from local disk cache
+        # 2. Hydrate from Local Disk
         try:
             base_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data")
-            book_file = os.path.join(base_dir, "profile_books", f"{book_id}.json")
-            if os.path.exists(book_file) and book_id not in self.books:
-                with open(book_file, "r", encoding="utf-8") as f:
-                    raw_book = json.load(f)
-                metadata = BookMetadata.model_validate(raw_book["metadata"]) if isinstance(raw_book.get("metadata"), dict) else BookMetadata(title=str(raw_book.get("metadata", book_id)))
-                self.books[book_id] = {
-                    "book_id": book_id,
-                    "metadata": metadata,
-                    "title_key": _norm(metadata.title),
-                    "author_key": _norm(metadata.author),
-                    "sampled_chapters": raw_book.get("sampled_chapters", []),
-                    "created_at": raw_book.get("created_at"),
-                }
-                self._book_revisions.setdefault(book_id, 0)
+            if os.path.exists(base_dir):
+                # Books
+                p_books = os.path.join(base_dir, "profile_books")
+                if os.path.exists(p_books):
+                    for fn in os.listdir(p_books):
+                        if fn.endswith(".json"):
+                            with open(os.path.join(p_books, fn), "r", encoding="utf-8") as f:
+                                item = json.load(f)
+                            book_id = item.get("book_id")
+                            if book_id and book_id not in self.books:
+                                meta = BookMetadata.model_validate(item["metadata"]) if isinstance(item.get("metadata"), dict) else BookMetadata(title=str(item.get("metadata", book_id)))
+                                self.books[book_id] = {
+                                    "book_id": book_id,
+                                    "metadata": meta,
+                                    "title_key": _norm(meta.title),
+                                    "author_key": _norm(meta.author),
+                                    "sampled_chapters": item.get("sampled_chapters", []),
+                                    "created_at": item.get("created_at"),
+                                }
+                                self._book_revisions.setdefault(book_id, 0)
+                # Editions
+                p_editions = os.path.join(base_dir, "profile_editions")
+                if os.path.exists(p_editions):
+                    for fn in os.listdir(p_editions):
+                        if fn.endswith(".json"):
+                            with open(os.path.join(p_editions, fn), "r", encoding="utf-8") as f:
+                                item = json.load(f)
+                            ed_id = item.get("edition_id")
+                            if ed_id and ed_id not in self.editions:
+                                self.editions[ed_id] = EditionRecord.model_validate(item)
+                # Events
+                p_events = os.path.join(base_dir, "profile_events")
+                if os.path.exists(p_events):
+                    for fn in os.listdir(p_events):
+                        if fn.endswith(".json"):
+                            with open(os.path.join(p_events, fn), "r", encoding="utf-8") as f:
+                                item = json.load(f)
+                            ev_id = item.get("event_id")
+                            if ev_id and ev_id not in self.events:
+                                event = CharacterEvent.model_validate(item)
+                                self.events[ev_id] = event
+                                candidate = CharacterEventCandidate(
+                                    character_original_name=event.character_original_name,
+                                    character_id=event.character_id,
+                                    category=event.category,
+                                    attribute_key=event.attribute_key,
+                                    operation=event.operation,
+                                    value=event.value,
+                                    certainty=event.certainty,
+                                    evidence=event.evidence,
+                                    confidence=event.confidence,
+                                )
+                                key = self._event_key(event.book_id, event.character_id, event.canonical_chapter, candidate)
+                                self._event_keys[key] = ev_id
+                                self._event_evidence_groups.setdefault(key, set()).add(event.source_group_id)
+                                self._book_revisions[event.book_id] = max(self._book_revisions.get(event.book_id, 0), 1 if event.status == "approved" else 0)
         except Exception as exc:
-            logger.debug("Book profile local disk hydration skipped: %s", exc)
+            logger.debug("Local disk global hydration skipped: %s", exc)
 
     def get_edition(
         self,
@@ -803,6 +883,7 @@ class CharacterProfileService:
 
     def list_books(self) -> List[Dict[str, Any]]:
         with self._lock:
+            self._hydrate_all_from_storage()
             if self.firestore_db and not self.books:
                 for doc in self.firestore_db.collection("profile_books").stream():
                     self._load_book_from_firestore(doc.id)
@@ -862,6 +943,7 @@ class CharacterProfileService:
         canonical_chapter: Optional[int] = None,
     ) -> List[CharacterEvent]:
         with self._lock:
+            self._hydrate_all_from_storage()
             if self.firestore_db and book_id:
                 self._load_book_from_firestore(book_id)
             results = []

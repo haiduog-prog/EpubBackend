@@ -77,6 +77,7 @@ class CharacterProfileService:
         self._processed_chapters: Dict[str, set[int]] = {}
         self._book_revisions: Dict[str, int] = {}
         self._snapshot_cache: Dict[Tuple[str, int, int], CharacterSnapshotResponse] = {}
+        self._hydrated_from_storage: bool = False
         self._hydrate_all_from_storage()
 
     # ------------------------------------------------------------------
@@ -145,7 +146,10 @@ class CharacterProfileService:
             except Exception as exc:
                 logger.warning("Book profile Firestore hydration failed book=%s: %s", book_id, exc)
 
-    def _hydrate_all_from_storage(self) -> None:
+    def _hydrate_all_from_storage(self, force: bool = False) -> None:
+        if getattr(self, "_hydrated_from_storage", False) and not force:
+            return
+        self._hydrated_from_storage = True
         # 1. Hydrate from Cloudflare R2
         if self.storage_repo and getattr(self.storage_repo, "is_r2_active", False):
             try:

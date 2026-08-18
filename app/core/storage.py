@@ -1,3 +1,4 @@
+import concurrent.futures
 import json
 import logging
 import os
@@ -139,14 +140,21 @@ class StorageRepository:
             return []
         try:
             paginator = self.r2_client.get_paginator("list_objects_v2")
-            results = []
+            keys = []
             for page in paginator.paginate(Bucket=settings.cloudflare_r2_bucket_name, Prefix=prefix):
                 for item in page.get("Contents", []):
                     key = item.get("Key", "")
                     if key.endswith(".json"):
-                        data = self._r2_get_json(key)
-                        if data is not None:
-                            results.append(data)
+                        keys.append(key)
+            if not keys:
+                return []
+            results = []
+            with concurrent.futures.ThreadPoolExecutor(max_workers=15) as executor:
+                futures = [executor.submit(self._r2_get_json, k) for k in keys]
+                for fut in concurrent.futures.as_completed(futures):
+                    data = fut.result()
+                    if data is not None:
+                        results.append(data)
             return results
         except Exception as exc:
             logger.warning("Failed to list JSON objects from Cloudflare R2 (prefix=%s): %s", prefix, exc)

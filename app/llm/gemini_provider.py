@@ -20,6 +20,17 @@ from app.llm.base import BaseLLMClient
 logger = logging.getLogger("EpubBackend.GeminiProvider")
 
 
+def _clean_json_str(text: str) -> str:
+    t = text.strip()
+    if t.startswith("```json"):
+        t = t[7:]
+    elif t.startswith("```"):
+        t = t[3:]
+    if t.endswith("```"):
+        t = t[:-3]
+    return t.strip()
+
+
 class GeminiProvider(BaseLLMClient):
     """
     LLM Client triển khai cho Google Gemini API (google-genai SDK).
@@ -59,84 +70,41 @@ class GeminiProvider(BaseLLMClient):
         if target_model in legacy_map:
             target_model = legacy_map[target_model]
 
-        candidate_models = []
-        if target_model:
-            candidate_models.append(target_model)
-
-        # 2026 Official Active Gemini Models (gemini-flash-latest, gemini-flash-lite-latest, gemini-pro-latest, gemini-3.5-flash)
-        default_candidates = [
-            "gemini-flash-latest",
-            "gemini-flash-lite-latest",
-            "gemini-pro-latest",
-            "gemini-3.5-flash",
-            "gemini-3.1-flash-lite",
-            "gemini-2.5-flash"
-        ]
-        for m in default_candidates:
-            if m not in candidate_models:
-                candidate_models.append(m)
-
-        def is_text_generation_model(name: str) -> bool:
-            lower = name.lower()
-            if any(bad in lower for bad in ["-tts", "tts", "embedding", "imagen", "veo", "audio"]):
-                return False
-            return True
-
-        candidate_models = [
-            m for m in candidate_models
-            if is_text_generation_model(m) and m not in self.failed_models
-        ]
-
+        # Prepare candidates list
+        candidates = []
         if self.working_model and self.working_model not in self.failed_models:
-            if self.working_model in candidate_models:
-                candidate_models.remove(self.working_model)
-            candidate_models.insert(0, self.working_model)
+            candidates.append(self.working_model)
+        if target_model and target_model not in candidates and target_model not in self.failed_models:
+            candidates.append(target_model)
+        for m in ["gemini-2.5-flash", "gemini-flash-latest", "gemini-2.5-pro", "gemini-flash-lite-latest", "gemini-pro-latest"]:
+            if m not in candidates and m not in self.failed_models:
+                candidates.append(m)
 
-        if target_model and target_model not in self.failed_models:
-            if target_model in candidate_models:
-                candidate_models.remove(target_model)
-            candidate_models.insert(0, target_model)
-
-        last_exception = None
-        for m in candidate_models:
+        for candidate_model in candidates:
             try:
-                logger.info(f"Calling Gemini generate_content with model: {m}")
-                res = self.client.models.generate_content(
-                    model=m,
+                response = self.client.models.generate_content(
+                    model=candidate_model,
                     contents=contents,
                     config=config
                 )
-                self.working_model = m
-                return res
+                self.working_model = candidate_model
+                return response
             except Exception as e:
-                err_msg = str(e)
-                if any(k in err_msg for k in ["404", "NOT_FOUND", "not found", "no longer available"]):
-                    self.failed_models.add(m)
-                    logger.debug(f"Gemini model '{m}' returned 404/not available. Blacklisting for session.")
-                    last_exception = e
-                    continue
-                elif any(k in err_msg for k in ["429", "RESOURCE_EXHAUSTED", "quota"]):
-                    logger.warning(f"Gemini model '{m}' hit rate/quota limit (429). Trying next candidate...")
-                    last_exception = e
-                    continue
-                elif any(k in err_msg for k in ["400", "INVALID_ARGUMENT", "modalities"]):
-                    self.failed_models.add(m)
-                    logger.warning(f"Gemini model '{m}' rejected modalities (400). Blacklisting for session.")
-                    last_exception = e
-                    continue
-                raise e
+                err_str = str(e)
+                logger.warning(f"Gemini model '{candidate_model}' call failed: {err_str}")
+                self.failed_models.add(candidate_model)
 
-        if last_exception:
-            err_str = str(last_exception)
-            if any(k in err_str for k in ["429", "RESOURCE_EXHAUSTED", "quota"]):
-                raise ValueError(
-                    "API Key Google Gemini của bạn đã hết hạn ngạch truy cập miễn phí trong ngày (429 Quota Exceeded). Vui lòng tạo API Key mới tại https://aistudio.google.com/app/apikey hoặc chuyển Provider sang Claude API (Anthropic)."
-                )
-            if any(k in err_str for k in ["404", "NOT_FOUND", "not found"]):
-                raise ValueError(
-                    f"API Key Google Gemini không kết nối được tới dịch vụ Gemini (Lỗi 404 NOT_FOUND). Vui lòng kiểm tra lại API Key từ https://aistudio.google.com/app/apikey."
-                )
-            raise last_exception
+                if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower():
+                    logger.warning(f"Model {candidate_model} exhausted quota (429). Attempting fallback to next available model.")
+                    continue
+                elif "404" in err_str or "NOT_FOUND" in err_str or "is not found for API version" in err_str:
+                    logger.warning(f"Model {candidate_model} not found or unsupported. Attempting fallback.")
+                    continue
+                else:
+                    if len(candidates) > 1:
+                        logger.warning(f"Model {candidate_model} error ({err_str}). Trying alternative candidate.")
+                        continue
+                    raise e
 
         raise ValueError("No working Gemini text generation model found for this API Key. Please verify your API Key at https://aistudio.google.com/app/apikey")
 
@@ -154,15 +122,13 @@ class GeminiProvider(BaseLLMClient):
         response = self._call_with_fallback(
             contents=prompt,
             config=types.GenerateContentConfig(
-                system_instruction="Bạn là biên tập viên phân tích tiểu thuyết trích xuất Book Bible JSON hợp lệ.",
+                system_instruction="Bạn là biên tập viên phân tích tiểu thuyết. Hãy trích xuất Book Bible JSON hợp lệ theo đúng cấu trúc yêu cầu.",
                 response_mime_type="application/json",
-                response_schema=BookBibleDelta
             ),
             preferred_model=model
         )
-        if response.parsed:
-            return response.parsed
-        return BookBibleDelta.model_validate_json(response.text)
+        json_text = _clean_json_str(response.text)
+        return BookBibleDelta.model_validate_json(json_text)
 
     async def translate_prose_chunk(
         self,
@@ -209,15 +175,12 @@ class GeminiProvider(BaseLLMClient):
             config=types.GenerateContentConfig(
                 system_instruction=system_content,
                 response_mime_type="application/json",
-                response_schema=HTMLTranslationOutput
             ),
             preferred_model=model
         )
-        if response.parsed:
-            raw_translations = response.parsed.translations
-        else:
-            parsed_data = HTMLTranslationOutput.model_validate_json(response.text)
-            raw_translations = parsed_data.translations
+        json_text = _clean_json_str(response.text)
+        parsed_data = HTMLTranslationOutput.model_validate_json(json_text)
+        raw_translations = parsed_data.translations
 
         out_map = {item.id: item.text_vi for item in raw_translations}
         aligned_translations: List[HTMLTranslationItem] = []
@@ -248,10 +211,8 @@ class GeminiProvider(BaseLLMClient):
             config=types.GenerateContentConfig(
                 system_instruction="Bạn là trợ lý QA kiểm tra nhất quán bản dịch.",
                 response_mime_type="application/json",
-                response_schema=QAReport
             ),
             preferred_model=model
         )
-        if response.parsed:
-            return response.parsed
-        return QAReport.model_validate_json(response.text)
+        json_text = _clean_json_str(response.text)
+        return QAReport.model_validate_json(json_text)

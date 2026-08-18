@@ -19,6 +19,6 @@ async def check_qa_endpoint(
     x_model: Optional[str] = Header(default=None)
 ):
     bible = storage_repo.get_bible(job_id) if job_id else BookBible()
-    llm_client = create_llm_client(provider=x_provider or "anthropic", api_key=x_api_key, model=x_model)
+    llm_client = create_llm_client(provider=x_provider or "gemini", api_key=x_api_key, model=x_model)
     qa_service = QAService(llm_client)
     return await qa_service.verify_chunk(original_text, translated_text, bible)

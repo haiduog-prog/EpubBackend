@@ -1,4 +1,4 @@
-﻿import os
+import os
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
@@ -23,11 +23,12 @@ class Settings(BaseModel):
     cloudflare_r2_bucket_name: str = Field(default_factory=lambda: os.getenv("CLOUDFLARE_R2_BUCKET_NAME", ""))
     cloudflare_r2_public_url: str = Field(default_factory=lambda: os.getenv("CLOUDFLARE_R2_PUBLIC_URL", ""))
 
-    # Model defaults
-    default_translation_model: str = Field(default="claude-3-7-sonnet-20250219")
-    default_extraction_model: str = Field(default="claude-3-5-haiku-20241022")
-    default_qa_model: str = Field(default="claude-3-5-haiku-20241022")
-    default_gemini_model: str = Field(default="gemini-1.5-flash")
+    # Model defaults (Google Gemini Only)
+    default_provider: str = Field(default="gemini")
+    default_translation_model: str = Field(default="gemini-2.5-flash")
+    default_extraction_model: str = Field(default="gemini-2.5-flash")
+    default_qa_model: str = Field(default="gemini-2.5-flash")
+    default_gemini_model: str = Field(default="gemini-2.5-flash")
     
     # Chunking settings
     txt_chunk_min_words: int = 1500

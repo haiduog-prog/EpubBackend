@@ -13,6 +13,7 @@ import json
 import logging
 import threading
 import uuid
+import os
 from copy import deepcopy
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -50,9 +51,17 @@ def _hash(value: str, length: int = 32) -> str:
 class CharacterProfileService:
     """In-process canonical event store with optional Firestore mirroring."""
 
-    def __init__(self, firestore_db=None, min_independent_sources: int = 2):
+    def __init__(
+        self,
+        firestore_db=None,
+        min_independent_sources: Optional[int] = None,
+        auto_approve: Optional[bool] = None,
+    ):
         self.firestore_db = firestore_db
-        self.min_independent_sources = max(1, min_independent_sources)
+        env_sources = int(os.getenv("BOOK_BIBLE_MIN_SOURCES", "2") or 2)
+        self.min_independent_sources = max(1, min_independent_sources if min_independent_sources is not None else env_sources)
+        env_auto = os.getenv("BOOK_BIBLE_AUTO_APPROVE", "false").lower() in {"1", "true", "yes"}
+        self.auto_approve = auto_approve if auto_approve is not None else env_auto
         self._lock = threading.RLock()
         self.books: Dict[str, Dict[str, Any]] = {}
         self.editions: Dict[str, EditionRecord] = {}
@@ -148,6 +157,24 @@ class CharacterProfileService:
                     return edition.model_copy(deep=True)
             except Exception as exc:
                 logger.warning("Book profile edition hydration failed edition=%s: %s", edition_id, exc)
+
+        # Fallback: If edition_id is a book_id or if an edition exists for this book_id
+        if edition_id in self.books:
+            for ed in self.editions.values():
+                if ed.book_id == edition_id:
+                    return ed.model_copy(deep=True)
+            meta = self.books[edition_id]["metadata"]
+            new_ed = EditionRecord(
+                edition_id=f"edition-{_hash(f'{edition_id}:default', 24)}",
+                book_id=edition_id,
+                metadata=meta.model_copy(deep=True) if hasattr(meta, "model_copy") else BookMetadata(title=str(meta)),
+                fingerprints=FingerprintBundle(),
+                chapter_count=1000,
+            )
+            self.editions[new_ed.edition_id] = new_ed
+            self._persist("profile_editions", new_ed.edition_id, new_ed)
+            return new_ed.model_copy(deep=True)
+
         return None
 
     def resolve_book(self, request: BookResolutionRequest) -> BookResolutionResponse:
@@ -217,6 +244,19 @@ class CharacterProfileService:
         }
         self._book_revisions.setdefault(book_id, 0)
         self._persist("profile_books", book_id, self.books[book_id])
+
+        # Auto-create default edition
+        default_edition_id = f"edition-{_hash(f'{book_id}:default', 24)}"
+        if default_edition_id not in self.editions:
+            edition = EditionRecord(
+                edition_id=default_edition_id,
+                book_id=book_id,
+                metadata=metadata.model_copy(deep=True),
+                fingerprints=fingerprints.model_copy(deep=True),
+                chapter_count=1000,
+            )
+            self.editions[default_edition_id] = edition
+            self._persist("profile_editions", default_edition_id, edition)
 
     def create_edition(self, book_id: str, request: EditionCreateRequest) -> EditionRecord:
         with self._lock:
@@ -556,7 +596,7 @@ class CharacterProfileService:
         if not event_key or event.status in {"superseded", "rejected"}:
             return
         groups = self._event_evidence_groups.get(event_key, set())
-        if len(groups) < self.min_independent_sources:
+        if not self.auto_approve and len(groups) < self.min_independent_sources:
             event.status = "pending"
             return
         if event.confidence < 0.5:
@@ -587,6 +627,203 @@ class CharacterProfileService:
                 key: value for key, value in self._snapshot_cache.items() if key[0] != event.book_id
             }
         self._persist("profile_events", event.event_id, event)
+
+    def list_books(self) -> List[Dict[str, Any]]:
+        with self._lock:
+            if self.firestore_db and not self.books:
+                for doc in self.firestore_db.collection("profile_books").stream():
+                    self._load_book_from_firestore(doc.id)
+
+            # Auto-sync existing novels from library_service into profile_books
+            try:
+                from app.services.library_service import library_service
+                for nov in library_service.list_novels():
+                    title = nov.title or nov.novel_id
+                    bid = self.book_id_for(BookMetadata(title=title, author=nov.author or "", language="vi"))
+                    if bid not in self.books:
+                        self._create_book(
+                            bid,
+                            BookMetadata(title=title, author=nov.author or "", language="vi"),
+                            FingerprintBundle(),
+                        )
+            except Exception as exc:
+                logger.debug("Auto-sync library novels to profile_books skipped: %s", exc)
+
+            # Auto-sync existing Book Bibles from storage_repo into profile_books
+            try:
+                from app.core import storage_repo
+                for bible_id, bible in storage_repo.list_bibles().items():
+                    novel_title = getattr(bible, "novel_id", None) or bible_id
+                    bid = self.book_id_for(BookMetadata(title=novel_title, author="", language="vi"))
+                    if bid not in self.books:
+                        self._create_book(
+                            bid,
+                            BookMetadata(title=novel_title, author="", language="vi"),
+                            FingerprintBundle(),
+                        )
+            except Exception as exc:
+                logger.debug("Auto-sync storage bibles to profile_books skipped: %s", exc)
+
+            res = []
+            for book_id, book in self.books.items():
+                meta = book.get("metadata")
+                title = meta.title if hasattr(meta, "title") else (meta.get("title", "") if isinstance(meta, dict) else "")
+                author = meta.author if hasattr(meta, "author") else (meta.get("author", "") if isinstance(meta, dict) else "")
+                language = meta.language if hasattr(meta, "language") else (meta.get("language", "") if isinstance(meta, dict) else "")
+                res.append({
+                    "book_id": book_id,
+                    "title": title or book_id,
+                    "author": author,
+                    "language": language,
+                    "revision": self._book_revisions.get(book_id, 0),
+                    "edition_count": sum(1 for e in self.editions.values() if e.book_id == book_id),
+                    "event_count": sum(1 for e in self.events.values() if e.book_id == book_id),
+                    "pending_event_count": sum(1 for e in self.events.values() if e.book_id == book_id and e.status == "pending"),
+                })
+            return sorted(res, key=lambda b: b["title"])
+
+    def list_events(
+        self,
+        book_id: Optional[str] = None,
+        status: Optional[str] = None,
+        canonical_chapter: Optional[int] = None,
+    ) -> List[CharacterEvent]:
+        with self._lock:
+            if self.firestore_db and book_id:
+                self._load_book_from_firestore(book_id)
+            results = []
+            for event in self.events.values():
+                if book_id and event.book_id != book_id:
+                    continue
+                if status and event.status != status:
+                    continue
+                if canonical_chapter is not None and event.canonical_chapter != canonical_chapter:
+                    continue
+                results.append(event.model_copy(deep=True))
+            return sorted(results, key=lambda e: (e.canonical_chapter, e.created_at), reverse=True)
+
+    def approve_event(
+        self,
+        event_id: str,
+        evidence: Optional[str] = None,
+        value: Optional[Any] = None,
+    ) -> CharacterEvent:
+        with self._lock:
+            event = self.events.get(event_id)
+            if not event:
+                raise KeyError("event_not_found")
+            if evidence is not None:
+                event.evidence = evidence[:1000]
+                self._add_manual_evidence(event, evidence)
+            if value is not None:
+                event.value = deepcopy(value)
+            was_approved = event.status == "approved"
+            event.status = "approved"
+            event.reviewed_at = datetime.utcnow()
+            if not was_approved or value is not None:
+                self._book_revisions[event.book_id] = self._book_revisions.get(event.book_id, 0) + 1
+                self._snapshot_cache = {
+                    key: value for key, value in self._snapshot_cache.items() if key[0] != event.book_id
+                }
+            self._persist("profile_events", event.event_id, event)
+            return event.model_copy(deep=True)
+
+    def update_event(
+        self,
+        event_id: str,
+        evidence: Optional[str] = None,
+        value: Optional[Any] = None,
+        confidence: Optional[float] = None,
+    ) -> CharacterEvent:
+        with self._lock:
+            event = self.events.get(event_id)
+            if not event:
+                raise KeyError("event_not_found")
+            if evidence is not None:
+                event.evidence = evidence[:1000]
+                self._add_manual_evidence(event, evidence)
+            if value is not None:
+                event.value = deepcopy(value)
+            if confidence is not None:
+                event.confidence = max(0.0, min(1.0, confidence))
+            if event.status == "approved" and value is not None:
+                self._book_revisions[event.book_id] = self._book_revisions.get(event.book_id, 0) + 1
+                self._snapshot_cache = {
+                    key: value for key, value in self._snapshot_cache.items() if key[0] != event.book_id
+                }
+            self._persist("profile_events", event.event_id, event)
+            return event.model_copy(deep=True)
+
+    def _add_manual_evidence(self, event: CharacterEvent, evidence_text: str) -> None:
+        evidence_id = f"evidence-manual-{uuid.uuid4().hex[:16]}"
+        evidence = EventEvidence(
+            evidence_id=evidence_id,
+            event_key=event.event_id,
+            source_group_id="manual-review",
+            submission_id=event.source_submission_id or "manual",
+            excerpt=evidence_text[:1000],
+            confidence=1.0,
+            created_at=datetime.utcnow(),
+        )
+        self.evidence[evidence_id] = evidence
+        self._persist("profile_evidence", evidence_id, evidence)
+
+    def reject_event(self, event_id: str) -> CharacterEvent:
+        with self._lock:
+            event = self.events.get(event_id)
+            if not event:
+                raise KeyError("event_not_found")
+            was_approved = event.status == "approved"
+            event.status = "rejected"
+            event.reviewed_at = datetime.utcnow()
+            if was_approved:
+                self._book_revisions[event.book_id] = self._book_revisions.get(event.book_id, 0) + 1
+                self._snapshot_cache = {
+                    key: value for key, value in self._snapshot_cache.items() if key[0] != event.book_id
+                }
+            self._persist("profile_events", event.event_id, event)
+            return event.model_copy(deep=True)
+
+    def approve_all_pending(
+        self, book_id: Optional[str] = None, canonical_chapter: Optional[int] = None
+    ) -> List[CharacterEvent]:
+        with self._lock:
+            approved = []
+            for event in self.events.values():
+                if event.status != "pending":
+                    continue
+                if book_id and event.book_id != book_id:
+                    continue
+                if canonical_chapter is not None and event.canonical_chapter != canonical_chapter:
+                    continue
+                event.status = "approved"
+                event.reviewed_at = datetime.utcnow()
+                self._book_revisions[event.book_id] = self._book_revisions.get(event.book_id, 0) + 1
+                self._persist("profile_events", event.event_id, event)
+                approved.append(event.model_copy(deep=True))
+            if approved:
+                affected_books = {e.book_id for e in approved}
+                self._snapshot_cache = {
+                    key: value for key, value in self._snapshot_cache.items() if key[0] not in affected_books
+                }
+            return approved
+
+    def get_settings(self) -> Dict[str, Any]:
+        with self._lock:
+            return {
+                "auto_approve": self.auto_approve,
+                "min_independent_sources": self.min_independent_sources,
+            }
+
+    def update_settings(
+        self, auto_approve: Optional[bool] = None, min_sources: Optional[int] = None
+    ) -> Dict[str, Any]:
+        with self._lock:
+            if auto_approve is not None:
+                self.auto_approve = auto_approve
+            if min_sources is not None:
+                self.min_independent_sources = max(1, min_sources)
+            return self.get_settings()
 
     # ------------------------------------------------------------------
     # Snapshot and timeline reads

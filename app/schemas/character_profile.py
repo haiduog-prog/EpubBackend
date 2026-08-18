@@ -219,3 +219,40 @@ class CharacterSnapshotResponse(BaseModel):
 class SubmissionStatusResponse(SubmissionRecord):
     pass
 
+
+class ProfileSettingsResponse(BaseModel):
+    auto_approve: bool
+    min_independent_sources: int
+
+
+class ProfileSettingsUpdateRequest(BaseModel):
+    auto_approve: Optional[bool] = None
+    min_independent_sources: Optional[int] = None
+
+
+class ApproveAllRequest(BaseModel):
+    book_id: Optional[str] = None
+    canonical_chapter: Optional[int] = None
+
+
+class BookListItem(BaseModel):
+    book_id: str
+    title: str
+    author: str = ""
+    language: str = ""
+    revision: int = 0
+    edition_count: int = 0
+    event_count: int = 0
+    pending_event_count: int = 0
+
+
+class EventApproveRequest(BaseModel):
+    evidence: Optional[str] = Field(default=None, description="Dẫn chứng hoặc trích đoạn bổ sung khi duyệt")
+    value: Optional[Any] = Field(default=None, description="Giá trị thuộc tính được chỉnh sửa nếu AI trích xuất chưa chuẩn")
+
+
+class EventUpdateRequest(BaseModel):
+    evidence: Optional[str] = Field(default=None, description="Dẫn chứng trích đoạn")
+    value: Optional[Any] = Field(default=None, description="Giá trị thuộc tính")
+    confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+

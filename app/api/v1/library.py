@@ -201,7 +201,7 @@ async def translate_chapter_endpoint(
     x_model: Optional[str] = Header(default=None),
 ):
     key = req.api_key or x_api_key
-    prov = req.provider or x_provider or "anthropic"
+    prov = req.provider or x_provider or "gemini"
     mod = req.model or x_model
 
     try:

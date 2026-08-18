@@ -8,8 +8,8 @@ from app.api.v1.library import router as library_router
 
 api_v1_router = APIRouter(prefix="/api/v1")
 api_v1_router.include_router(translate_router)
+api_v1_router.include_router(character_profiles_router)
 api_v1_router.include_router(book_bible_router)
 api_v1_router.include_router(qa_router)
 api_v1_router.include_router(admin_router)
-api_v1_router.include_router(character_profiles_router)
 api_v1_router.include_router(library_router)

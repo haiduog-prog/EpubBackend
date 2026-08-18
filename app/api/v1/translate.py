@@ -58,7 +58,7 @@ async def run_translation_background_job(
     output_file_path: str,
     input_type: InputType,
     api_key: Optional[str] = None,
-    provider: str = "anthropic",
+    provider: str = "gemini",
     model: Optional[str] = None,
     novel_id: Optional[str] = None,
     chapter_index: Optional[int] = None,

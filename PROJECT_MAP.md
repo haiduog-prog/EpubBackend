@@ -57,6 +57,10 @@ Luồng chính là:
 - **Production URL**: [https://epubbackend.haiduog.workers.dev/](https://epubbackend.haiduog.workers.dev/)
 - **Cloudflare R2 Public CDN**: `https://pub-698cb88b6743407a8590d8e8d2f5b65b.r2.dev`
 
+### Backend Server 24/7 (Render Cloud)
+- **Production API URL**: [https://epubbackend.onrender.com/](https://epubbackend.onrender.com/)
+- **Swagger / OpenAPI Docs**: [https://epubbackend.onrender.com/docs](https://epubbackend.onrender.com/docs)
+
 ### REST server cục bộ (Local)
 
 ```bash

@@ -904,7 +904,7 @@
             const custom = (inputEl ? inputEl.value : localStorage.getItem('epub_backend_url') || '').trim();
             if (custom) return custom.replace(/\/+$/, '');
             if (window.location.hostname !== '127.0.0.1' && window.location.hostname !== 'localhost') {
-                return 'https://accordance-patch-potatoes-happy.trycloudflare.com';
+                return 'https://epubbackend.onrender.com';
             }
             return '';
         }
@@ -924,7 +924,7 @@
             const savedProvider = localStorage.getItem('epub_provider') || 'gemini';
             const savedKey = localStorage.getItem('epub_api_key') || '';
             const savedModel = localStorage.getItem('epub_model');
-            const savedBackend = localStorage.getItem('epub_backend_url') || (window.location.hostname !== '127.0.0.1' && window.location.hostname !== 'localhost' ? 'https://accordance-patch-potatoes-happy.trycloudflare.com' : '');
+            const savedBackend = localStorage.getItem('epub_backend_url') || (window.location.hostname !== '127.0.0.1' && window.location.hostname !== 'localhost' ? 'https://epubbackend.onrender.com' : '');
 
             document.getElementById('api-provider').value = savedProvider;
             document.getElementById('api-key-input').value = savedKey;

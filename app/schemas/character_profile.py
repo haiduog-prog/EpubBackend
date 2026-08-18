@@ -256,3 +256,9 @@ class EventUpdateRequest(BaseModel):
     value: Optional[Any] = Field(default=None, description="Giá trị thuộc tính")
     confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
 
+
+class BookUpdateRequest(BaseModel):
+    title: Optional[str] = Field(default=None, description="Tên sách mới")
+    author: Optional[str] = Field(default=None, description="Tác giả")
+
+

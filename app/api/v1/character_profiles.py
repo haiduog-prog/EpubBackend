@@ -17,6 +17,7 @@ from app.schemas.character_profile import (
     BookListItem,
     BookResolutionRequest,
     BookResolutionResponse,
+    BookUpdateRequest,
     ChapterMapping,
     ChapterMappingRequest,
     CharacterEvent,
@@ -65,6 +66,19 @@ def _content_fingerprint(content: Optional[str], supplied: Optional[str]) -> str
 @router.post("/books/resolve", response_model=BookResolutionResponse)
 def resolve_book(request: BookResolutionRequest):
     return profile_service.resolve_book(request)
+
+
+@router.patch("/books/{book_id}")
+def update_book(
+    book_id: str,
+    request: BookUpdateRequest,
+    x_book_bible_client_key: Optional[str] = Header(default=None),
+):
+    _require_trusted_client(x_book_bible_client_key)
+    try:
+        return profile_service.update_book(book_id, request)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc).strip("'")) from exc
 
 
 @router.post("/books/{book_id}/editions", response_model=EditionRecord)
@@ -127,6 +141,10 @@ async def submit_chapter(
     local_chapter: int,
     payload: ChapterSubmissionRequest,
     request: Request,
+    book_title: Optional[str] = Query(default=None),
+    book_author: Optional[str] = Query(default=None),
+    x_book_title: Optional[str] = Header(default=None),
+    x_book_author: Optional[str] = Header(default=None),
     x_idempotency_key: Optional[str] = Header(default=None),
     x_book_bible_client_key: Optional[str] = Header(default=None),
     x_api_key: Optional[str] = Header(default=None),
@@ -135,7 +153,10 @@ async def submit_chapter(
     _require_trusted_client(x_book_bible_client_key)
     if payload.local_chapter_index != local_chapter:
         raise HTTPException(status_code=400, detail="Path and payload chapter indexes differ.")
-    edition = profile_service.get_edition(edition_id)
+    
+    title = book_title or x_book_title
+    author = book_author or x_book_author
+    edition = profile_service.get_edition(edition_id, title=title, author=author, content=payload.content)
     if not edition:
         raise HTTPException(status_code=404, detail="edition_not_found")
     actual_edition_id = edition.edition_id
@@ -185,8 +206,19 @@ def get_submission(submission_id: str):
     "/editions/{edition_id}/chapters/{local_chapter}/snapshot",
     response_model=CharacterSnapshotResponse,
 )
-def get_snapshot(edition_id: str, local_chapter: int):
+def get_snapshot(
+    edition_id: str,
+    local_chapter: int,
+    book_title: Optional[str] = Query(default=None),
+    book_author: Optional[str] = Query(default=None),
+    x_book_title: Optional[str] = Header(default=None),
+    x_book_author: Optional[str] = Header(default=None),
+):
     try:
+        title = book_title or x_book_title
+        author = book_author or x_book_author
+        if title:
+            profile_service.get_edition(edition_id, title=title, author=author)
         return profile_service.snapshot(edition_id, local_chapter)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc).strip("'")) from exc

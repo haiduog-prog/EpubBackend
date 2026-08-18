@@ -1,0 +1,21 @@
+{
+  "submission_id": "submission-d179cc8b82d34c55ad8147faa3e086b2",
+  "idempotency_key": "link-b",
+  "book_id": "book-1f12e1a4ff81c94c5cbd8c93",
+  "edition_id": "edition-d07511819d8ff5ae234701e5",
+  "local_chapter_index": 300,
+  "canonical_chapter_start": 300,
+  "canonical_chapter_end": 300,
+  "input_type": "structured_events",
+  "content_fingerprint": "link-b",
+  "source_group_id": "51925a4f46ec4a4b44dcbf3560152861",
+  "source_label": null,
+  "status": "completed",
+  "error_code": null,
+  "error_message": null,
+  "event_ids": [
+    "event-b61ef88af76949f897228894fe73505c"
+  ],
+  "created_at": "2026-08-18T17:42:07.250069",
+  "completed_at": "2026-08-18T17:42:07.251305"
+}

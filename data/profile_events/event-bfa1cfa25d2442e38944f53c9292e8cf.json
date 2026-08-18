@@ -1,0 +1,21 @@
+{
+  "event_id": "event-bfa1cfa25d2442e38944f53c9292e8cf",
+  "book_id": "book-8ad0492a514ad492256bafb6",
+  "character_id": "char-d769023c054a20002679efed",
+  "character_original_name": "Nạp Lan Yên Nhiên",
+  "canonical_chapter": 5,
+  "category": "status",
+  "attribute_key": "state",
+  "operation": "set",
+  "value": "tử vong",
+  "certainty": "observed",
+  "status": "rejected",
+  "evidence": "tin đồn nhảm",
+  "confidence": 0.6,
+  "source_group_id": "5c557f06bc7b47ab091a2dc8430438aa",
+  "source_submission_id": "submission-fe81c3bfb798491e8b62f09e086bec5d",
+  "supersedes_event_id": null,
+  "created_at": "2026-08-18T17:42:07.281439",
+  "reviewed_at": "2026-08-18T17:42:07.282620",
+  "schema_version": 1
+}

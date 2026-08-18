@@ -182,10 +182,30 @@ class CharacterProfileService:
         except Exception as exc:
             logger.debug("Book profile local disk hydration skipped: %s", exc)
 
-    def get_edition(self, edition_id: str) -> Optional[EditionRecord]:
+    def get_edition(
+        self,
+        edition_id: str,
+        title: Optional[str] = None,
+        author: Optional[str] = None,
+        content: Optional[str] = None,
+    ) -> Optional[EditionRecord]:
         edition = self.editions.get(edition_id)
         if edition:
+            # If a real title is provided and current book has placeholder title, update it
+            if title and edition.book_id in self.books:
+                curr_title = self.books[edition.book_id]["metadata"].title
+                if curr_title.startswith("Book (edition-") or not curr_title:
+                    self.books[edition.book_id]["metadata"].title = title
+                    if author:
+                        self.books[edition.book_id]["metadata"].author = author
+                    self.books[edition.book_id]["title_key"] = _norm(title)
+                    self._persist("profile_books", edition.book_id, self.books[edition.book_id])
+                    edition.metadata.title = title
+                    if author:
+                        edition.metadata.author = author
+                    self._persist("profile_editions", edition_id, edition)
             return edition.model_copy(deep=True)
+
         if self.firestore_db:
             try:
                 snapshot = self.firestore_db.collection("profile_editions").document(edition_id).get()
@@ -197,7 +217,7 @@ class CharacterProfileService:
             except Exception as exc:
                 logger.warning("Book profile edition hydration failed edition=%s: %s", edition_id, exc)
 
-        # Fallback: If edition_id is a book_id or if an edition exists for this book_id
+        # Fallback 1: If edition_id is directly a book_id
         if edition_id in self.books:
             for ed in self.editions.values():
                 if ed.book_id == edition_id:
@@ -214,19 +234,86 @@ class CharacterProfileService:
             self._persist("profile_editions", new_ed.edition_id, new_ed)
             return new_ed.model_copy(deep=True)
 
-        # Fallback 2: Auto-create an ad-hoc edition for unknown edition_id so Mobile clients never crash with 404
+        # Fallback 2: If title is provided, search existing books for a title match
+        if title:
+            norm_title = _norm(title)
+            matched_book_id = None
+            for b_id, b_data in self.books.items():
+                b_title_key = b_data.get("title_key", "")
+                if norm_title == b_title_key or (norm_title and norm_title in b_title_key) or (b_title_key and b_title_key in norm_title):
+                    matched_book_id = b_id
+                    break
+
+            if matched_book_id:
+                new_ed = EditionRecord(
+                    edition_id=edition_id,
+                    book_id=matched_book_id,
+                    metadata=self.books[matched_book_id]["metadata"].model_copy(deep=True),
+                    fingerprints=FingerprintBundle(),
+                    chapter_count=2000,
+                )
+                self.editions[edition_id] = new_ed
+                self._persist("profile_editions", edition_id, new_ed)
+                return new_ed.model_copy(deep=True)
+            else:
+                # Create a new book with real metadata sent by client
+                new_meta = BookMetadata(title=title, author=author or "", language="vi")
+                new_book_id = self.book_id_for(new_meta)
+                self._create_book(new_book_id, new_meta, FingerprintBundle())
+                new_ed = EditionRecord(
+                    edition_id=edition_id,
+                    book_id=new_book_id,
+                    metadata=new_meta.model_copy(deep=True),
+                    fingerprints=FingerprintBundle(),
+                    chapter_count=2000,
+                )
+                self.editions[edition_id] = new_ed
+                self._persist("profile_editions", edition_id, new_ed)
+                return new_ed.model_copy(deep=True)
+
+        # Fallback 3: Try detecting novel from content if provided
+        if content and len(content) > 50:
+            content_lower = content.casefold()
+            best_match_id = None
+            max_hits = 0
+            for b_id, b_data in self.books.items():
+                hits = 0
+                title_key = b_data.get("title_key", "")
+                if title_key and title_key in content_lower:
+                    hits += 3
+                # check existing characters in this book
+                for ev in self.events.values():
+                    if ev.book_id == b_id and ev.character_original_name and ev.character_original_name.casefold() in content_lower:
+                        hits += 2
+                if hits > max_hits and hits >= 2:
+                    max_hits = hits
+                    best_match_id = b_id
+
+            if best_match_id:
+                new_ed = EditionRecord(
+                    edition_id=edition_id,
+                    book_id=best_match_id,
+                    metadata=self.books[best_match_id]["metadata"].model_copy(deep=True),
+                    fingerprints=FingerprintBundle(),
+                    chapter_count=2000,
+                )
+                self.editions[edition_id] = new_ed
+                self._persist("profile_editions", edition_id, new_ed)
+                return new_ed.model_copy(deep=True)
+
+        # Fallback 4: Auto-create an ad-hoc edition
         if edition_id.startswith("edition-") or len(edition_id) >= 10:
             adhoc_book_id = f"book-{_hash(edition_id, 24)}"
             if adhoc_book_id not in self.books:
                 self._create_book(
                     adhoc_book_id,
-                    BookMetadata(title=f"Book ({edition_id[:16]})", language="vi"),
+                    BookMetadata(title=title or f"Book ({edition_id[:16]})", author=author or "", language="vi"),
                     FingerprintBundle(),
                 )
             new_ed = EditionRecord(
                 edition_id=edition_id,
                 book_id=adhoc_book_id,
-                metadata=BookMetadata(title=f"Edition ({edition_id[:16]})", language="vi"),
+                metadata=BookMetadata(title=title or f"Edition ({edition_id[:16]})", author=author or "", language="vi"),
                 fingerprints=FingerprintBundle(),
                 chapter_count=2000,
             )
@@ -289,6 +376,33 @@ class CharacterProfileService:
             book_id = self.book_id_for(request.metadata)
             self._create_book(book_id, request.metadata, request.fingerprints)
             return BookResolutionResponse(status="new_book", book_id=book_id)
+
+    def update_book(self, book_id: str, request: BookUpdateRequest) -> Dict[str, Any]:
+        with self._lock:
+            self._load_book_from_firestore(book_id)
+            if book_id not in self.books:
+                raise KeyError("book_not_found")
+            book = self.books[book_id]
+            if request.title:
+                book["metadata"].title = request.title.strip()
+                book["title_key"] = _norm(request.title)
+            if request.author is not None:
+                book["metadata"].author = request.author.strip()
+                book["author_key"] = _norm(request.author)
+            self._persist("profile_books", book_id, book)
+            for ed in self.editions.values():
+                if ed.book_id == book_id:
+                    if request.title:
+                        ed.metadata.title = request.title.strip()
+                    if request.author is not None:
+                        ed.metadata.author = request.author.strip()
+                    self._persist("profile_editions", ed.edition_id, ed)
+            return {
+                "book_id": book_id,
+                "title": book["metadata"].title,
+                "author": book["metadata"].author,
+                "language": book["metadata"].language,
+            }
 
     def _create_book(self, book_id: str, metadata: BookMetadata, fingerprints: FingerprintBundle) -> None:
         if book_id in self.books:

@@ -1,0 +1,21 @@
+{
+  "event_id": "event-70d870344da641c99c97d15fb3a5442a",
+  "book_id": "book-a0f3853b93a33fc9fad1fb8c",
+  "character_id": "char-13aa76d1b9e0db9231b72a7a",
+  "character_original_name": "A",
+  "canonical_chapter": 12,
+  "category": "status",
+  "attribute_key": "state",
+  "operation": "set",
+  "value": "alive",
+  "certainty": "observed",
+  "status": "pending",
+  "evidence": "",
+  "confidence": 0.9,
+  "source_group_id": "656f8212e09a345656202666008aade4",
+  "source_submission_id": "submission-02652f34ae9f4310abd2dec8eaadd8aa",
+  "supersedes_event_id": null,
+  "created_at": "2026-08-18T17:42:07.269795",
+  "reviewed_at": null,
+  "schema_version": 1
+}

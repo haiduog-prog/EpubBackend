@@ -1,0 +1,21 @@
+{
+  "event_id": "event-550ef0978324450c81bb4f46ff33811f",
+  "book_id": "book-8ad0492a514ad492256bafb6",
+  "character_id": "char-f4ea8350663b2abf1f6d54bd",
+  "character_original_name": "Dược Lão",
+  "canonical_chapter": 2,
+  "category": "realm",
+  "attribute_key": "cultivation_realm",
+  "operation": "set",
+  "value": "Đấu Tôn Đỉnh Phong",
+  "certainty": "observed",
+  "status": "approved",
+  "evidence": "Dược Trần năm xưa là Bát phẩm luyện dược sư, Đấu Tôn đỉnh phong",
+  "confidence": 0.95,
+  "source_group_id": "7b0333df6f5298ddcb2f310775042336",
+  "source_submission_id": "submission-2dbffcc0f04f468483287501e2274997",
+  "supersedes_event_id": null,
+  "created_at": "2026-08-18T17:42:07.285483",
+  "reviewed_at": "2026-08-18T17:42:07.285818",
+  "schema_version": 1
+}

@@ -1,0 +1,21 @@
+{
+  "event_id": "event-1416b0dee0c74827a9ad6a2c82eacc4f",
+  "book_id": "book-a0f3853b93a33fc9fad1fb8c",
+  "character_id": "char-13aa76d1b9e0db9231b72a7a",
+  "character_original_name": "A",
+  "canonical_chapter": 50,
+  "category": "item",
+  "attribute_key": "weapon",
+  "operation": "set",
+  "value": "Old Sword",
+  "certainty": "observed",
+  "status": "approved",
+  "evidence": "",
+  "confidence": 0.9,
+  "source_group_id": "a23e9e3f6ab74995f95316763e4c3d1f",
+  "source_submission_id": "submission-d19f9991f64b4da7a687712498bf69ef",
+  "supersedes_event_id": null,
+  "created_at": "2026-08-18T17:42:07.260432",
+  "reviewed_at": "2026-08-18T17:42:07.262337",
+  "schema_version": 1
+}

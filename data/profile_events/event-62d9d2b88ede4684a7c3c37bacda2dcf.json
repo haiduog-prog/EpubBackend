@@ -1,0 +1,21 @@
+{
+  "event_id": "event-62d9d2b88ede4684a7c3c37bacda2dcf",
+  "book_id": "book-a0f3853b93a33fc9fad1fb8c",
+  "character_id": "char-13aa76d1b9e0db9231b72a7a",
+  "character_original_name": "A",
+  "canonical_chapter": 200,
+  "category": "item",
+  "attribute_key": "weapon",
+  "operation": "set",
+  "value": "Future Sword",
+  "certainty": "observed",
+  "status": "approved",
+  "evidence": "",
+  "confidence": 0.9,
+  "source_group_id": "ad19a4043c2dbcfdbd88caa6daa60f41",
+  "source_submission_id": "submission-1be3b7fabe76440bacb07191f763e547",
+  "supersedes_event_id": null,
+  "created_at": "2026-08-18T17:42:07.263438",
+  "reviewed_at": "2026-08-18T17:42:07.265300",
+  "schema_version": 1
+}

@@ -175,6 +175,26 @@ class CharacterProfileService:
             self._persist("profile_editions", new_ed.edition_id, new_ed)
             return new_ed.model_copy(deep=True)
 
+        # Fallback 2: Auto-create an ad-hoc edition for unknown edition_id so Mobile clients never crash with 404
+        if edition_id.startswith("edition-") or len(edition_id) >= 10:
+            adhoc_book_id = f"book-{_hash(edition_id, 24)}"
+            if adhoc_book_id not in self.books:
+                self._create_book(
+                    adhoc_book_id,
+                    BookMetadata(title=f"Book ({edition_id[:16]})", language="vi"),
+                    FingerprintBundle(),
+                )
+            new_ed = EditionRecord(
+                edition_id=edition_id,
+                book_id=adhoc_book_id,
+                metadata=BookMetadata(title=f"Edition ({edition_id[:16]})", language="vi"),
+                fingerprints=FingerprintBundle(),
+                chapter_count=2000,
+            )
+            self.editions[edition_id] = new_ed
+            self._persist("profile_editions", edition_id, new_ed)
+            return new_ed.model_copy(deep=True)
+
         return None
 
     def resolve_book(self, request: BookResolutionRequest) -> BookResolutionResponse:

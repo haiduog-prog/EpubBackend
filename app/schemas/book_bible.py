@@ -1,4 +1,4 @@
-﻿from datetime import datetime
+﻿from datetime import datetime, timezone
 from typing import Any, List, Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -58,7 +58,7 @@ class AddressObservation(BaseModel):
     resolution: Literal["confirmed", "inferred", "pending", "rejected"] = "pending"
     explicit_transition: bool = False
     source: Literal["llm", "user", "legacy"] = "llm"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class PendingBibleChange(BaseModel):

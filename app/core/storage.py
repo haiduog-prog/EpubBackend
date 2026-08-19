@@ -4,15 +4,25 @@ import logging
 import os
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 import boto3
-import firebase_admin
 from botocore.config import Config
-from firebase_admin import credentials, firestore
+
+try:
+    import firebase_admin
+    from firebase_admin import credentials, firestore
+except ImportError:
+    firebase_admin = None
+    credentials = None
+    firestore = None
+
 
 from app.config import settings
+from app.db.session import db_session
+from app.repositories.book_bible_repository import BookBibleRepository
+from app.repositories.library_repository import LibraryRepository
 from app.schemas.book_bible import BookBible, BookBibleDelta
 from app.schemas.translation import TranslationJob
 from app.services.book_bible_service import BookBibleService
@@ -64,9 +74,10 @@ class StorageRepository:
                     endpoint_url=endpoint_url,
                     aws_access_key_id=settings.cloudflare_r2_access_key_id,
                     aws_secret_access_key=settings.cloudflare_r2_secret_access_key,
-                    config=Config(signature_version="s3v4"),
+                    config=Config(signature_version="s3v4", max_pool_connections=50),
                     region_name="auto",
                 )
+
                 self.r2_enabled = True
             except Exception as exc:
                 logger.warning("Cloudflare R2 init skipped: %s", exc)
@@ -119,8 +130,10 @@ class StorageRepository:
             logger.warning("Failed to put JSON to Cloudflare R2 (%s): %s", object_name, exc)
             return False
 
-    def _r2_get_json(self, object_name: str) -> Optional[dict]:
+    def _r2_get_json(self, object_name: str, raise_on_error: bool = False) -> Optional[dict]:
         if not self.is_r2_active or not settings.cloudflare_r2_bucket_name:
+            if raise_on_error:
+                raise RuntimeError("R2 storage is not active or bucket not configured")
             return None
         try:
             response = self.r2_client.get_object(
@@ -133,7 +146,10 @@ class StorageRepository:
             err_code = getattr(exc, "response", {}).get("Error", {}).get("Code", "")
             if err_code not in ("NoSuchKey", "404"):
                 logger.warning("Failed to get JSON from Cloudflare R2 (%s): %s", object_name, exc)
+                if raise_on_error:
+                    raise exc
             return None
+
 
     def _r2_list_json_objects(self, prefix: str) -> List[dict]:
         if not self.is_r2_active or not settings.cloudflare_r2_bucket_name:
@@ -181,18 +197,43 @@ class StorageRepository:
         if not hasattr(self, "_jobs"):
             self._jobs = {}
         self._jobs[job.job_id] = job
-        if self.is_r2_active:
-            self._r2_put_json(f"data/jobs/{job.job_id}.json", job.model_dump(mode="json"))
-        if self.is_firebase_active:
+
+        if settings.structured_storage_backend in ("dual", "postgres"):
             try:
-                ref = self.firestore_db.collection("translation_jobs").document(job.job_id)
-                ref.set(job.model_dump(mode="json"), merge=True)
+                with db_session() as session:
+                    LibraryRepository.save_translation_job(session, job)
+                    session.commit()
             except Exception as exc:
-                logger.warning("Failed to sync job to Firestore, saved locally: %s", exc)
+                if settings.structured_storage_backend == "postgres":
+                    logger.error("Failed to save translation job to DB in postgres mode: %s", exc)
+                    raise exc
+                logger.warning("Failed to save translation job to DB in dual mode: %s", exc)
+
+        if settings.structured_storage_backend in ("legacy", "dual"):
+            if self.is_r2_active:
+                self._r2_put_json(f"data/jobs/{job.job_id}.json", job.model_dump(mode="json"))
+            if self.is_firebase_active:
+                try:
+                    ref = self.firestore_db.collection("translation_jobs").document(job.job_id)
+                    ref.set(job.model_dump(mode="json"), merge=True)
+                except Exception as exc:
+                    logger.warning("Failed to sync job to Firestore, saved locally: %s", exc)
 
     def get_job(self, job_id: str) -> Optional[TranslationJob]:
         if not hasattr(self, "_jobs"):
             self._jobs = {}
+
+        if settings.structured_storage_read_source == "postgres" or settings.structured_storage_backend == "postgres":
+            try:
+                with db_session() as session:
+                    db_job = LibraryRepository.get_translation_job(session, job_id)
+                    if db_job:
+                        self._jobs[job_id] = db_job
+                        return db_job
+            except Exception as exc:
+                logger.warning("Failed to get job from DB: %s", exc)
+            return self._jobs.get(job_id)
+
         if self.is_firebase_active:
             try:
                 ref = self.firestore_db.collection("translation_jobs").document(job_id)
@@ -210,6 +251,7 @@ class StorageRepository:
                 self._jobs[job_id] = job
                 return job
         return self._jobs.get(job_id)
+
 
     @staticmethod
     def _as_delta(bible: BookBible) -> BookBibleDelta:
@@ -259,10 +301,17 @@ class StorageRepository:
         with lock:
             merge_started = time.perf_counter()
             existing = self._bibles.get(doc_key) or self._bibles.get(job_id)
-            if existing is None and self.is_r2_active:
-                r2_data = self._r2_get_json(f"data/bibles/{doc_key}.json")
-                if r2_data:
-                    existing = BookBibleService.ensure_timeline(BookBible.model_validate(r2_data))
+            if existing is None:
+                if settings.structured_storage_read_source == "postgres" or settings.structured_storage_backend == "postgres":
+                    try:
+                        with db_session() as session:
+                            existing = BookBibleRepository.get_book_bible(session, doc_key)
+                    except Exception:
+                        pass
+                if existing is None and self.is_r2_active:
+                    r2_data = self._r2_get_json(f"data/bibles/{doc_key}.json")
+                    if r2_data:
+                        existing = BookBibleService.ensure_timeline(BookBible.model_validate(r2_data))
             merged = self._merge_full_bible(existing, bible)
             self._cache_bible(job_id, doc_key, merged)
             logger.info(
@@ -274,22 +323,35 @@ class StorageRepository:
                 len(merged.address_observations),
             )
 
-            if self.is_r2_active:
-                # Lưu Book Bible trực tiếp vào folder của truyện trên R2
-                self._r2_put_json(f"novels/{doc_key}/bible.json", merged.model_dump(mode="json"))
-
-            if self.is_firebase_active:
+            # 1. Save to database if dual or postgres
+            if settings.structured_storage_backend in ("dual", "postgres"):
                 try:
-                    firestore_started = time.perf_counter()
-                    ref = self.firestore_db.collection("book_bibles").document(doc_key)
-                    ref.set(merged.model_dump(mode="json"), merge=True)
-                    logger.info(
-                        "[TIMING] stage=firestore_bible_write.end novel=%s elapsed_ms=%.1f",
-                        doc_key,
-                        (time.perf_counter() - firestore_started) * 1000,
-                    )
+                    with db_session() as session:
+                        BookBibleRepository.save_book_bible(session, merged)
+                        session.commit()
                 except Exception as exc:
-                    logger.warning("Failed to persist Book Bible to Firestore, saved locally: %s", exc)
+                    if settings.structured_storage_backend == "postgres":
+                        logger.error("Failed to persist Book Bible to Database in postgres mode: %s", exc)
+                        raise exc
+                    logger.warning("Failed to persist Book Bible to Database in dual mode: %s", exc)
+
+            # 2. Save to R2 / Firestore if legacy or dual
+            if settings.structured_storage_backend in ("legacy", "dual"):
+                if self.is_r2_active:
+                    self._r2_put_json(f"novels/{doc_key}/bible.json", merged.model_dump(mode="json"))
+
+                if self.is_firebase_active:
+                    try:
+                        firestore_started = time.perf_counter()
+                        ref = self.firestore_db.collection("book_bibles").document(doc_key)
+                        ref.set(merged.model_dump(mode="json"), merge=True)
+                        logger.info(
+                            "[TIMING] stage=firestore_bible_write.end novel=%s elapsed_ms=%.1f",
+                            doc_key,
+                            (time.perf_counter() - firestore_started) * 1000,
+                        )
+                    except Exception as exc:
+                        logger.warning("Failed to persist Book Bible to Firestore, saved locally: %s", exc)
             logger.info(
                 "[TIMING] stage=book_bible_persist.total novel=%s elapsed_ms=%.1f",
                 doc_key,
@@ -307,30 +369,62 @@ class StorageRepository:
         lock = self._get_lock(job_or_novel_id)
         with lock:
             existing = self._bibles.get(job_or_novel_id)
-            if existing is None and self.is_r2_active:
-                r2_data = self._r2_get_json(f"novels/{job_or_novel_id}/bible.json") or self._r2_get_json(f"data/bibles/{job_or_novel_id}.json")
-                if r2_data:
-                    existing = BookBibleService.ensure_timeline(BookBible.model_validate(r2_data))
+            if existing is None:
+                if settings.structured_storage_read_source == "postgres" or settings.structured_storage_backend == "postgres":
+                    try:
+                        with db_session() as session:
+                            existing = BookBibleRepository.get_book_bible(session, job_or_novel_id)
+                    except Exception:
+                        pass
+                if existing is None and self.is_r2_active:
+                    r2_data = self._r2_get_json(f"novels/{job_or_novel_id}/bible.json") or self._r2_get_json(f"data/bibles/{job_or_novel_id}.json")
+                    if r2_data:
+                        existing = BookBibleService.ensure_timeline(BookBible.model_validate(r2_data))
             target = existing.model_copy(deep=True) if existing else BookBible(
                 novel_id=default_novel_id or job_or_novel_id
             )
             merged = BookBibleService.merge_delta(target, delta)
             self._cache_bible(job_or_novel_id, job_or_novel_id, merged)
 
-            if self.is_r2_active:
-                self._r2_put_json(f"novels/{job_or_novel_id}/bible.json", merged.model_dump(mode="json"))
-
-            if self.is_firebase_active:
+            if settings.structured_storage_backend in ("dual", "postgres"):
                 try:
-                    ref = self.firestore_db.collection("book_bibles").document(job_or_novel_id)
-                    ref.set(merged.model_dump(mode="json"), merge=True)
+                    with db_session() as session:
+                        merged = BookBibleRepository.merge_delta_transactional(session, job_or_novel_id, delta)
+                        session.commit()
                 except Exception as exc:
-                    logger.warning("Failed to merge Bible delta to Firestore, saved locally: %s", exc)
+                    if settings.structured_storage_backend == "postgres":
+                        logger.error("Failed to merge Book Bible delta in DB (postgres mode): %s", exc)
+                        raise exc
+                    logger.warning("Failed to merge Book Bible delta in DB (dual mode): %s", exc)
+
+            if settings.structured_storage_backend in ("legacy", "dual"):
+                if self.is_r2_active:
+                    self._r2_put_json(f"novels/{job_or_novel_id}/bible.json", merged.model_dump(mode="json"))
+
+                if self.is_firebase_active:
+                    try:
+                        ref = self.firestore_db.collection("book_bibles").document(job_or_novel_id)
+                        ref.set(merged.model_dump(mode="json"), merge=True)
+                    except Exception as exc:
+                        logger.warning("Failed to merge Bible delta to Firestore, saved locally: %s", exc)
             return merged
 
     def get_bible(self, job_id: str) -> Optional[BookBible]:
         if not hasattr(self, "_bibles"):
             self._bibles = {}
+
+        if settings.structured_storage_read_source == "postgres" or settings.structured_storage_backend == "postgres":
+            try:
+                with db_session() as session:
+                    db_bible = BookBibleRepository.get_book_bible(session, job_id)
+                    if db_bible:
+                        self._bibles[job_id] = db_bible
+                        return db_bible
+            except Exception as exc:
+                logger.warning("Failed to get Book Bible from Database: %s", exc)
+            bible = self._bibles.get(job_id)
+            return BookBibleService.ensure_timeline(bible) if bible else None
+
         if self.is_firebase_active:
             try:
                 ref = self.firestore_db.collection("book_bibles").document(job_id)
@@ -374,7 +468,7 @@ class StorageRepository:
             if status not in {"approved", "rejected"}:
                 raise ValueError("Invalid review status.")
             change.status = status
-            change.reviewed_at = datetime.utcnow()
+            change.reviewed_at = datetime.now(timezone.utc)
             change.reviewed_by = reviewed_by
             if status == "approved":
                 for observation in bible.address_observations:
@@ -391,6 +485,18 @@ class StorageRepository:
     def list_jobs(self) -> List[TranslationJob]:
         if not hasattr(self, "_jobs"):
             self._jobs = {}
+
+        if settings.structured_storage_read_source == "postgres" or settings.structured_storage_backend == "postgres":
+            try:
+                with db_session() as session:
+                    db_jobs = LibraryRepository.list_translation_jobs(session)
+                    for j in db_jobs:
+                        self._jobs[j.job_id] = j
+                    return list(self._jobs.values())
+            except Exception as exc:
+                logger.warning("Failed to list translation jobs from DB: %s", exc)
+            return list(self._jobs.values())
+
         if self.is_firebase_active:
             try:
                 docs = self.firestore_db.collection("translation_jobs").stream()
@@ -447,6 +553,18 @@ class StorageRepository:
         lock = self._get_lock(job_or_novel_id)
         with lock:
             self._bibles.pop(job_or_novel_id, None)
+
+            if settings.structured_storage_backend in ("dual", "postgres"):
+                try:
+                    with db_session() as session:
+                        BookBibleRepository.delete_book_bible(session, job_or_novel_id)
+                        session.commit()
+                except Exception as exc:
+                    if settings.structured_storage_backend == "postgres":
+                        logger.error("Failed to delete Book Bible from DB in postgres mode: %s", exc)
+                        raise exc
+                    logger.warning("Failed to delete Book Bible from DB in dual mode: %s", exc)
+
             if self.is_r2_active and settings.cloudflare_r2_bucket_name:
                 for key_to_del in [f"novels/{job_or_novel_id}/bible.json", f"data/bibles/{job_or_novel_id}.json"]:
                     try:
@@ -464,7 +582,106 @@ class StorageRepository:
             return True
 
 
+
+    def upload_json(self, object_name: str, data: dict) -> bool:
+        success = False
+        if self.is_r2_active:
+            success = self._r2_put_json(object_name, data)
+        local_path = os.path.join("storage", object_name)
+        os.makedirs(os.path.dirname(local_path), exist_ok=True)
+        try:
+            with open(local_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            success = True
+        except Exception as exc:
+            logger.warning("Failed to write local JSON %s: %s", local_path, exc)
+        return success
+
+    def download_json(self, object_name: str, raise_on_error: bool = False) -> Optional[dict]:
+        if self.is_r2_active:
+            data = self._r2_get_json(object_name, raise_on_error=raise_on_error)
+            if data is not None:
+                return data
+        local_path = os.path.join("storage", object_name)
+        if os.path.exists(local_path):
+            try:
+                with open(local_path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception as exc:
+                logger.warning("Failed to read local JSON %s: %s", local_path, exc)
+                if raise_on_error:
+                    raise exc
+        if os.path.exists(object_name):
+            try:
+                with open(object_name, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception as exc:
+                if raise_on_error:
+                    raise exc
+        return None
+
+
+    def delete_file(self, object_name: str) -> bool:
+        success = True
+        if self.is_r2_active and settings.cloudflare_r2_bucket_name:
+            try:
+                self.r2_client.delete_object(
+                    Bucket=settings.cloudflare_r2_bucket_name,
+                    Key=object_name,
+                )
+            except Exception as exc:
+                logger.warning("Failed to delete object %s from R2: %s", object_name, exc)
+                success = False
+
+        local_path = os.path.join("storage", object_name)
+        if os.path.exists(local_path):
+            try:
+                os.remove(local_path)
+            except Exception as exc:
+                logger.warning("Failed to delete local file %s: %s", local_path, exc)
+                success = False
+
+        if os.path.exists(object_name):
+            try:
+                os.remove(object_name)
+            except Exception:
+                pass
+
+        return success
+
+    def list_files(self, prefix: str = "", raise_on_error: bool = False) -> List[str]:
+        keys = set()
+        if self.is_r2_active and settings.cloudflare_r2_bucket_name:
+            try:
+                paginator = self.r2_client.get_paginator("list_objects_v2")
+                for page in paginator.paginate(Bucket=settings.cloudflare_r2_bucket_name, Prefix=prefix):
+                    for item in page.get("Contents", []):
+                        k = item.get("Key", "")
+                        if k:
+                            keys.add(k)
+            except Exception as exc:
+                logger.error("Failed to list R2 files with prefix %s: %s", prefix, exc)
+                if raise_on_error:
+                    raise exc
+
+        base_dir = "storage"
+        if os.path.exists(base_dir):
+            for root, _, files in os.walk(base_dir):
+                for f in files:
+                    full = os.path.join(root, f)
+                    rel = os.path.relpath(full, base_dir).replace("\\", "/")
+                    if rel.startswith(prefix):
+                        keys.add(rel)
+
+        if os.path.exists("data"):
+            for root, _, files in os.walk("data"):
+                for f in files:
+                    full = os.path.join(root, f)
+                    rel = full.replace("\\", "/")
+                    if rel.startswith(prefix):
+                        keys.add(rel)
+
+        return sorted(list(keys))
+
+
 storage_repo = StorageRepository()
-
-
-

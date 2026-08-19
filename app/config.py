@@ -39,6 +39,15 @@ class Settings(BaseModel):
     enable_prompt_caching: bool = True
     cache_ttl_seconds: int = 300  # Default 5 min TTL
 
+    # Database & Structured Storage configuration
+    database_url: str = Field(default_factory=lambda: os.getenv("DATABASE_URL", "sqlite:///./storage/local_db.sqlite3"))
+    structured_storage_backend: str = Field(default_factory=lambda: os.getenv("STRUCTURED_STORAGE_BACKEND", "legacy").lower())
+    structured_storage_read_source: str = Field(default_factory=lambda: os.getenv("STRUCTURED_STORAGE_READ_SOURCE", "legacy").lower())
+    db_pool_size: int = Field(default_factory=lambda: int(os.getenv("DB_POOL_SIZE", "5")))
+    db_max_overflow: int = Field(default_factory=lambda: int(os.getenv("DB_MAX_OVERFLOW", "5")))
+    db_pool_timeout_seconds: int = Field(default_factory=lambda: int(os.getenv("DB_POOL_TIMEOUT_SECONDS", "10")))
+    book_bible_write_token: str = Field(default_factory=lambda: os.getenv("BOOK_BIBLE_WRITE_TOKEN", ""))
+
 
 settings = Settings()
 

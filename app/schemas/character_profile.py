@@ -1,6 +1,6 @@
 """Schemas for the shared, chapter-aware character profile Book Bible."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
@@ -66,7 +66,7 @@ class EditionRecord(BaseModel):
     fingerprints: FingerprintBundle = Field(default_factory=FingerprintBundle)
     chapter_count: Optional[int] = None
     mapping_revision: int = 1
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class ChapterMappingRequest(BaseModel):
@@ -136,7 +136,7 @@ class CharacterEvent(BaseModel):
     source_group_id: str
     source_submission_id: str
     supersedes_event_id: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     reviewed_at: Optional[datetime] = None
     schema_version: int = 1
 
@@ -148,7 +148,7 @@ class EventEvidence(BaseModel):
     submission_id: str
     excerpt: str = ""
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class ChapterSubmissionRequest(BaseModel):
@@ -191,7 +191,7 @@ class SubmissionRecord(BaseModel):
     error_code: Optional[str] = None
     error_message: Optional[str] = None
     event_ids: List[str] = Field(default_factory=list)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: Optional[datetime] = None
 
 

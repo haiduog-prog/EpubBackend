@@ -1,6 +1,6 @@
 from typing import List, Optional
 from enum import Enum
-from datetime import datetime
+from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 
 
@@ -19,16 +19,17 @@ class NovelStatus(str, Enum):
 
 class ChapterItem(BaseModel):
     chapter_index: int = Field(..., description="Số thứ tự chương (1-indexed)")
-    chapter_id: str = Field(..., description="Mã định danh chương, vd: ch_0001")
+    chapter_id: str = Field(default="", description="Mã định danh chương, vd: ch_0001")
     chapter_title: str = Field(..., description="Tiêu đề chương")
     status: ChapterStatus = Field(default=ChapterStatus.NOT_TRANSLATED)
     word_count: int = 0
     original_text_preview: str = ""
     translated_text_preview: str = ""
-    updated_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
+    updated_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     r2_original_key: str = ""
     r2_translated_key: str = ""
     r2_translated_url: Optional[str] = None
+
 
 
 class NovelCreateRequest(BaseModel):
@@ -93,7 +94,7 @@ class ImportJobStatus(BaseModel):
     updated_chapters: int = 0
     progress_percentage: int = 0
     error_message: Optional[str] = None
-    created_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     completed_at: Optional[str] = None
 
 

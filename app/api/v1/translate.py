@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile, status
@@ -126,7 +126,7 @@ async def run_translation_background_job(
                 logger.info("Uploaded output to Cloudflare R2: %s", r2_link)
             except Exception as r2_err:
                 logger.warning("Failed to upload output to Cloudflare R2: %s", r2_err)
-        job.completed_at = datetime.utcnow().isoformat()
+        job.completed_at = datetime.now(timezone.utc).isoformat()
         job.progress_percentage = 100.0
         job.current_step = "Hoan thanh"
         storage_repo.save_job(job)
@@ -209,7 +209,7 @@ async def translate_text_direct_endpoint(
         with open(output_file_path, "w", encoding="utf-8") as output_file:
             output_file.write(translated_text)
 
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         job = TranslationJob(
             job_id=job_id,
             filename=filename,
@@ -268,7 +268,7 @@ async def translate_file_endpoint(
         filename=filename,
         input_type=input_type,
         status=JobStatusEnum.PENDING,
-        created_at=datetime.utcnow().isoformat(),
+        created_at=datetime.now(timezone.utc).isoformat(),
     )
     storage_repo.save_job(job)
     asyncio.create_task(

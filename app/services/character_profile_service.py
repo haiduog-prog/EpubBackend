@@ -16,8 +16,12 @@ import uuid
 import os
 from copy import deepcopy
 from datetime import datetime
+from datetime import timezone, timezone
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+from app.config import settings
+from app.db.session import db_session
+from app.repositories.character_profile_repository import CharacterProfileRepository
 from app.schemas.book_bible import BookBible, BookBibleDelta
 from app.schemas.character_profile import (
     BookMatchCandidate,
@@ -152,6 +156,93 @@ class CharacterProfileService:
         if os.environ.get("PYTEST_CURRENT_TEST") and not force:
             return
         self._hydrated_from_storage = True
+
+
+        # 0. Hydrate from PostgreSQL if configured
+        if settings.structured_storage_read_source == "postgres" or settings.structured_storage_backend == "postgres":
+            try:
+                with db_session() as session:
+                    # Books
+                    for b in CharacterProfileRepository.list_books(session):
+                        if b.book_id not in self.books:
+                            book_row = CharacterProfileRepository.get_book(session, b.book_id)
+                            if book_row:
+                                meta = BookMetadata(
+                                    title=book_row["title"],
+                                    author=book_row["author"],
+                                    language=book_row["language"],
+                                    publisher=book_row.get("publisher", ""),
+                                    identifier=book_row.get("identifier"),
+                                )
+                                self.books[b.book_id] = {
+                                    "book_id": b.book_id,
+                                    "metadata": meta,
+                                    "title_key": book_row["title_key"],
+                                    "author_key": book_row["author_key"],
+                                    "sampled_chapters": book_row.get("sampled_chapters", []),
+                                    "created_at": book_row.get("created_at"),
+                                }
+                                self._book_revisions[b.book_id] = book_row.get("revision", 0)
+
+                    # Editions
+                    for ed in CharacterProfileRepository.list_all_editions(session):
+                        if ed.edition_id not in self.editions:
+                            self.editions[ed.edition_id] = ed
+
+                    # Mappings
+                    for m in CharacterProfileRepository.list_all_mappings(session):
+                        self.mappings[(m.edition_id, m.local_chapter_index)] = m
+
+                    # Submissions
+                    for sub in CharacterProfileRepository.list_all_submissions(session):
+                        if sub.submission_id not in self.submissions:
+                            self.submissions[sub.submission_id] = sub
+                            if sub.idempotency_key:
+                                self.submissions_by_key[sub.idempotency_key] = sub.submission_id
+
+                    # Events
+                    for ev in CharacterProfileRepository.list_all_events(session):
+                        if ev.event_id not in self.events:
+                            self.events[ev.event_id] = ev
+                            candidate = CharacterEventCandidate(
+                                character_original_name=ev.character_original_name,
+                                character_id=ev.character_id,
+                                category=ev.category,
+                                attribute_key=ev.attribute_key,
+                                operation=ev.operation,
+                                value=ev.value,
+                                certainty=ev.certainty,
+                                evidence=ev.evidence,
+                                confidence=ev.confidence,
+                            )
+                            key = self._event_key(ev.book_id, ev.character_id, ev.canonical_chapter, candidate)
+                            self._event_keys[key] = ev.event_id
+                            self._event_evidence_groups.setdefault(key, set()).add(ev.source_group_id)
+                            self._book_revisions[ev.book_id] = max(self._book_revisions.get(ev.book_id, 0), 1 if ev.status == "approved" else 0)
+
+                    # Evidence
+                    for evi in CharacterProfileRepository.list_all_evidence(session):
+                        if evi.evidence_id not in self.evidence:
+                            self.evidence[evi.evidence_id] = evi
+                            ev_key = evi.event_key
+                            if ev_key.startswith("ev-") and ev_key[3:] in self.events:
+                                mapped_key = next((k for k, v in self._event_keys.items() if v == ev_key[3:]), None)
+                                if mapped_key:
+                                    ev_key = mapped_key
+                            self._event_evidence_groups.setdefault(ev_key, set()).add(evi.source_group_id)
+
+
+                    # Settings
+                    st = CharacterProfileRepository.get_settings(session)
+                    self.auto_approve = st.auto_approve
+                    self.min_independent_sources = st.min_independent_sources
+
+            except Exception as exc:
+                if settings.structured_storage_backend == "postgres":
+                    logger.error("Hydration from PostgreSQL failed in postgres mode: %s", exc)
+                    raise exc
+                logger.warning("Hydration from PostgreSQL failed: %s", exc)
+            return
 
         # 1. Hydrate from Cloudflare R2
         if self.storage_repo and getattr(self.storage_repo, "is_r2_active", False):
@@ -317,7 +408,19 @@ class CharacterProfileService:
                     self._persist("profile_editions", edition_id, edition)
             return edition.model_copy(deep=True)
 
-        if self.firestore_db:
+        if settings.structured_storage_read_source == "postgres" or settings.structured_storage_backend == "postgres":
+            try:
+                with db_session() as session:
+                    db_ed = CharacterProfileRepository.get_edition(session, edition_id)
+                    if db_ed:
+                        self.editions[edition_id] = db_ed
+                        return db_ed.model_copy(deep=True)
+            except Exception as exc:
+                if settings.structured_storage_backend == "postgres":
+                    raise exc
+                logger.warning("Failed to get edition from DB: %s", exc)
+
+        if self.firestore_db and settings.structured_storage_backend in ("legacy", "dual"):
             try:
                 snapshot = self.firestore_db.collection("profile_editions").document(edition_id).get()
                 if snapshot.exists:
@@ -436,7 +539,7 @@ class CharacterProfileService:
 
     def resolve_book(self, request: BookResolutionRequest) -> BookResolutionResponse:
         with self._lock:
-            if self.firestore_db and not self.books:
+            if self.firestore_db and not self.books and settings.structured_storage_backend in ("legacy", "dual"):
                 for doc in self.firestore_db.collection("profile_books").stream():
                     self._load_book_from_firestore(doc.id)
             if request.book_id:
@@ -524,7 +627,7 @@ class CharacterProfileService:
             "title_key": _norm(metadata.title),
             "author_key": _norm(metadata.author),
             "sampled_chapters": list(fingerprints.sampled_chapters),
-            "created_at": datetime.utcnow(),
+            "created_at": datetime.now(timezone.utc),
         }
         self._book_revisions.setdefault(book_id, 0)
         self._persist("profile_books", book_id, self.books[book_id])
@@ -593,7 +696,7 @@ class CharacterProfileService:
         mapping = self.mappings.get((edition_id, local_chapter_index))
         if mapping:
             return mapping.model_copy(deep=True)
-        if self.firestore_db:
+        if self.firestore_db and settings.structured_storage_backend in ("legacy", "dual"):
             try:
                 snapshot = self.firestore_db.collection("profile_chapter_mappings").document(f"{edition_id}-{local_chapter_index}").get()
                 if snapshot.exists:
@@ -685,7 +788,7 @@ class CharacterProfileService:
                         ids.append(event_id)
                 submission.event_ids = ids
                 submission.status = "completed"
-                submission.completed_at = datetime.utcnow()
+                submission.completed_at = datetime.now(timezone.utc)
                 self._processed_chapters.setdefault(submission.book_id, set()).add(
                     submission.canonical_chapter_end
                 )
@@ -849,9 +952,15 @@ class CharacterProfileService:
         self.events[event_id] = event
         self._event_keys[event_key] = event_id
         self._event_evidence_groups[event_key] = set()
-        self._add_evidence(event_key, submission, candidate)
+        # 1. Save parent event first so foreign key is satisfied in DB
+        self._persist("profile_events", event_id, event, event_key=event_key)
+        # 2. Save child evidence
+        self._add_evidence(event_key, submission, candidate, event_id=event_id)
+        # 3. Check auto approve
+        old_status = event.status
         self._maybe_approve(event)
-        self._persist("profile_events", event_id, event)
+        if event.status != old_status:
+            self._persist("profile_events", event_id, event, event_key=event_key)
         return event_id
 
     def _add_evidence(
@@ -859,6 +968,7 @@ class CharacterProfileService:
         event_key: str,
         submission: SubmissionRecord,
         candidate: CharacterEventCandidate,
+        event_id: str = "",
     ) -> None:
         evidence_id = f"evidence-{_hash(f'{event_key}:{submission.source_group_id}', 32)}"
         if evidence_id in self.evidence:
@@ -873,7 +983,8 @@ class CharacterProfileService:
         )
         self.evidence[evidence_id] = evidence
         self._event_evidence_groups.setdefault(event_key, set()).add(submission.source_group_id)
-        self._persist("profile_evidence", evidence_id, evidence)
+        target_event_id = event_id or self._event_keys.get(event_key, "")
+        self._persist("profile_evidence", evidence_id, evidence, event_id=target_event_id)
 
     def _maybe_approve(self, event: CharacterEvent) -> None:
         event_key = next((key for key, value in self._event_keys.items() if value == event.event_id), None)
@@ -904,7 +1015,7 @@ class CharacterProfileService:
                 return
         was_approved = event.status == "approved"
         event.status = "approved"
-        event.reviewed_at = datetime.utcnow()
+        event.reviewed_at = datetime.now(timezone.utc)
         if not was_approved:
             self._book_revisions[event.book_id] = self._book_revisions.get(event.book_id, 0) + 1
             self._snapshot_cache = {
@@ -915,6 +1026,17 @@ class CharacterProfileService:
     def delete_book(self, book_id: str) -> bool:
         """Xóa hoàn toàn một bộ truyện và toàn bộ ấn bản, sự kiện, submission liên quan."""
         with self._lock:
+            if settings.structured_storage_backend in ("dual", "postgres"):
+                try:
+                    with db_session() as session:
+                        CharacterProfileRepository.delete_book(session, book_id)
+                        session.commit()
+                except Exception as exc:
+                    if settings.structured_storage_backend == "postgres":
+                        logger.error("Failed to delete book %s from DB in postgres mode: %s", book_id, exc)
+                        raise exc
+                    logger.warning("Failed to delete book %s from DB in dual mode: %s", book_id, exc)
+
             self.books.pop(book_id, None)
             self._book_revisions.pop(book_id, None)
 
@@ -930,7 +1052,7 @@ class CharacterProfileService:
             for sub_id in sub_ids_to_del:
                 self.submissions.pop(sub_id, None)
 
-            if self.firestore_db:
+            if self.firestore_db and settings.structured_storage_backend in ("legacy", "dual"):
                 try:
                     self.firestore_db.collection("profile_books").document(book_id).delete()
                     for ed_id in ed_ids_to_del:
@@ -942,7 +1064,7 @@ class CharacterProfileService:
                 except Exception as exc:
                     logger.warning("Failed to delete book from Firestore: %s", exc)
 
-            if self.storage_repo and getattr(self.storage_repo, "is_r2_active", False):
+            if self.storage_repo and getattr(self.storage_repo, "is_r2_active", False) and settings.structured_storage_backend in ("legacy", "dual"):
                 try:
                     client = self.storage_repo.r2_client
                     bucket = settings.cloudflare_r2_bucket_name
@@ -955,21 +1077,22 @@ class CharacterProfileService:
                 except Exception as exc:
                     logger.warning("Failed to delete book from R2: %s", exc)
 
-            try:
-                root_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-                local_dir = os.path.join(root_dir, "storage", "novels", book_id, "profile")
-                if os.path.exists(local_dir):
-                    import shutil
-                    shutil.rmtree(local_dir, ignore_errors=True)
-            except Exception:
-                pass
+            if settings.structured_storage_backend in ("legacy", "dual"):
+                try:
+                    root_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+                    local_dir = os.path.join(root_dir, "storage", "novels", book_id, "profile")
+                    if os.path.exists(local_dir):
+                        import shutil
+                        shutil.rmtree(local_dir, ignore_errors=True)
+                except Exception:
+                    pass
 
             return True
 
     def list_books(self) -> List[Dict[str, Any]]:
         with self._lock:
             self._hydrate_all_from_storage()
-            if self.firestore_db and not self.books:
+            if self.firestore_db and not self.books and settings.structured_storage_backend in ("legacy", "dual"):
                 for doc in self.firestore_db.collection("profile_books").stream():
                     self._load_book_from_firestore(doc.id)
 
@@ -1077,8 +1200,35 @@ class CharacterProfileService:
         canonical_chapter: Optional[int] = None,
     ) -> List[CharacterEvent]:
         with self._lock:
+            if settings.structured_storage_read_source == "postgres" or settings.structured_storage_backend == "postgres":
+                try:
+                    with db_session() as session:
+                        if book_id:
+                            db_events = CharacterProfileRepository.list_events(
+                                session,
+                                book_id=book_id,
+                                status=status,
+                                max_canonical_chapter=canonical_chapter,
+                            )
+                        else:
+                            # No book_id filter — query all books
+                            db_events = CharacterProfileRepository.list_all_events(
+                                session,
+                                status=status,
+                                max_canonical_chapter=canonical_chapter,
+                            )
+                        return sorted(
+                            db_events,
+                            key=lambda e: (e.canonical_chapter, e.created_at),
+                            reverse=True,
+                        )
+                except Exception as exc:
+                    if settings.structured_storage_backend == "postgres":
+                        raise exc
+                    logger.warning("Failed to list events from DB: %s", exc)
+
             self._hydrate_all_from_storage()
-            if self.firestore_db and book_id:
+            if self.firestore_db and book_id and settings.structured_storage_backend in ("legacy", "dual"):
                 self._load_book_from_firestore(book_id)
             results = []
             for event in self.events.values():
@@ -1108,7 +1258,7 @@ class CharacterProfileService:
                 event.value = deepcopy(value)
             was_approved = event.status == "approved"
             event.status = "approved"
-            event.reviewed_at = datetime.utcnow()
+            event.reviewed_at = datetime.now(timezone.utc)
             if not was_approved or value is not None:
                 self._book_revisions[event.book_id] = self._book_revisions.get(event.book_id, 0) + 1
                 self._snapshot_cache = {
@@ -1145,17 +1295,20 @@ class CharacterProfileService:
 
     def _add_manual_evidence(self, event: CharacterEvent, evidence_text: str) -> None:
         evidence_id = f"evidence-manual-{uuid.uuid4().hex[:16]}"
+        ev_key = next((k for k, v in self._event_keys.items() if v == event.event_id), None) or f"ev-{event.event_id}"
         evidence = EventEvidence(
             evidence_id=evidence_id,
-            event_key=event.event_id,
+            event_key=ev_key,
             source_group_id="manual-review",
             submission_id=event.source_submission_id or "manual",
             excerpt=evidence_text[:1000],
             confidence=1.0,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
         )
         self.evidence[evidence_id] = evidence
-        self._persist("profile_evidence", evidence_id, evidence)
+        self._event_evidence_groups.setdefault(ev_key, set()).add("manual-review")
+        self._persist("profile_evidence", evidence_id, evidence, event_key=ev_key, event_id=event.event_id)
+
 
     def reject_event(self, event_id: str) -> CharacterEvent:
         with self._lock:
@@ -1164,7 +1317,7 @@ class CharacterProfileService:
                 raise KeyError("event_not_found")
             was_approved = event.status == "approved"
             event.status = "rejected"
-            event.reviewed_at = datetime.utcnow()
+            event.reviewed_at = datetime.now(timezone.utc)
             if was_approved:
                 self._book_revisions[event.book_id] = self._book_revisions.get(event.book_id, 0) + 1
                 self._snapshot_cache = {
@@ -1186,7 +1339,7 @@ class CharacterProfileService:
                 if canonical_chapter is not None and event.canonical_chapter != canonical_chapter:
                     continue
                 event.status = "approved"
-                event.reviewed_at = datetime.utcnow()
+                event.reviewed_at = datetime.now(timezone.utc)
                 self._book_revisions[event.book_id] = self._book_revisions.get(event.book_id, 0) + 1
                 self._persist("profile_events", event.event_id, event)
                 approved.append(event.model_copy(deep=True))
@@ -1199,6 +1352,15 @@ class CharacterProfileService:
 
     def get_settings(self) -> Dict[str, Any]:
         with self._lock:
+            if settings.structured_storage_read_source == "postgres" or settings.structured_storage_backend == "postgres":
+                try:
+                    with db_session() as session:
+                        st = CharacterProfileRepository.get_settings(session)
+                        self.auto_approve = st.auto_approve
+                        self.min_independent_sources = st.min_independent_sources
+                except Exception as exc:
+                    if settings.structured_storage_backend == "postgres":
+                        raise exc
             return {
                 "auto_approve": self.auto_approve,
                 "min_independent_sources": self.min_independent_sources,
@@ -1212,12 +1374,45 @@ class CharacterProfileService:
                 self.auto_approve = auto_approve
             if min_sources is not None:
                 self.min_independent_sources = max(1, min_sources)
+
+            if settings.structured_storage_backend in ("dual", "postgres"):
+                try:
+                    with db_session() as session:
+                        CharacterProfileRepository.update_settings(
+                            session,
+                            auto_approve=self.auto_approve,
+                            min_independent_sources=self.min_independent_sources,
+                        )
+                        session.commit()
+                except Exception as exc:
+                    if settings.structured_storage_backend == "postgres":
+                        raise exc
+                    logger.warning("Failed to update settings in DB: %s", exc)
+
             return self.get_settings()
 
     # ------------------------------------------------------------------
     # Snapshot and timeline reads
     # ------------------------------------------------------------------
     def _approved_events(self, book_id: str, through: int) -> List[CharacterEvent]:
+        if settings.structured_storage_read_source == "postgres" or settings.structured_storage_backend == "postgres":
+            try:
+                with db_session() as session:
+                    db_events = CharacterProfileRepository.list_events(
+                        session,
+                        book_id=book_id,
+                        status="approved",
+                        max_canonical_chapter=through,
+                    )
+                    return sorted(
+                        db_events,
+                        key=lambda event: (event.canonical_chapter, event.created_at, event.event_id),
+                    )
+            except Exception as exc:
+                if settings.structured_storage_backend == "postgres":
+                    raise exc
+                logger.warning("Failed to get approved events from DB: %s", exc)
+
         return sorted(
             [
                 event
@@ -1378,7 +1573,7 @@ class CharacterProfileService:
         submission.error_message = message[:500]
         self._persist("profile_submissions", submission_id, submission)
 
-    def _persist(self, collection: str, document_id: str, value: Any) -> None:
+    def _persist(self, collection: str, document_id: str, value: Any, event_key: str = "", event_id: str = "") -> None:
         try:
             def jsonable(item):
                 if hasattr(item, "model_dump"):
@@ -1406,33 +1601,79 @@ class CharacterProfileService:
 
             novel_folder = novel_folder or "global"
 
-            # 1. Sync to Firebase Firestore if active
-            if self.firestore_db:
+            # 0. Sync to PostgreSQL Database if backend is dual or postgres
+            if settings.structured_storage_backend in ("dual", "postgres"):
+                try:
+                    with db_session() as session:
+                        if collection in ("profile_books", "books"):
+                            book_dict = {
+                                "book_id": document_id,
+                                "title": payload.get("metadata", {}).get("title") or payload.get("title", ""),
+                                "author": payload.get("metadata", {}).get("author") or payload.get("author", ""),
+                                "language": payload.get("metadata", {}).get("language") or payload.get("language", ""),
+                                "publisher": payload.get("metadata", {}).get("publisher") or payload.get("publisher", ""),
+                                "identifier": payload.get("metadata", {}).get("identifier") or payload.get("identifier"),
+                                "title_key": payload.get("title_key", ""),
+                                "author_key": payload.get("author_key", ""),
+                                "sampled_chapters": payload.get("sampled_chapters", []),
+                                "revision": payload.get("revision", 0),
+                            }
+                            CharacterProfileRepository.save_book(session, book_dict)
+                        elif collection in ("profile_editions", "editions"):
+                            ed = EditionRecord.model_validate(payload)
+                            CharacterProfileRepository.save_edition(session, ed)
+                        elif collection in ("profile_chapter_mappings", "mappings"):
+                            mapping = ChapterMapping.model_validate(payload)
+                            CharacterProfileRepository.save_chapter_mapping(session, mapping)
+                        elif collection in ("profile_submissions", "submissions"):
+                            sub = SubmissionRecord.model_validate(payload)
+                            CharacterProfileRepository.save_submission(session, sub)
+                        elif collection in ("profile_events", "events"):
+                            event = CharacterEvent.model_validate(payload)
+                            ev_key = event_key or payload.get("event_key") or f"ev-{document_id}"
+                            CharacterProfileRepository.save_event(session, event, ev_key)
+                        elif collection in ("profile_evidence", "evidence"):
+                            ev = EventEvidence.model_validate(payload)
+                            ev_id = event_id or payload.get("event_id") or ""
+                            CharacterProfileRepository.save_evidence(session, ev, ev_id)
+                        session.commit()
+                except Exception as exc:
+                    if settings.structured_storage_backend == "postgres":
+                        logger.error("Book profile Database write FAILED in postgres mode collection=%s doc=%s: %s", collection, document_id, exc)
+                        raise exc
+                    logger.warning("Book profile Database mirror failed in dual mode collection=%s doc=%s: %s", collection, document_id, exc)
+
+            # 1. Sync to Firebase Firestore if active and not postgres-only
+            if self.firestore_db and settings.structured_storage_backend in ("legacy", "dual"):
                 try:
                     self.firestore_db.collection(collection).document(document_id).set(payload, merge=True)
                 except Exception as exc:
                     logger.warning("Book profile Firestore mirror failed collection=%s doc=%s: %s", collection, document_id, exc)
 
-            # 2. Sync to Cloudflare R2 bucket if active (grouped by novel folder)
-            if self.storage_repo and getattr(self.storage_repo, "is_r2_active", False):
+            # 2. Sync to Cloudflare R2 bucket if active (only if legacy or dual)
+            if settings.structured_storage_backend in ("legacy", "dual") and self.storage_repo and getattr(self.storage_repo, "is_r2_active", False):
                 try:
                     r2_key = f"novels/{novel_folder}/profile/{collection}/{document_id}.json"
                     self.storage_repo._r2_put_json(r2_key, payload)
                 except Exception as exc:
                     logger.warning("Book profile R2 mirror failed novel=%s collection=%s doc=%s: %s", novel_folder, collection, document_id, exc)
 
-            # 3. Always persist to local disk cache (grouped by novel folder)
-            try:
-                base_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "storage", "novels", novel_folder, "profile", collection)
-                os.makedirs(base_dir, exist_ok=True)
-                file_path = os.path.join(base_dir, f"{document_id}.json")
-                with open(file_path, "w", encoding="utf-8") as f:
-                    json.dump(payload, f, ensure_ascii=False, indent=2)
-            except Exception as exc:
-                logger.debug("Local disk persistence skipped: %s", exc)
+            # 3. Persist to local disk cache (only if legacy or dual)
+            if settings.structured_storage_backend in ("legacy", "dual"):
+                try:
+                    base_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "storage", "novels", novel_folder, "profile", collection)
+                    os.makedirs(base_dir, exist_ok=True)
+                    file_path = os.path.join(base_dir, f"{document_id}.json")
+                    with open(file_path, "w", encoding="utf-8") as f:
+                        json.dump(payload, f, ensure_ascii=False, indent=2)
+                except Exception as exc:
+                    logger.debug("Local disk persistence skipped: %s", exc)
 
         except Exception as exc:
+            if settings.structured_storage_backend == "postgres":
+                raise exc
             logger.warning("Book profile _persist failed collection=%s doc=%s: %s", collection, document_id, exc)
+
 
 
 

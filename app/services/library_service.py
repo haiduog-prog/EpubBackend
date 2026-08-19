@@ -8,6 +8,7 @@ import threading
 import unicodedata
 import uuid
 from datetime import datetime
+from datetime import timezone, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import ebooklib
@@ -15,6 +16,9 @@ from ebooklib import epub
 
 from app.config import settings
 from app.core.storage import storage_repo
+from app.db.session import db_session
+from app.repositories.library_repository import LibraryRepository
+from app.repositories.book_bible_repository import BookBibleRepository
 from app.llm.factory import create_llm_client
 from app.schemas.book_bible import BookBible
 from app.schemas.library import (
@@ -121,7 +125,7 @@ class LibraryService:
             cover_key = self._cover_key(novel_id, ext)
             cover_url = self._save_raw_file(cover_key, cover_data, content_type=f"image/{ext}")
 
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         if existing and overwrite:
             # Cập nhật thông tin truyện hiện có mà không sinh thêm novel_id đuôi timestamp mới
             existing.title = req.title or existing.title
@@ -167,6 +171,20 @@ class LibraryService:
         if novel_id in self._cache:
             return self._cache[novel_id]
 
+        # 1. Read from database if postgres is configured
+        if settings.structured_storage_read_source == "postgres" or settings.structured_storage_backend == "postgres":
+            try:
+                with db_session() as session:
+                    db_novel = LibraryRepository.get_novel(session, novel_id)
+                    if db_novel:
+                        self._cache[novel_id] = db_novel
+                    return db_novel
+            except Exception as exc:
+                if settings.structured_storage_backend == "postgres":
+                    raise exc
+                logger.warning("Failed to read novel %s from database: %s", novel_id, exc)
+
+
         meta_key = self._novel_meta_key(novel_id)
         data = None
         if storage_repo.is_r2_active:
@@ -190,6 +208,17 @@ class LibraryService:
 
     def list_novels(self) -> List[NovelSummary]:
         summaries: Dict[str, NovelSummary] = {}
+
+        # 1. Read from database if postgres is configured
+        if settings.structured_storage_read_source == "postgres" or settings.structured_storage_backend == "postgres":
+            try:
+                with db_session() as session:
+                    db_novels = LibraryRepository.list_novels(session)
+                    for n in db_novels:
+                        summaries[n.novel_id] = n
+                    return list(summaries.values())
+            except Exception as exc:
+                logger.warning("Failed to list novels from database: %s", exc)
 
         if storage_repo.is_r2_active:
             raw_objects = storage_repo._r2_list_json_objects("novels/")
@@ -253,7 +282,7 @@ class LibraryService:
         if req.status is not None:
             meta.status = req.status
 
-        meta.updated_at = datetime.utcnow().isoformat()
+        meta.updated_at = datetime.now(timezone.utc).isoformat()
         self._save_metadata(meta)
         self._cache[novel_id] = meta
         return meta
@@ -262,6 +291,19 @@ class LibraryService:
         meta = self.get_novel(novel_id)
         if not meta:
             return False
+
+        # 1. Delete from database if dual or postgres
+        if settings.structured_storage_backend in ("dual", "postgres"):
+            try:
+                with db_session() as session:
+                    LibraryRepository.delete_novel(session, novel_id)
+                    session.commit()
+            except Exception as exc:
+                if settings.structured_storage_backend == "postgres":
+                    logger.error("Failed to delete novel %s from database in postgres mode: %s", novel_id, exc)
+                    raise exc
+                logger.warning("Failed to delete novel %s from database in dual mode: %s", novel_id, exc)
+                return False
 
         if storage_repo.is_r2_active:
             try:
@@ -292,6 +334,7 @@ class LibraryService:
         self._cache.pop(novel_id, None)
         return True
 
+
     # ------------------------------------------------------------------
     # Chapter Management
     # ------------------------------------------------------------------
@@ -319,7 +362,7 @@ class LibraryService:
             existing_item.chapter_title = chapter_title
             existing_item.word_count = word_count
             existing_item.original_text_preview = preview
-            existing_item.updated_at = datetime.utcnow().isoformat()
+            existing_item.updated_at = datetime.now(timezone.utc).isoformat()
             chapter_item = existing_item
         else:
             chapter_item = ChapterItem(
@@ -330,7 +373,7 @@ class LibraryService:
                 word_count=word_count,
                 original_text_preview=preview,
                 translated_text_preview="",
-                updated_at=datetime.utcnow().isoformat(),
+                updated_at=datetime.now(timezone.utc).isoformat(),
                 r2_original_key=orig_key,
                 r2_translated_key="",
             )
@@ -339,7 +382,7 @@ class LibraryService:
         meta.chapters.sort(key=lambda x: x.chapter_index)
         meta.total_chapters = len(meta.chapters)
         meta.translated_chapters = sum(1 for c in meta.chapters if c.status == ChapterStatus.COMPLETED)
-        meta.updated_at = datetime.utcnow().isoformat()
+        meta.updated_at = datetime.now(timezone.utc).isoformat()
 
         self._save_metadata(meta)
         self._cache[novel_id] = meta
@@ -421,10 +464,10 @@ class LibraryService:
             chapter.r2_translated_key = trans_key
             chapter.r2_translated_url = trans_url
             chapter.translated_text_preview = (translated_text[:150] + "...") if len(translated_text) > 150 else translated_text
-            chapter.updated_at = datetime.utcnow().isoformat()
+            chapter.updated_at = datetime.now(timezone.utc).isoformat()
 
             meta.translated_chapters = sum(1 for c in meta.chapters if c.status == ChapterStatus.COMPLETED)
-            meta.updated_at = datetime.utcnow().isoformat()
+            meta.updated_at = datetime.now(timezone.utc).isoformat()
             self._save_metadata(meta)
             self._cache[novel_id] = meta
             return chapter
@@ -658,7 +701,7 @@ class LibraryService:
 
                 word_count = len(full_text.split())
                 preview = (full_text[:150] + "...") if len(full_text) > 150 else full_text
-                now_str = datetime.utcnow().isoformat()
+                now_str = datetime.now(timezone.utc).isoformat()
 
                 existing_ch = existing_chapters_map.get(actual_index)
                 if existing_ch:
@@ -738,7 +781,7 @@ class LibraryService:
             meta.chapters = [merged_chapters[k] for k in sorted(merged_chapters.keys())]
             meta.total_chapters = len(meta.chapters)
             meta.translated_chapters = sum(1 for c in meta.chapters if c.status == ChapterStatus.COMPLETED)
-            meta.updated_at = datetime.utcnow().isoformat()
+            meta.updated_at = datetime.now(timezone.utc).isoformat()
             self._save_metadata(meta)
             self._cache[actual_id] = meta
             return meta
@@ -790,7 +833,7 @@ class LibraryService:
             actual_id = meta.novel_id
 
             # Save uploaded raw epub file into isolated uploads folder
-            timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
             upload_key = f"novels/{actual_id}/uploads/{timestamp}.epub"
             self._save_raw_file(upload_key, epub_bytes, content_type="application/epub+zip")
 
@@ -806,8 +849,34 @@ class LibraryService:
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
 
+    def _persist_import_job(self, job: ImportJobStatus) -> None:
+        self._import_jobs[job.job_id] = job
+        if settings.structured_storage_backend in ("dual", "postgres"):
+            try:
+                with db_session() as session:
+                    LibraryRepository.save_import_job(session, job)
+                    session.commit()
+            except Exception as exc:
+                if settings.structured_storage_backend == "postgres":
+                    logger.error("Failed to persist import job %s in postgres mode: %s", job.job_id, exc)
+                    raise exc
+                logger.warning("Failed to persist import job %s in dual mode: %s", job.job_id, exc)
+
     def get_import_job(self, job_id: str) -> Optional[ImportJobStatus]:
-        return self._import_jobs.get(job_id)
+        if job_id in self._import_jobs:
+            return self._import_jobs[job_id]
+
+        if settings.structured_storage_read_source == "postgres" or settings.structured_storage_backend == "postgres":
+            try:
+                with db_session() as session:
+                    db_job = LibraryRepository.get_import_job(session, job_id)
+                    if db_job:
+                        self._import_jobs[job_id] = db_job
+                        return db_job
+            except Exception as exc:
+                logger.warning("Failed to get import job from DB: %s", exc)
+
+        return None
 
     def start_import_epub_async(
         self,
@@ -829,7 +898,7 @@ class LibraryService:
             current_step="Đang chuẩn bị file và đọc thông tin sách...",
             progress_percentage=5,
         )
-        self._import_jobs[job_id] = job
+        self._persist_import_job(job)
 
         def _worker():
             with tempfile.NamedTemporaryFile(delete=False, suffix=".epub") as tmp:
@@ -907,13 +976,15 @@ class LibraryService:
                 job.status = "completed"
                 job.current_step = f"Đã hoàn thành nhập '{title}' (thêm {job.added_chapters} mới, bỏ qua {job.skipped_chapters} đã có)!"
                 job.progress_percentage = 100
-                job.completed_at = datetime.utcnow().isoformat()
+                job.completed_at = datetime.now(timezone.utc).isoformat()
+                self._persist_import_job(job)
 
             except Exception as exc:
                 logger.error("Lỗi khi import EPUB async: %s", exc)
                 job.status = "failed"
                 job.error_message = str(exc)
                 job.current_step = f"Lỗi: {exc}"
+                self._persist_import_job(job)
             finally:
                 if os.path.exists(tmp_path):
                     os.unlink(tmp_path)
@@ -927,16 +998,29 @@ class LibraryService:
     # Storage Helpers
     # ------------------------------------------------------------------
     def _save_metadata(self, meta: NovelMetadata) -> None:
-        key = self._novel_meta_key(meta.novel_id)
-        data = meta.model_dump(mode="json")
-        if storage_repo.is_r2_active:
-            storage_repo._r2_put_json(key, data)
+        # 1. Save to Database if backend is dual or postgres
+        if settings.structured_storage_backend in ("dual", "postgres"):
+            try:
+                with db_session() as session:
+                    LibraryRepository.save_novel(session, meta)
+                    session.commit()
+            except Exception as exc:
+                if settings.structured_storage_backend == "postgres":
+                    logger.error("Failed to save novel metadata to database in postgres mode: %s", exc)
+                    raise exc
+                logger.warning("Failed to save novel metadata to database in dual mode: %s", exc)
 
-        # Also save local backup
-        local_dir = os.path.join("storage", "novels", meta.novel_id)
-        os.makedirs(local_dir, exist_ok=True)
-        with open(os.path.join(local_dir, "metadata.json"), "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        # 2. Save JSON to R2 / Local storage if legacy or dual
+        if settings.structured_storage_backend in ("legacy", "dual"):
+            key = self._novel_meta_key(meta.novel_id)
+            data = meta.model_dump(mode="json")
+            if storage_repo.is_r2_active:
+                storage_repo._r2_put_json(key, data)
+
+            local_dir = os.path.join("storage", "novels", meta.novel_id)
+            os.makedirs(local_dir, exist_ok=True)
+            with open(os.path.join(local_dir, "metadata.json"), "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
 
     def _save_raw_file(self, key: str, data: bytes, content_type: str = "application/octet-stream") -> Optional[str]:
         if storage_repo.is_r2_active and settings.cloudflare_r2_bucket_name:

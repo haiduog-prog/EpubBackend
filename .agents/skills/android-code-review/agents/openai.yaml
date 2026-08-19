@@ -1,0 +1,14 @@
+interface:
+  display_name: Android Code Review
+  short_description: Review Android và ngăn lỗi regression
+  default_prompt: Hãy dùng $android-code-review để review thay đổi Android này, đánh
+    giá regression và trả toàn bộ kết quả bằng tiếng Việt.
+  icon_small: assets/icon.svg
+  icon_large: assets/icon.svg
+policy:
+  products:
+  - chatgpt
+  - codex
+  - api
+  - atlas
+  allow_implicit_invocation: true

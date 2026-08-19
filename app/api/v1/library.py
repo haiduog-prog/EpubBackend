@@ -52,9 +52,11 @@ async def create_novel_endpoint(
 
 @router.post("/novels/import-epub", response_model=ImportJobStatus)
 async def import_epub_endpoint(
-    file: UploadFile = File(..., description="File EPUB trọn bộ"),
+    file: UploadFile = File(..., description="File EPUB trọn bộ hoặc phần bổ sung"),
     is_translated: bool = Form(default=True, description="True nếu là sách đã dịch sẵn, False nếu là sách raw chưa dịch"),
     novel_id: Optional[str] = Form(default=None, description="Mã định danh slug (tùy chọn)"),
+    start_chapter_index: Optional[int] = Form(default=None, description="Số thứ tự chương bắt đầu nếu upload file partial (vd: 101)"),
+    force_overwrite: bool = Form(default=False, description="Ghi đè nội dung phiên bản nếu chương đã tồn tại"),
     auto_scan_characters: bool = Form(default=False, description="Tự động quét và lập Book Bible ban đầu"),
     x_api_key: Optional[str] = Header(default=None),
     x_provider: Optional[str] = Header(default=None),
@@ -70,6 +72,8 @@ async def import_epub_endpoint(
             filename=file.filename,
             is_translated=is_translated,
             novel_id=novel_id,
+            start_chapter_index=start_chapter_index,
+            force_overwrite=force_overwrite,
             auto_scan_characters=auto_scan_characters,
             provider=x_provider,
             api_key=x_api_key,
@@ -147,10 +151,11 @@ def delete_novel_endpoint(novel_id: str):
 def check_missing_chapters_endpoint(
     novel_id: str,
     expected_total: Optional[int] = Query(default=None, description="Tổng số chương dự kiến (ví dụ: 150)"),
+    include_detail: bool = Query(default=False, description="Bao gồm chi tiết trạng thái từng chương"),
 ):
     """
-    Kiểm tra các chương đã có trong kho và danh sách các chương còn thiếu.
-    Giúp Client quyết định có cần upload bù chương hay không.
+    Kiểm tra các chương đã có trong kho và danh sách các chương còn thiếu theo từng phiên bản (Original & Translated).
+    Giúp Client quyết định chính xác cần upload bù bản dịch hay bản raw.
     """
     novel = library_service.get_novel(novel_id)
     if not novel:
@@ -160,17 +165,37 @@ def check_missing_chapters_endpoint(
     max_idx = max(existing_indices) if existing_indices else 0
     target_total = expected_total or max_idx
 
-    missing = [i for i in range(1, target_total + 1) if i not in existing_indices]
+    has_orig_indices = {ch.chapter_index for ch in novel.chapters if ch.r2_original_key or (ch.status == ChapterStatus.NOT_TRANSLATED and ch.word_count > 0)}
+    has_trans_indices = {ch.chapter_index for ch in novel.chapters if ch.r2_translated_key or ch.status == ChapterStatus.COMPLETED}
+
+    missing_orig = [i for i in range(1, target_total + 1) if i not in has_orig_indices]
+    missing_trans = [i for i in range(1, target_total + 1) if i not in has_trans_indices]
+
+    chapters_detail = None
+    if include_detail:
+        chapters_detail = [
+            {
+                "index": ch.chapter_index,
+                "title": ch.chapter_title,
+                "has_original": ch.chapter_index in has_orig_indices,
+                "has_translated": ch.chapter_index in has_trans_indices,
+                "status": ch.status,
+            }
+            for ch in sorted(novel.chapters, key=lambda c: c.chapter_index)
+        ]
 
     return {
         "novel_id": novel_id,
         "title": novel.title,
-        "total_in_storage": len(existing_indices),
+        "total_chapters_recorded": len(existing_indices),
         "max_chapter_index": max_idx,
-        "existing_chapters_count": len(existing_indices),
-        "missing_chapters_count": len(missing),
-        "missing_chapter_indices": missing,
+        "existing_original_count": len(has_orig_indices),
+        "existing_translated_count": len(has_trans_indices),
+        "missing_original_indices": missing_orig,
+        "missing_translated_indices": missing_trans,
+        "chapters_detail": chapters_detail,
     }
+
 
 
 

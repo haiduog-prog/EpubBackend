@@ -42,6 +42,39 @@ def slugify(text: str) -> str:
     return re.sub(r"[-\s]+", "-", text) or "novel"
 
 
+def parse_chapter_index_from_title(title: str) -> Optional[int]:
+    """
+    Trích xuất số thứ tự chương từ tiêu đề chương hoặc tên file.
+    Hỗ trợ:
+    - Tiếng Việt: "Chương 101:...", "Hồi 12", "Tiết 5", "Quyển 1 Chương 20"
+    - Tiếng Trung: "第101章", "第12回", "第5节"
+    - Tiếng Anh: "Chapter 101", "Ch. 101", "ch_0101"
+    """
+    if not title:
+        return None
+    # 1. Standard pattern: Chương 101 / Chapter 101 / Hồi 101 / Tiết 101
+    m = re.search(r"(?:chương|chuong|chapter|hồi|hoi|tiết|tiet|ch\.?)\s*(\d+)", title, re.IGNORECASE)
+    if m:
+        try:
+            return int(m.group(1))
+        except ValueError:
+            pass
+    # 2. Chinese pattern: 第101章 / 第101回 / 第101节
+    m = re.search(r"第\s*(\d+)\s*[章回节]", title)
+    if m:
+        try:
+            return int(m.group(1))
+        except ValueError:
+            pass
+    # 3. Filename pattern: ch_0101.xhtml / chapter_0101
+    m = re.search(r"(?:ch|chapter)_?(\d+)", title, re.IGNORECASE)
+    if m:
+        try:
+            return int(m.group(1))
+        except ValueError:
+            pass
+    return None
+
 
 class LibraryService:
     """Dịch vụ quản lý Kho Truyện (Novel Library) lưu trữ trên Cloudflare R2 / Local."""
@@ -49,6 +82,14 @@ class LibraryService:
     def __init__(self):
         self._cache: Dict[str, NovelMetadata] = {}
         self._import_jobs: Dict[str, ImportJobStatus] = {}
+        self._novel_locks: Dict[str, threading.Lock] = {}
+        self._global_lock = threading.Lock()
+
+    def _get_novel_lock(self, novel_id: str) -> threading.Lock:
+        with self._global_lock:
+            if novel_id not in self._novel_locks:
+                self._novel_locks[novel_id] = threading.Lock()
+            return self._novel_locks[novel_id]
 
     def _novel_meta_key(self, novel_id: str) -> str:
         return f"novels/{novel_id}/metadata.json"
@@ -59,6 +100,7 @@ class LibraryService:
 
     def _cover_key(self, novel_id: str, extension: str = "jpg") -> str:
         return f"novels/{novel_id}/cover.{extension}"
+
 
     # ------------------------------------------------------------------
     # Novel Management
@@ -492,32 +534,7 @@ class LibraryService:
             os.makedirs(os.path.join("storage", "outputs"), exist_ok=True)
             output_path = os.path.join("storage", "outputs", f"{novel_id}_vi.epub")
 
-        # 1. Check if full.epub exists locally in novel dir
-        local_full = os.path.join("storage", "novels", novel_id, "full.epub")
-        if os.path.exists(local_full):
-            return local_full
-
-        # 2. Check if output_path already exists
-        if os.path.exists(output_path) and os.path.getsize(output_path) > 100:
-            return output_path
-
-        # 3. Check if full.epub exists in Cloudflare R2 (download whole file in 1 single fast call)
-        full_epub_key = f"novels/{novel_id}/full.epub"
-        if storage_repo.is_r2_active and settings.cloudflare_r2_bucket_name:
-            try:
-                resp = storage_repo.r2_client.get_object(
-                    Bucket=settings.cloudflare_r2_bucket_name,
-                    Key=full_epub_key,
-                )
-                epub_data = resp["Body"].read()
-                if epub_data and len(epub_data) > 100:
-                    with open(output_path, "wb") as f:
-                        f.write(epub_data)
-                    return output_path
-            except Exception as e:
-                logger.debug("full.epub not in R2, compiling from chapters: %s", e)
-
-        # 4. Compile EPUB from chapters
+        # Luôn biên dịch sách EPUB hoàn chỉnh từ toàn bộ các chương đã gộp trong kho
         book = epub.EpubBook()
         book.set_identifier(f"epub-backend-{novel_id}")
         book.set_title(meta.title)
@@ -571,16 +588,160 @@ class LibraryService:
         return output_path
 
     # ------------------------------------------------------------------
-    # EPUB Direct Import
+    # EPUB Direct & Incremental Import
     # ------------------------------------------------------------------
+    def _process_epub_chapters_sync(
+        self,
+        book: epub.EpubBook,
+        actual_id: str,
+        is_translated: bool,
+        start_chapter_index: Optional[int] = None,
+        force_overwrite: bool = False,
+        job: Optional[ImportJobStatus] = None,
+    ) -> NovelMetadata:
+        from bs4 import BeautifulSoup
+
+        with self._get_novel_lock(actual_id):
+            meta = self.get_novel(actual_id)
+            if not meta:
+                raise ValueError(f"Không tìm thấy thông tin bộ truyện '{actual_id}' trong kho.")
+
+            # Pre-filter document items to get total valid chapters
+            doc_items = []
+            for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
+                content_html = item.get_content().decode("utf-8", errors="ignore")
+                soup = BeautifulSoup(content_html, "html.parser")
+                text_lines = [p.get_text().strip() for p in soup.find_all(["p", "h1", "h2", "h3", "div"]) if p.get_text().strip()]
+                full_text = "\n\n".join(text_lines)
+                if full_text.strip() and len(full_text.strip()) >= 30:
+                    h_tag = soup.find(["h1", "h2", "h3"])
+                    ch_title = h_tag.get_text().strip() if h_tag else ""
+                    doc_items.append((ch_title, full_text))
+
+            total = len(doc_items)
+            if job:
+                job.total_chapters = total
+
+            existing_chapters_map = {ch.chapter_index: ch for ch in meta.chapters}
+            merged_chapters = dict(existing_chapters_map)
+            added_count = 0
+            skipped_count = 0
+            updated_count = 0
+
+            running_base = start_chapter_index or 1
+
+            for seq_idx, (ch_title, full_text) in enumerate(doc_items, start=1):
+                extracted_num = parse_chapter_index_from_title(ch_title)
+                if start_chapter_index is not None and start_chapter_index > 1:
+                    actual_index = start_chapter_index + (seq_idx - 1)
+                elif extracted_num is not None:
+                    actual_index = extracted_num
+                else:
+                    actual_index = running_base + (seq_idx - 1)
+
+                if not ch_title or len(ch_title) > 80:
+                    ch_title = f"Chương {actual_index}"
+
+                ch_id = f"ch_{actual_index:04d}"
+                folder = "translated" if is_translated else "original"
+                ch_key = f"novels/{actual_id}/{folder}/{ch_id}.txt"
+
+                word_count = len(full_text.split())
+                preview = (full_text[:150] + "...") if len(full_text) > 150 else full_text
+                now_str = datetime.utcnow().isoformat()
+
+                existing_ch = existing_chapters_map.get(actual_index)
+                if existing_ch:
+                    existing_key = existing_ch.r2_translated_key if is_translated else existing_ch.r2_original_key
+                    if existing_key and not force_overwrite:
+                        skipped_count += 1
+                        if job:
+                            job.skipped_chapters = skipped_count
+                            job.current_chapter = seq_idx
+                            job.current_step = f"Bỏ qua chương {actual_index} (đã có bản {'dịch' if is_translated else 'gốc'}): {existing_ch.chapter_title}"
+                            job.progress_percentage = 10 + int((seq_idx / max(1, total)) * 75)
+                        continue
+
+                    # Save text to storage
+                    self._save_raw_file(ch_key, full_text.encode("utf-8"), content_type="text/plain; charset=utf-8")
+
+                    # In-place merge without wiping out other version
+                    if is_translated:
+                        existing_ch.r2_translated_key = ch_key
+                        existing_ch.translated_text_preview = preview
+                        existing_ch.status = ChapterStatus.COMPLETED
+                        if ch_title:
+                            existing_ch.chapter_title = ch_title
+                        existing_ch.updated_at = now_str
+                    else:
+                        existing_ch.r2_original_key = ch_key
+                        existing_ch.original_text_preview = preview
+                        existing_ch.word_count = word_count
+                        if ch_title:
+                            existing_ch.chapter_title = ch_title
+                        existing_ch.updated_at = now_str
+
+                    merged_chapters[actual_index] = existing_ch
+                    if existing_key and force_overwrite:
+                        updated_count += 1
+                        if job:
+                            job.updated_chapters = updated_count
+                    else:
+                        added_count += 1
+                        if job:
+                            job.added_chapters = added_count
+                else:
+                    # New chapter
+                    self._save_raw_file(ch_key, full_text.encode("utf-8"), content_type="text/plain; charset=utf-8")
+                    new_item = ChapterItem(
+                        chapter_index=actual_index,
+                        chapter_id=ch_id,
+                        chapter_title=ch_title,
+                        status=ChapterStatus.COMPLETED if is_translated else ChapterStatus.NOT_TRANSLATED,
+                        word_count=word_count,
+                        original_text_preview="" if is_translated else preview,
+                        translated_text_preview=preview if is_translated else "",
+                        updated_at=now_str,
+                        r2_original_key="" if is_translated else ch_key,
+                        r2_translated_key=ch_key if is_translated else "",
+                    )
+                    merged_chapters[actual_index] = new_item
+                    added_count += 1
+                    if job:
+                        job.added_chapters = added_count
+
+                if job:
+                    job.current_chapter = seq_idx
+                    job.current_step = f"Đang nạp chương {actual_index} ({seq_idx}/{total}): {ch_title}"
+                    job.progress_percentage = 10 + int((seq_idx / max(1, total)) * 75)
+
+                # Periodic Checkpoint every 20 chapters
+                if seq_idx % 20 == 0:
+                    meta.chapters = [merged_chapters[k] for k in sorted(merged_chapters.keys())]
+                    meta.total_chapters = len(meta.chapters)
+                    meta.translated_chapters = sum(1 for c in meta.chapters if c.status == ChapterStatus.COMPLETED)
+                    meta.updated_at = now_str
+                    self._save_metadata(meta)
+                    self._cache[actual_id] = meta
+
+            # Final save
+            meta.chapters = [merged_chapters[k] for k in sorted(merged_chapters.keys())]
+            meta.total_chapters = len(meta.chapters)
+            meta.translated_chapters = sum(1 for c in meta.chapters if c.status == ChapterStatus.COMPLETED)
+            meta.updated_at = datetime.utcnow().isoformat()
+            self._save_metadata(meta)
+            self._cache[actual_id] = meta
+            return meta
+
     def import_epub_novel(
         self,
         epub_bytes: bytes,
         filename: str = "book.epub",
         is_translated: bool = True,
         novel_id: Optional[str] = None,
+        start_chapter_index: Optional[int] = None,
+        force_overwrite: bool = False,
     ) -> NovelMetadata:
-        from bs4 import BeautifulSoup
         with tempfile.NamedTemporaryFile(delete=False, suffix=".epub") as tmp:
             tmp.write(epub_bytes)
             tmp_path = tmp.name
@@ -608,7 +769,7 @@ class LibraryService:
                     if "cover" in item.get_name().lower():
                         break
 
-            # Create Novel metadata
+            # Create/Update Novel metadata
             req = NovelCreateRequest(
                 title=title,
                 author=author,
@@ -618,67 +779,18 @@ class LibraryService:
             meta = self.create_novel(req, cover_data=cover_data, cover_filename=f"cover.{cover_ext}")
             actual_id = meta.novel_id
 
-            # Save full original epub file on R2 as well
-            full_epub_key = f"novels/{actual_id}/full.epub"
-            self._save_raw_file(full_epub_key, epub_bytes, content_type="application/epub+zip")
+            # Save uploaded raw epub file into isolated uploads folder
+            timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+            upload_key = f"novels/{actual_id}/uploads/{timestamp}.epub"
+            self._save_raw_file(upload_key, epub_bytes, content_type="application/epub+zip")
 
-            # Extract chapters with incremental diff
-            existing_chapters_map = {ch.chapter_index: ch for ch in meta.chapters}
-            merged_chapters = dict(existing_chapters_map)
-            chapter_index = 1
-            for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
-                content_html = item.get_content().decode("utf-8", errors="ignore")
-                soup = BeautifulSoup(content_html, "html.parser")
-
-                # Extract text
-                text_lines = [p.get_text().strip() for p in soup.find_all(["p", "h1", "h2", "h3", "div"]) if p.get_text().strip()]
-                full_text = "\n\n".join(text_lines)
-
-                if not full_text.strip() or len(full_text.strip()) < 30:
-                    continue  # skip empty/cover/nav pages
-
-                h_tag = soup.find(["h1", "h2", "h3"])
-                ch_title = h_tag.get_text().strip() if h_tag else f"Chương {chapter_index}"
-                if len(ch_title) > 80:
-                    ch_title = f"Chương {chapter_index}"
-
-                ch_id = f"ch_{chapter_index:04d}"
-                folder = "translated" if is_translated else "original"
-                ch_key = f"novels/{actual_id}/{folder}/{ch_id}.txt"
-
-                # Check if chapter already exists -> skip to prevent duplicate upload
-                existing_ch = existing_chapters_map.get(chapter_index)
-                if existing_ch and (existing_ch.status == ChapterStatus.COMPLETED or existing_ch.word_count > 0):
-                    chapter_index += 1
-                    continue
-
-                self._save_raw_file(ch_key, full_text.encode("utf-8"), content_type="text/plain; charset=utf-8")
-
-                word_count = len(full_text.split())
-                preview = (full_text[:150] + "...") if len(full_text) > 150 else full_text
-
-                chapter_item = ChapterItem(
-                    chapter_index=chapter_index,
-                    chapter_id=ch_id,
-                    chapter_title=ch_title,
-                    status=ChapterStatus.COMPLETED if is_translated else ChapterStatus.NOT_TRANSLATED,
-                    word_count=word_count,
-                    original_text_preview="" if is_translated else preview,
-                    translated_text_preview=preview if is_translated else "",
-                    updated_at=datetime.utcnow().isoformat(),
-                    r2_original_key="" if is_translated else ch_key,
-                    r2_translated_key=ch_key if is_translated else "",
-                )
-                merged_chapters[chapter_index] = chapter_item
-                chapter_index += 1
-
-            meta.chapters = [merged_chapters[k] for k in sorted(merged_chapters.keys())]
-            meta.total_chapters = len(meta.chapters)
-            meta.translated_chapters = sum(1 for c in meta.chapters if c.status == ChapterStatus.COMPLETED)
-            meta.updated_at = datetime.utcnow().isoformat()
-            self._save_metadata(meta)
-            self._cache[actual_id] = meta
-            return meta
+            return self._process_epub_chapters_sync(
+                book=book,
+                actual_id=actual_id,
+                is_translated=is_translated,
+                start_chapter_index=start_chapter_index,
+                force_overwrite=force_overwrite,
+            )
 
         finally:
             if os.path.exists(tmp_path):
@@ -693,6 +805,8 @@ class LibraryService:
         filename: str = "book.epub",
         is_translated: bool = True,
         novel_id: Optional[str] = None,
+        start_chapter_index: Optional[int] = None,
+        force_overwrite: bool = False,
         auto_scan_characters: bool = False,
         provider: Optional[str] = None,
         api_key: Optional[str] = None,
@@ -708,7 +822,6 @@ class LibraryService:
         self._import_jobs[job_id] = job
 
         def _worker():
-            from bs4 import BeautifulSoup
             with tempfile.NamedTemporaryFile(delete=False, suffix=".epub") as tmp:
                 tmp.write(epub_bytes)
                 tmp_path = tmp.name
@@ -727,7 +840,7 @@ class LibraryService:
                 description = descriptions[0][0] if descriptions else ""
 
                 job.title = title
-                job.current_step = f"Đang tạo bộ truyện '{title}' & trích xuất ảnh bìa..."
+                job.current_step = f"Đang tạo/so khớp bộ truyện '{title}' & trích xuất ảnh bìa..."
                 job.progress_percentage = 10
 
                 # Extract Cover Image
@@ -751,81 +864,19 @@ class LibraryService:
                 actual_id = meta.novel_id
                 job.novel_id = actual_id
 
-                # Save full original epub file on R2 as well
-                full_epub_key = f"novels/{actual_id}/full.epub"
-                self._save_raw_file(full_epub_key, epub_bytes, content_type="application/epub+zip")
+                # Save uploaded epub file into isolated uploads folder
+                upload_key = f"novels/{actual_id}/uploads/{job_id}.epub"
+                self._save_raw_file(upload_key, epub_bytes, content_type="application/epub+zip")
 
-                # Pre-filter document items to get total valid chapters
-                doc_items = []
-                for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
-                    content_html = item.get_content().decode("utf-8", errors="ignore")
-                    soup = BeautifulSoup(content_html, "html.parser")
-                    text_lines = [p.get_text().strip() for p in soup.find_all(["p", "h1", "h2", "h3", "div"]) if p.get_text().strip()]
-                    full_text = "\n\n".join(text_lines)
-                    if full_text.strip() and len(full_text.strip()) >= 30:
-                        h_tag = soup.find(["h1", "h2", "h3"])
-                        ch_title = h_tag.get_text().strip() if h_tag else ""
-                        doc_items.append((ch_title, full_text))
-
-                total = len(doc_items)
-                job.total_chapters = total
-
-                # Process and upload each chapter with live progress and incremental diff
-                existing_chapters_map = {ch.chapter_index: ch for ch in meta.chapters}
-                merged_chapters = dict(existing_chapters_map)
-                added_count = 0
-                skipped_count = 0
-
-                for idx, (ch_title, full_text) in enumerate(doc_items, start=1):
-                    if not ch_title or len(ch_title) > 80:
-                        ch_title = f"Chương {idx}"
-
-                    ch_id = f"ch_{idx:04d}"
-                    folder = "translated" if is_translated else "original"
-                    ch_key = f"novels/{actual_id}/{folder}/{ch_id}.txt"
-
-                    # Check if chapter already exists in storage -> skip upload
-                    existing_ch = existing_chapters_map.get(idx)
-                    if existing_ch and (existing_ch.status == ChapterStatus.COMPLETED or existing_ch.word_count > 0):
-                        skipped_count += 1
-                        job.skipped_chapters = skipped_count
-                        job.current_chapter = idx
-                        job.current_step = f"Bỏ qua chương {idx}/{total} (đã có trong kho): {existing_ch.chapter_title}"
-                        job.progress_percentage = 10 + int((idx / max(1, total)) * 75)
-                        continue
-
-                    self._save_raw_file(ch_key, full_text.encode("utf-8"), content_type="text/plain; charset=utf-8")
-
-                    word_count = len(full_text.split())
-                    preview = (full_text[:150] + "...") if len(full_text) > 150 else full_text
-
-                    chapter_item = ChapterItem(
-                        chapter_index=idx,
-                        chapter_id=ch_id,
-                        chapter_title=ch_title,
-                        status=ChapterStatus.COMPLETED if is_translated else ChapterStatus.NOT_TRANSLATED,
-                        word_count=word_count,
-                        original_text_preview="" if is_translated else preview,
-                        translated_text_preview=preview if is_translated else "",
-                        updated_at=datetime.utcnow().isoformat(),
-                        r2_original_key="" if is_translated else ch_key,
-                        r2_translated_key=ch_key if is_translated else "",
-                    )
-                    merged_chapters[idx] = chapter_item
-                    added_count += 1
-                    job.added_chapters = added_count
-
-                    # Update live progress
-                    job.current_chapter = idx
-                    job.current_step = f"Đang bổ sung chương mới {idx}/{total}: {ch_title}"
-                    job.progress_percentage = 10 + int((idx / max(1, total)) * 75)
-
-                meta.chapters = [merged_chapters[k] for k in sorted(merged_chapters.keys())]
-                meta.total_chapters = len(meta.chapters)
-                meta.translated_chapters = sum(1 for c in meta.chapters if c.status == ChapterStatus.COMPLETED)
-                meta.updated_at = datetime.utcnow().isoformat()
-                self._save_metadata(meta)
-                self._cache[actual_id] = meta
+                # Process chapters with dual-version diff and checkpointing
+                meta = self._process_epub_chapters_sync(
+                    book=book,
+                    actual_id=actual_id,
+                    is_translated=is_translated,
+                    start_chapter_index=start_chapter_index,
+                    force_overwrite=force_overwrite,
+                    job=job,
+                )
 
                 # Optional character scan
                 if auto_scan_characters and meta.chapters and api_key:
@@ -844,7 +895,7 @@ class LibraryService:
                         logger.warning("Auto scan characters skipped or failed: %s", scan_err)
 
                 job.status = "completed"
-                job.current_step = f"Đã hoàn thành nhập '{title}' ({total} chương) vào Cloudflare R2!"
+                job.current_step = f"Đã hoàn thành nhập '{title}' (thêm {job.added_chapters} mới, bỏ qua {job.skipped_chapters} đã có)!"
                 job.progress_percentage = 100
                 job.completed_at = datetime.utcnow().isoformat()
 
@@ -860,6 +911,7 @@ class LibraryService:
         thread = threading.Thread(target=_worker, daemon=True)
         thread.start()
         return job
+
 
     # ------------------------------------------------------------------
     # Storage Helpers

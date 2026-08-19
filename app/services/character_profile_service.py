@@ -52,6 +52,17 @@ def _hash(value: str, length: int = 32) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:length]
 
 
+def _slugify(text: str) -> str:
+    import re
+    import unicodedata
+    if not text:
+        return ""
+    text = text.replace("đ", "d").replace("Đ", "d")
+    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("utf-8")
+    text = re.sub(r"[^\w\s-]", "", text).strip().lower()
+    return re.sub(r"[-\s]+", "-", text)
+
+
 class CharacterProfileService:
     """In-process canonical event store with optional Firestore mirroring."""
 
@@ -472,7 +483,8 @@ class CharacterProfileService:
             else:
                 # Create a new book with real metadata sent by client
                 new_meta = BookMetadata(title=title, author=author or "", language="vi")
-                new_book_id = self.book_id_for(new_meta)
+                slug_candidate = _slugify(title)
+                new_book_id = slug_candidate if (slug_candidate and slug_candidate != "novel") else self.book_id_for(new_meta)
                 self._create_book(new_book_id, new_meta, FingerprintBundle())
                 new_ed = EditionRecord(
                     edition_id=edition_id,
@@ -1573,6 +1585,44 @@ class CharacterProfileService:
         submission.error_message = message[:500]
         self._persist("profile_submissions", submission_id, submission)
 
+    def _resolve_novel_folder(self, book_id_or_folder: Optional[str], payload: Optional[dict] = None) -> str:
+        if not book_id_or_folder:
+            return "global"
+        
+        # 1. If already a clean slug not starting with 'book-'
+        if not book_id_or_folder.startswith("book-"):
+            return book_id_or_folder
+
+        # 2. Check title from memory books
+        title = ""
+        book_data = self.books.get(book_id_or_folder)
+        if book_data:
+            meta = book_data.get("metadata")
+            if hasattr(meta, "title"):
+                title = meta.title
+            elif isinstance(meta, dict):
+                title = meta.get("title", "")
+
+        if not title and payload:
+            title = payload.get("metadata", {}).get("title") or payload.get("title", "")
+
+        if title:
+            slug = _slugify(title)
+            if slug and slug != "novel":
+                return slug
+
+        # 3. Check storage_repo novels
+        if self.storage_repo and book_data and book_data.get("title_key"):
+            try:
+                novels = self.storage_repo.list_novels()
+                for n in novels:
+                    if _norm(n.title) == book_data.get("title_key"):
+                        return n.id
+            except Exception:
+                pass
+
+        return book_id_or_folder
+
     def _persist(self, collection: str, document_id: str, value: Any, event_key: str = "", event_id: str = "") -> None:
         try:
             def jsonable(item):
@@ -1599,7 +1649,7 @@ class CharacterProfileService:
             elif isinstance(payload, dict) and payload.get("book_id"):
                 novel_folder = payload["book_id"]
 
-            novel_folder = novel_folder or "global"
+            novel_folder = self._resolve_novel_folder(novel_folder, payload)
 
             # 0. Sync to PostgreSQL Database if backend is dual or postgres
             if settings.structured_storage_backend in ("dual", "postgres"):

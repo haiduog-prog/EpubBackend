@@ -37,10 +37,8 @@ def clean_test_data():
         }
 
     from app.config import settings
-
-    bucket = settings.cloudflare_r2_bucket_name
-    client = storage_repo.r2_client
-    paginator = client.get_paginator("list_objects_v2")
+    from app.api.v1.character_profiles import profile_service
+    from app.services.library_service import library_service
 
     deleted_keys = []
     test_patterns = [
@@ -53,7 +51,36 @@ def clean_test_data():
         "dau-pha-test",
         "pham-nhan-test",
         "tru-tien-test",
+        "au-la-ai-luc",
+        "co-chan-nhan-dich",
     ]
+
+    # 1. Clean in-memory character profile books & bibles
+    matching_books = []
+    for bid, bdata in list(profile_service.books.items()):
+        meta = bdata.get("metadata")
+        title = meta.title if hasattr(meta, "title") else (meta.get("title", "") if isinstance(meta, dict) else "")
+        title_lower = (title or bid).lower()
+        if any(pat in title_lower or pat in bid.lower() for pat in test_patterns):
+            matching_books.append(bid)
+
+    for bid in matching_books:
+        profile_service.delete_book(bid)
+
+    # 2. Clean library service cache & storage bibles
+    for nid in list(library_service._cache.keys()):
+        if any(pat in nid.lower() for pat in test_patterns):
+            library_service.delete_novel(nid)
+
+    if hasattr(storage_repo, "_bibles"):
+        for bid in list(storage_repo._bibles.keys()):
+            if any(pat in bid.lower() for pat in test_patterns):
+                storage_repo.delete_bible(bid)
+
+    # 3. Clean Cloudflare R2
+    bucket = settings.cloudflare_r2_bucket_name
+    client = storage_repo.r2_client
+    paginator = client.get_paginator("list_objects_v2")
 
     for page in paginator.paginate(Bucket=bucket):
         for item in page.get("Contents", []):
@@ -71,7 +98,9 @@ def clean_test_data():
         "status": "success",
         "deleted_count": len(deleted_keys),
         "deleted_keys": [item["Key"] for item in deleted_keys],
+        "deleted_books_from_memory": matching_books,
     }
+
 
 
 @router.post("/purge-legacy-data-folders")

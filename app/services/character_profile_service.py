@@ -912,6 +912,60 @@ class CharacterProfileService:
             }
         self._persist("profile_events", event.event_id, event)
 
+    def delete_book(self, book_id: str) -> bool:
+        """Xóa hoàn toàn một bộ truyện và toàn bộ ấn bản, sự kiện, submission liên quan."""
+        with self._lock:
+            self.books.pop(book_id, None)
+            self._book_revisions.pop(book_id, None)
+
+            ed_ids_to_del = [ed_id for ed_id, ed in self.editions.items() if ed.book_id == book_id]
+            for ed_id in ed_ids_to_del:
+                self.editions.pop(ed_id, None)
+
+            ev_ids_to_del = [ev_id for ev_id, ev in self.events.items() if ev.book_id == book_id]
+            for ev_id in ev_ids_to_del:
+                self.events.pop(ev_id, None)
+
+            sub_ids_to_del = [sub_id for sub_id, sub in self.submissions.items() if sub.book_id == book_id]
+            for sub_id in sub_ids_to_del:
+                self.submissions.pop(sub_id, None)
+
+            if self.firestore_db:
+                try:
+                    self.firestore_db.collection("profile_books").document(book_id).delete()
+                    for ed_id in ed_ids_to_del:
+                        self.firestore_db.collection("profile_editions").document(ed_id).delete()
+                    for ev_id in ev_ids_to_del:
+                        self.firestore_db.collection("profile_events").document(ev_id).delete()
+                    for sub_id in sub_ids_to_del:
+                        self.firestore_db.collection("profile_submissions").document(sub_id).delete()
+                except Exception as exc:
+                    logger.warning("Failed to delete book from Firestore: %s", exc)
+
+            if self.storage_repo and getattr(self.storage_repo, "is_r2_active", False):
+                try:
+                    client = self.storage_repo.r2_client
+                    bucket = settings.cloudflare_r2_bucket_name
+                    paginator = client.get_paginator("list_objects_v2")
+                    for prefix in [f"novels/{book_id}/profile/", f"data/profile_books/{book_id}.json"]:
+                        for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+                            to_del = [{"Key": item["Key"]} for item in page.get("Contents", [])]
+                            if to_del:
+                                client.delete_objects(Bucket=bucket, Delete={"Objects": to_del})
+                except Exception as exc:
+                    logger.warning("Failed to delete book from R2: %s", exc)
+
+            try:
+                root_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+                local_dir = os.path.join(root_dir, "storage", "novels", book_id, "profile")
+                if os.path.exists(local_dir):
+                    import shutil
+                    shutil.rmtree(local_dir, ignore_errors=True)
+            except Exception:
+                pass
+
+            return True
+
     def list_books(self) -> List[Dict[str, Any]]:
         with self._lock:
             self._hydrate_all_from_storage()
@@ -922,7 +976,8 @@ class CharacterProfileService:
             # Auto-sync existing novels from library_service into profile_books
             try:
                 from app.services.library_service import library_service
-                for nov in library_service.list_novels():
+                active_novels = library_service.list_novels()
+                for nov in active_novels:
                     title = nov.title or nov.novel_id
                     bid = self.book_id_for(BookMetadata(title=title, author=nov.author or "", language="vi"))
                     if bid not in self.books:
@@ -934,20 +989,19 @@ class CharacterProfileService:
             except Exception as exc:
                 logger.debug("Auto-sync library novels to profile_books skipped: %s", exc)
 
-            # Auto-sync existing Book Bibles from storage_repo into profile_books
-            try:
-                from app.core import storage_repo
-                for bible_id, bible in storage_repo.list_bibles().items():
-                    novel_title = getattr(bible, "novel_id", None) or bible_id
-                    bid = self.book_id_for(BookMetadata(title=novel_title, author="", language="vi"))
-                    if bid not in self.books:
-                        self._create_book(
-                            bid,
-                            BookMetadata(title=novel_title, author="", language="vi"),
-                            FingerprintBundle(),
-                        )
-            except Exception as exc:
-                logger.debug("Auto-sync storage bibles to profile_books skipped: %s", exc)
+            test_patterns = [
+                "test-",
+                "test_",
+                "-test-",
+                "-test.",
+                "test novel",
+                "di-nang-giao-su-260818",
+                "dau-pha-test",
+                "pham-nhan-test",
+                "tru-tien-test",
+                "au-la-ai-luc",
+                "co-chan-nhan-dich",
+            ]
 
             res = []
             for book_id, book in self.books.items():
@@ -955,6 +1009,13 @@ class CharacterProfileService:
                 title = meta.title if hasattr(meta, "title") else (meta.get("title", "") if isinstance(meta, dict) else "")
                 author = meta.author if hasattr(meta, "author") else (meta.get("author", "") if isinstance(meta, dict) else "")
                 language = meta.language if hasattr(meta, "language") else (meta.get("language", "") if isinstance(meta, dict) else "")
+                
+                # Bỏ qua các sách test / rác cũ
+                title_lower = (title or book_id).lower()
+                book_id_lower = book_id.lower()
+                if any(pat in title_lower or pat in book_id_lower for pat in test_patterns):
+                    continue
+
                 res.append({
                     "book_id": book_id,
                     "title": title or book_id,
@@ -966,6 +1027,7 @@ class CharacterProfileService:
                     "pending_event_count": sum(1 for e in self.events.values() if e.book_id == book_id and e.status == "pending"),
                 })
             return sorted(res, key=lambda b: b["title"])
+
 
     def list_events(
         self,

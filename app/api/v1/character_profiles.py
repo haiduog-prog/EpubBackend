@@ -81,7 +81,19 @@ def update_book(
         raise HTTPException(status_code=404, detail=str(exc).strip("'")) from exc
 
 
+@router.delete("/books/{book_id}")
+def delete_book(
+    book_id: str,
+    x_book_bible_client_key: Optional[str] = Header(default=None),
+):
+    """Xóa một bộ truyện và toàn bộ tiến trình nhân vật / sự kiện liên quan khỏi hệ thống."""
+    _require_trusted_client(x_book_bible_client_key)
+    success = profile_service.delete_book(book_id)
+    return {"status": "success", "book_id": book_id, "deleted": success}
+
+
 @router.post("/books/{book_id}/editions", response_model=EditionRecord)
+
 def create_edition(
     book_id: str,
     request: EditionCreateRequest,

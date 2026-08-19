@@ -775,10 +775,18 @@
                                 <option value="">-- Chọn bộ truyện --</option>
                             </select>
                             <button class="btn btn-secondary" onclick="openCpCreateBookModal()" style="padding:0.45rem 0.8rem; font-size:0.82rem;" title="Khởi tạo sách mới">
+
                                 <i class="fa-solid fa-plus"></i> Sách Mới
+                            </button>
+                            <button class="btn btn-secondary" onclick="deleteSelectedCpBook()" style="padding:0.45rem 0.7rem; font-size:0.82rem; color:#ef4444; border-color:rgba(239,68,68,0.3);" title="Xóa bộ truyện đang chọn">
+                                <i class="fa-solid fa-trash"></i> Xóa Sách
+                            </button>
+                            <button class="btn btn-secondary" onclick="cleanAllTestAndGhostData()" style="padding:0.45rem 0.7rem; font-size:0.82rem; color:#f59e0b; border-color:rgba(245,158,11,0.3);" title="Dọn dẹp toàn bộ dữ liệu test / rác">
+                                <i class="fa-solid fa-broom"></i> Dọn Sách Rác
                             </button>
                         </div>
                     </div>
+
 
                     <!-- Auto Approve Toggle -->
                     <div style="display:flex; align-items:center; gap:1rem;">
@@ -2239,7 +2247,53 @@
             }
         }
 
+        async function deleteSelectedCpBook() {
+            if (!cpCurrentBookId) {
+                alert("Vui lòng chọn bộ truyện muốn xóa!");
+                return;
+            }
+            const book = cpBooksCache.find(b => b.book_id === cpCurrentBookId);
+            const bookTitle = book ? book.title : cpCurrentBookId;
+            if (!confirm(`Bạn có chắc chắn muốn xóa bộ truyện "${bookTitle}" và toàn bộ tiến trình nhân vật không?`)) {
+                return;
+            }
+            try {
+                const res = await fetch(apiUrl(`/api/v1/character-profiles/books/${cpCurrentBookId}`), {
+                    method: 'DELETE'
+                });
+                if (res.ok) {
+                    alert(`Đã xóa bộ truyện "${bookTitle}" thành công!`);
+                    cpCurrentBookId = null;
+                    await loadCpBooks();
+                } else {
+                    alert("Lỗi khi xóa bộ truyện!");
+                }
+            } catch (err) {
+                alert("Lỗi kết nối: " + err.message);
+            }
+        }
+
+        async function cleanAllTestAndGhostData() {
+            if (!confirm("Hệ thống sẽ quét và dọn sạch tất cả dữ liệu test, truyện rác và đồng bộ lại danh sách. Bạn có muốn tiếp tục?")) {
+                return;
+            }
+            try {
+                const res = await fetch(apiUrl('/api/v1/admin/clean-test-data'), { method: 'POST' });
+                if (res.ok) {
+                    const data = await res.json();
+                    alert(`Đã dọn dẹp xong! Đã xóa ${data.deleted_count || 0} file rác trên R2 và ${data.deleted_books_from_memory?.length || 0} sách test.`);
+                    cpCurrentBookId = null;
+                    await loadCpBooks();
+                } else {
+                    alert("Lỗi khi dọn dẹp dữ liệu test!");
+                }
+            } catch (err) {
+                alert("Lỗi kết nối: " + err.message);
+            }
+        }
+
         async function openCpCreateBookModal() {
+
             await loadQuickLibraryNovels();
             openModal('modal-cp-resolve-book');
         }

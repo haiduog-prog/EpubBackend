@@ -478,12 +478,15 @@ class LibraryService:
         bible = storage_repo.get_bible(novel_id) or BookBible(novel_id=novel_id)
 
         characters_list = []
-        for char in bible.characters:
+        for idx, char in enumerate(bible.characters):
+            role_str = char.role or "Nhân vật"
+            is_main = any(k in role_str.lower() for k in ["chính", "nam chính", "nữ chính", "protagonist", "main"])
             c_info = {
                 "character_id": char.character_id or char.original_name,
                 "original_name": char.original_name,
                 "vi_name": char.vi_name,
-                "role": char.role or "Nhân vật",
+                "role": role_str,
+                "is_main": is_main,
                 "realm": char.voice_notes or "Chưa rõ cảnh giới",
                 "items": [],
                 "skills": [],
@@ -496,31 +499,38 @@ class LibraryService:
             }
             characters_list.append(c_info)
 
+        # Nếu chưa có nhân vật nào được đánh dấu là chính thì mặc định nhân vật đầu tiên là nhân vật chính
+        if characters_list and not any(c["is_main"] for c in characters_list):
+            characters_list[0]["is_main"] = True
+
         # Categorize terms
         items = [f"{t.original_name} → {t.vi_name}" for t in bible.terms if any(k in t.category.lower() for k in ["item", "pháp bảo", "bảo vật", "vũ khí", "đan dược", "vật phẩm"])]
         skills = [f"{t.original_name} → {t.vi_name}" for t in bible.terms if any(k in t.category.lower() for k in ["skill", "công pháp", "võ kỹ", "bí thuật", "chiêu thức"])]
         pets = [f"{t.original_name} → {t.vi_name}" for t in bible.terms if any(k in t.category.lower() for k in ["pet", "linh thú", "sủng vật", "thú cưỡi", "tọa kỵ", "thần thú", "yêu thú", "khế ước thú"])]
         places = [f"{p.original_name} → {p.vi_name}" for p in bible.places]
 
-        # Attach to main character if available
-        if characters_list:
+        # Attach inventory, skills, and pets to main character
+        main_char = next((c for c in characters_list if c["is_main"]), None)
+        if main_char:
             if items:
-                characters_list[0]["items"] = items
+                main_char["items"] = items
             if skills:
-                characters_list[0]["skills"] = skills
+                main_char["skills"] = skills
             if pets:
-                characters_list[0]["pets"] = pets
+                main_char["pets"] = pets
 
         return {
             "novel_id": novel_id,
             "novel_title": meta.title,
             "chapter_index": chapter_index,
+            "main_character": main_char,
             "characters": characters_list,
             "inventory_items": items or [f"{t.original_name} → {t.vi_name}" for t in bible.terms[:5]],
             "skills": skills or [],
             "pets": pets or [],
             "known_places": places,
         }
+
 
     # ------------------------------------------------------------------
     # EPUB Export

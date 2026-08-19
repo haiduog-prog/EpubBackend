@@ -2233,7 +2233,9 @@
                         cpBooksCache.forEach(b => {
                             const opt = document.createElement('option');
                             opt.value = b.book_id;
-                            opt.innerText = `${b.title} (${b.event_count || 0} events, rev ${b.revision || 0})`;
+                            const evText = b.event_count ? `${b.event_count} sự kiện` : '0 sự kiện';
+                            const revText = `v${b.revision || 0}`;
+                            opt.innerText = `${b.title} (${evText}, phiên bản ${revText})`;
                             select.appendChild(opt);
                         });
                         if (!cpCurrentBookId || !cpBooksCache.find(b => b.book_id === cpCurrentBookId)) {
@@ -2332,12 +2334,13 @@
             cpCurrentBookId = bookId || null;
             if (!cpCurrentBookId) {
                 document.getElementById('cp-badge-book-id').innerHTML = '<i class="fa-solid fa-book"></i> Chưa chọn sách';
-                document.getElementById('cp-badge-edition').innerHTML = '<i class="fa-solid fa-code-branch"></i> Edition: N/A';
-                document.getElementById('cp-badge-revision').innerHTML = '<i class="fa-solid fa-clock-rotate-left"></i> Revision: 0';
+                document.getElementById('cp-badge-edition').innerHTML = '<i class="fa-solid fa-code-branch"></i> Ấn bản: N/A';
+                document.getElementById('cp-badge-revision').innerHTML = '<i class="fa-solid fa-clock-rotate-left"></i> Phiên bản: 0';
                 document.getElementById('cp-badge-events-count').innerHTML = '<i class="fa-solid fa-bolt"></i> 0 sự kiện';
                 document.getElementById('cp-events-container').innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-sub);">Chưa chọn sách.</div>';
                 return;
             }
+
 
             const book = cpBooksCache.find(b => b.book_id === cpCurrentBookId);
             document.getElementById('cp-badge-book-id').innerHTML = `<i class="fa-solid fa-book"></i> ${book ? book.title : cpCurrentBookId}`;

@@ -1003,7 +1003,17 @@ class CharacterProfileService:
                 "co-chan-nhan-dich",
             ]
 
-            res = []
+            # Group & Deduplicate by normalized slug to avoid "Dị Năng Giáo Sư" vs "di-nang-giao-su"
+            import unicodedata, re
+
+            def _get_slug(text: str) -> str:
+                s = unicodedata.normalize('NFKD', text or '')
+                s = ''.join(c for c in s if not unicodedata.combining(c))
+                s = re.sub(r'[^a-zA-Z0-9]+', ' ', s).strip().lower()
+                return re.sub(r'\s+', '-', s)
+
+            slug_groups: Dict[str, List[Dict[str, Any]]] = {}
+
             for book_id, book in self.books.items():
                 meta = book.get("metadata")
                 title = meta.title if hasattr(meta, "title") else (meta.get("title", "") if isinstance(meta, dict) else "")
@@ -1016,7 +1026,11 @@ class CharacterProfileService:
                 if any(pat in title_lower or pat in book_id_lower for pat in test_patterns):
                     continue
 
-                res.append({
+                item_slug = _get_slug(title or book_id)
+                if not item_slug:
+                    continue
+
+                item_data = {
                     "book_id": book_id,
                     "title": title or book_id,
                     "author": author,
@@ -1025,8 +1039,35 @@ class CharacterProfileService:
                     "edition_count": sum(1 for e in self.editions.values() if e.book_id == book_id),
                     "event_count": sum(1 for e in self.events.values() if e.book_id == book_id),
                     "pending_event_count": sum(1 for e in self.events.values() if e.book_id == book_id and e.status == "pending"),
-                })
+                }
+                slug_groups.setdefault(item_slug, []).append(item_data)
+
+            res = []
+            for slug, group in slug_groups.items():
+                if len(group) == 1:
+                    res.append(group[0])
+                else:
+                    def score_book(b):
+                        score = 0
+                        if b["event_count"] > 0:
+                            score += 100 * b["event_count"]
+                        if any(c.isupper() for c in b["title"]):
+                            score += 10
+                        if " " in b["title"]:
+                            score += 10
+                        if b["title"] != slug:
+                            score += 5
+                        return score
+
+                    best_book = max(group, key=score_book)
+                    best_book["event_count"] = sum(b["event_count"] for b in group)
+                    best_book["pending_event_count"] = sum(b["pending_event_count"] for b in group)
+                    best_book["edition_count"] = sum(b["edition_count"] for b in group)
+                    best_book["revision"] = max(b["revision"] for b in group)
+                    res.append(best_book)
+
             return sorted(res, key=lambda b: b["title"])
+
 
 
     def list_events(

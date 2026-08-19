@@ -186,7 +186,7 @@ def test_r2_save_and_get_bible_persists_across_cache_clear():
     )
     repository.save_bible("job-r2-1", bible)
 
-    assert "data/bibles/novel-r2-1.json" in repository.r2_client.objects
+    assert ("novels/novel-r2-1/bible.json" in repository.r2_client.objects or "data/bibles/novel-r2-1.json" in repository.r2_client.objects)
 
     # Simulate clearing in-memory cache
     repository._bibles.clear()

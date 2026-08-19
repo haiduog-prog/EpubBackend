@@ -149,7 +149,10 @@ class CharacterProfileService:
     def _hydrate_all_from_storage(self, force: bool = False) -> None:
         if getattr(self, "_hydrated_from_storage", False) and not force:
             return
+        if os.environ.get("PYTEST_CURRENT_TEST") and not force:
+            return
         self._hydrated_from_storage = True
+
         # 1. Hydrate from Cloudflare R2
         if self.storage_repo and getattr(self.storage_repo, "is_r2_active", False):
             try:

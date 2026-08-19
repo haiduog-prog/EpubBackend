@@ -1,4 +1,4 @@
-﻿PROMPT_1_EXTRACT_BOOK_BIBLE_DELTA = """Báº¡n lÃ  biÃªn táº­p viÃªn phÃ¢n tÃ­ch tiá»ƒu thuyáº¿t chuyÃªn nghiá»‡p. Nhiá»‡m vá»¥: Ä‘á»c vÄƒn báº£n gá»‘c vÃ  trÃ­ch xuáº¥t CÃC THá»°C THá»‚ Má»šI hoáº·c THAY Äá»”I so vá»›i danh sÃ¡ch Ä‘Ã£ biáº¿t â€” khÃ´ng láº·p láº¡i thá»±c thá»ƒ khÃ´ng cÃ³ gÃ¬ má»›i.
+PROMPT_1_EXTRACT_BOOK_BIBLE_DELTA = """Báº¡n lÃ  biÃªn táº­p viÃªn phÃ¢n tÃ­ch tiá»ƒu thuyáº¿t chuyÃªn nghiá»‡p. Nhiá»‡m vá»¥: Ä‘á»c vÄƒn báº£n gá»‘c vÃ  trÃ­ch xuáº¥t CÃC THá»°C THá»‚ Má»šI hoáº·c THAY Äá»”I so vá»›i danh sÃ¡ch Ä‘Ã£ biáº¿t â€” khÃ´ng láº·p láº¡i thá»±c thá»ƒ khÃ´ng cÃ³ gÃ¬ má»›i.
 
 DANH SÃCH TÃŠN ÄÃƒ BIáº¾T (chá»‰ Ä‘á»ƒ Ä‘á»‘i chiáº¿u trÃ¡nh trÃ¹ng láº·p, KHÃ”NG cáº§n tráº£ láº¡i nguyÃªn tráº¡ng):
 {known_names_index}
@@ -28,7 +28,7 @@ Tráº£ JSON theo schema sau, CHá»ˆ gá»“m pháº§n má»›i hoáº·c 
   "new_places": [{{"original_name": "string", "vi_name": "string", "notes": "string"}}],
   "new_terms": [{{"original_name": "string", "vi_name": "string", "category": "string", "notes": "string"}}],
   "address_observations": [{{"character_original_name": "string", "counterpart_original_name": "string", "counterpart_text": "string", "self_term": "string", "other_term": "string", "context": "string", "evidence": "string", "confidence": 0.0, "change_type": "same|new|replace|uncertain", "explicit_transition": false}}],
-  "character_events": [{{"character_original_name": "string", "category": "realm|skill|power|item|identity|faction|relationship|status|location|custom", "attribute_key": "string", "operation": "set|add|remove|increase|decrease|link|unlink|correct", "value": null, "certainty": "observed|stated|rumor|inferred|contradicted", "evidence": "string", "confidence": 0.0}}],
+  "character_events": [{{"character_original_name": "string", "category": "realm|skill|power|item|pet|identity|faction|relationship|status|location|custom", "attribute_key": "string", "operation": "set|add|remove|increase|decrease|link|unlink|correct", "value": null, "certainty": "observed|stated|rumor|inferred|contradicted", "evidence": "string", "confidence": 0.0}}],
   "style_guide": {{"genre": "string", "tone": "string", "era_setting": "string"}}
 }}
 

@@ -152,6 +152,7 @@ Example:
 - `skill`
 - `power`
 - `item`
+- `pet`
 - `identity`
 - `faction`
 - `relationship`

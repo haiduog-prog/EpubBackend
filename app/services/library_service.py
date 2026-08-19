@@ -445,6 +445,7 @@ class LibraryService:
                 "realm": char.voice_notes or "Chưa rõ cảnh giới",
                 "items": [],
                 "skills": [],
+                "pets": [],
                 "faction": "",
                 "address_terms": [
                     f"{a.self_term} / {a.other_term} (với {a.with_person})"
@@ -456,6 +457,7 @@ class LibraryService:
         # Categorize terms
         items = [f"{t.original_name} → {t.vi_name}" for t in bible.terms if any(k in t.category.lower() for k in ["item", "pháp bảo", "bảo vật", "vũ khí", "đan dược", "vật phẩm"])]
         skills = [f"{t.original_name} → {t.vi_name}" for t in bible.terms if any(k in t.category.lower() for k in ["skill", "công pháp", "võ kỹ", "bí thuật", "chiêu thức"])]
+        pets = [f"{t.original_name} → {t.vi_name}" for t in bible.terms if any(k in t.category.lower() for k in ["pet", "linh thú", "sủng vật", "thú cưỡi", "tọa kỵ", "thần thú", "yêu thú", "khế ước thú"])]
         places = [f"{p.original_name} → {p.vi_name}" for p in bible.places]
 
         # Attach to main character if available
@@ -464,6 +466,8 @@ class LibraryService:
                 characters_list[0]["items"] = items
             if skills:
                 characters_list[0]["skills"] = skills
+            if pets:
+                characters_list[0]["pets"] = pets
 
         return {
             "novel_id": novel_id,
@@ -472,6 +476,7 @@ class LibraryService:
             "characters": characters_list,
             "inventory_items": items or [f"{t.original_name} → {t.vi_name}" for t in bible.terms[:5]],
             "skills": skills or [],
+            "pets": pets or [],
             "known_places": places,
         }
 

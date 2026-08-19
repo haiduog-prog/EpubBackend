@@ -129,3 +129,39 @@ def test_legacy_delta_can_enter_the_new_timeline():
     assert len(service.events) == 1
     assert next(iter(service.events.values())).category == "identity"
 
+
+def test_character_pet_event_and_timeline():
+    service, book_id, edition_id = _service_and_edition()
+    candidate = CharacterEventCandidate(
+        character_original_name="Đường Tam",
+        category="pet",
+        attribute_key="pets",
+        operation="add",
+        value={"name": "U Minh Miêu", "species": "Huyền Thú", "realm": "Bách Niên Hồn Thú"},
+        certainty="observed",
+        evidence="Đường Tam ký kết khế ước với U Minh Miêu",
+        confidence=0.95,
+    )
+
+    first = _submit(service, book_id, edition_id, 3, "source-a", candidate, key="pet-1")
+    assert first.status == "completed"
+
+    second = _submit(service, book_id, edition_id, 3, "source-b", candidate, key="pet-2")
+    assert second.status == "completed"
+
+    assert len(service.events) == 1
+    event = next(iter(service.events.values()))
+    assert event.category == "pet"
+    assert event.status == "approved"
+
+    timeline = service.timeline(edition_id, 3, event.character_id)
+    assert len(timeline) == 1
+    assert timeline[0].category == "pet"
+
+    snapshot = service.snapshot(edition_id, 3)
+    assert len(snapshot.characters) == 1
+    assert snapshot.characters[0].attributes["pets"] == [{"name": "U Minh Miêu", "species": "Huyền Thú", "realm": "Bách Niên Hồn Thú"}]
+
+
+
+

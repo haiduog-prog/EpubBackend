@@ -622,7 +622,9 @@ class LibraryService:
             full_epub_key = f"novels/{actual_id}/full.epub"
             self._save_raw_file(full_epub_key, epub_bytes, content_type="application/epub+zip")
 
-            # Extract chapters
+            # Extract chapters with incremental diff
+            existing_chapters_map = {ch.chapter_index: ch for ch in meta.chapters}
+            merged_chapters = dict(existing_chapters_map)
             chapter_index = 1
             for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
                 content_html = item.get_content().decode("utf-8", errors="ignore")
@@ -644,6 +646,12 @@ class LibraryService:
                 folder = "translated" if is_translated else "original"
                 ch_key = f"novels/{actual_id}/{folder}/{ch_id}.txt"
 
+                # Check if chapter already exists -> skip to prevent duplicate upload
+                existing_ch = existing_chapters_map.get(chapter_index)
+                if existing_ch and (existing_ch.status == ChapterStatus.COMPLETED or existing_ch.word_count > 0):
+                    chapter_index += 1
+                    continue
+
                 self._save_raw_file(ch_key, full_text.encode("utf-8"), content_type="text/plain; charset=utf-8")
 
                 word_count = len(full_text.split())
@@ -661,11 +669,12 @@ class LibraryService:
                     r2_original_key="" if is_translated else ch_key,
                     r2_translated_key=ch_key if is_translated else "",
                 )
-                meta.chapters.append(chapter_item)
+                merged_chapters[chapter_index] = chapter_item
                 chapter_index += 1
 
+            meta.chapters = [merged_chapters[k] for k in sorted(merged_chapters.keys())]
             meta.total_chapters = len(meta.chapters)
-            meta.translated_chapters = len(meta.chapters) if is_translated else 0
+            meta.translated_chapters = sum(1 for c in meta.chapters if c.status == ChapterStatus.COMPLETED)
             meta.updated_at = datetime.utcnow().isoformat()
             self._save_metadata(meta)
             self._cache[actual_id] = meta
@@ -761,7 +770,12 @@ class LibraryService:
                 total = len(doc_items)
                 job.total_chapters = total
 
-                # Process and upload each chapter with live progress
+                # Process and upload each chapter with live progress and incremental diff
+                existing_chapters_map = {ch.chapter_index: ch for ch in meta.chapters}
+                merged_chapters = dict(existing_chapters_map)
+                added_count = 0
+                skipped_count = 0
+
                 for idx, (ch_title, full_text) in enumerate(doc_items, start=1):
                     if not ch_title or len(ch_title) > 80:
                         ch_title = f"Chương {idx}"
@@ -769,6 +783,16 @@ class LibraryService:
                     ch_id = f"ch_{idx:04d}"
                     folder = "translated" if is_translated else "original"
                     ch_key = f"novels/{actual_id}/{folder}/{ch_id}.txt"
+
+                    # Check if chapter already exists in storage -> skip upload
+                    existing_ch = existing_chapters_map.get(idx)
+                    if existing_ch and (existing_ch.status == ChapterStatus.COMPLETED or existing_ch.word_count > 0):
+                        skipped_count += 1
+                        job.skipped_chapters = skipped_count
+                        job.current_chapter = idx
+                        job.current_step = f"Bỏ qua chương {idx}/{total} (đã có trong kho): {existing_ch.chapter_title}"
+                        job.progress_percentage = 10 + int((idx / max(1, total)) * 75)
+                        continue
 
                     self._save_raw_file(ch_key, full_text.encode("utf-8"), content_type="text/plain; charset=utf-8")
 
@@ -787,15 +811,18 @@ class LibraryService:
                         r2_original_key="" if is_translated else ch_key,
                         r2_translated_key=ch_key if is_translated else "",
                     )
-                    meta.chapters.append(chapter_item)
+                    merged_chapters[idx] = chapter_item
+                    added_count += 1
+                    job.added_chapters = added_count
 
                     # Update live progress
                     job.current_chapter = idx
-                    job.current_step = f"Đang lưu R2: Chương {idx}/{total} - {ch_title}"
+                    job.current_step = f"Đang bổ sung chương mới {idx}/{total}: {ch_title}"
                     job.progress_percentage = 10 + int((idx / max(1, total)) * 75)
 
+                meta.chapters = [merged_chapters[k] for k in sorted(merged_chapters.keys())]
                 meta.total_chapters = len(meta.chapters)
-                meta.translated_chapters = len(meta.chapters) if is_translated else 0
+                meta.translated_chapters = sum(1 for c in meta.chapters if c.status == ChapterStatus.COMPLETED)
                 meta.updated_at = datetime.utcnow().isoformat()
                 self._save_metadata(meta)
                 self._cache[actual_id] = meta

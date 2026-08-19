@@ -88,7 +88,10 @@ class ImportJobStatus(BaseModel):
     current_step: str = ""
     current_chapter: int = 0
     total_chapters: int = 0
+    added_chapters: int = 0
+    skipped_chapters: int = 0
     progress_percentage: int = 0
     error_message: Optional[str] = None
     created_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
     completed_at: Optional[str] = None
+

@@ -106,3 +106,34 @@ def test_library_export_epub(tmp_path):
 
     # Clean up
     service.delete_novel(unique_id)
+
+
+def test_library_incremental_chapter_addition_and_deduplication(tmp_path):
+    service = LibraryService()
+    novel_id = f"incremental-test-{uuid.uuid4().hex[:6]}"
+    
+    # 1. Create novel with chapter 1
+    req = NovelCreateRequest(title="Test Incremental Novel", novel_id=novel_id)
+    service.create_novel(req)
+    service.add_or_update_chapter(novel_id, 1, "Chương 1", "Nội dung chương 1")
+
+    meta = service.get_novel(novel_id)
+    assert meta.total_chapters == 1
+    assert meta.chapters[0].chapter_index == 1
+
+    # 2. Add chapter 2
+    service.add_or_update_chapter(novel_id, 2, "Chương 2", "Nội dung chương 2")
+    meta2 = service.get_novel(novel_id)
+    assert meta2.total_chapters == 2
+    assert [c.chapter_index for c in meta2.chapters] == [1, 2]
+
+    # 3. Update chapter 1 without duplicating
+    service.add_or_update_chapter(novel_id, 1, "Chương 1 (Sửa đổi)", "Nội dung chương 1 mới")
+    meta3 = service.get_novel(novel_id)
+    assert meta3.total_chapters == 2
+    assert [c.chapter_index for c in meta3.chapters] == [1, 2]
+    assert meta3.chapters[0].chapter_title == "Chương 1 (Sửa đổi)"
+
+    # Clean up
+    service.delete_novel(novel_id)
+

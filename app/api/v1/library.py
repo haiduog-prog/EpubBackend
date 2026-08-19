@@ -143,6 +143,37 @@ def delete_novel_endpoint(novel_id: str):
     return {"message": f"Đã xóa thành công bộ truyện '{novel_id}' khỏi kho."}
 
 
+@router.get("/novels/{novel_id}/missing-chapters")
+def check_missing_chapters_endpoint(
+    novel_id: str,
+    expected_total: Optional[int] = Query(default=None, description="Tổng số chương dự kiến (ví dụ: 150)"),
+):
+    """
+    Kiểm tra các chương đã có trong kho và danh sách các chương còn thiếu.
+    Giúp Client quyết định có cần upload bù chương hay không.
+    """
+    novel = library_service.get_novel(novel_id)
+    if not novel:
+        raise HTTPException(status_code=404, detail="Không tìm thấy bộ truyện này.")
+
+    existing_indices = {ch.chapter_index for ch in novel.chapters}
+    max_idx = max(existing_indices) if existing_indices else 0
+    target_total = expected_total or max_idx
+
+    missing = [i for i in range(1, target_total + 1) if i not in existing_indices]
+
+    return {
+        "novel_id": novel_id,
+        "title": novel.title,
+        "total_in_storage": len(existing_indices),
+        "max_chapter_index": max_idx,
+        "existing_chapters_count": len(existing_indices),
+        "missing_chapters_count": len(missing),
+        "missing_chapter_indices": missing,
+    }
+
+
+
 @router.post("/novels/{novel_id}/chapters", response_model=ChapterItem)
 async def add_chapter_endpoint(
     novel_id: str,

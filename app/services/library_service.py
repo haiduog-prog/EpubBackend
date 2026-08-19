@@ -8,7 +8,7 @@ import threading
 import unicodedata
 import uuid
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import ebooklib
 from ebooklib import epub
@@ -35,9 +35,12 @@ logger = logging.getLogger("EpubBackend.LibraryService")
 
 def slugify(text: str) -> str:
     """Chuyển chuỗi tiếng Việt thành slug URL an toàn"""
+    # Thay thế chữ Đ/đ trước vì Unicode NFKD không tự tách chữ Đ thành d + dấu
+    text = text.replace("đ", "d").replace("Đ", "d")
     text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("utf-8")
     text = re.sub(r"[^\w\s-]", "", text).strip().lower()
     return re.sub(r"[-\s]+", "-", text) or "novel"
+
 
 
 class LibraryService:
@@ -65,22 +68,34 @@ class LibraryService:
         req: NovelCreateRequest,
         cover_data: Optional[bytes] = None,
         cover_filename: Optional[str] = None,
+        overwrite: bool = True,
     ) -> NovelMetadata:
-        novel_id = req.novel_id or slugify(req.title)
-        
-        # Check uniqueness or suffix
+        novel_id = (req.novel_id or slugify(req.title)).strip().lower()
         existing = self.get_novel(novel_id)
-        if existing:
-            suffix = datetime.utcnow().strftime("%y%m%d%H%M")
-            novel_id = f"{novel_id}-{suffix}"
 
-        cover_url = None
+        cover_url = existing.cover_url if existing else None
         if cover_data:
             ext = cover_filename.split(".")[-1].lower() if cover_filename and "." in cover_filename else "jpg"
             cover_key = self._cover_key(novel_id, ext)
             cover_url = self._save_raw_file(cover_key, cover_data, content_type=f"image/{ext}")
 
         now = datetime.utcnow().isoformat()
+        if existing and overwrite:
+            # Cập nhật thông tin truyện hiện có mà không sinh thêm novel_id đuôi timestamp mới
+            existing.title = req.title or existing.title
+            existing.original_title = req.original_title or existing.original_title
+            existing.author = req.author or existing.author
+            if req.genre:
+                existing.genre = req.genre
+            if req.description:
+                existing.description = req.description
+            if cover_url:
+                existing.cover_url = cover_url
+            existing.updated_at = now
+            self._save_metadata(existing)
+            self._cache[novel_id] = existing
+            return existing
+
         metadata = NovelMetadata(
             novel_id=novel_id,
             title=req.title,
@@ -219,6 +234,18 @@ class LibraryService:
                         )
             except Exception as exc:
                 logger.warning("Error deleting novel files from R2: %s", exc)
+
+        # Xóa luôn Book Bible liên quan đến bộ truyện
+        storage_repo.delete_bible(novel_id)
+
+        # Xóa local metadata file nếu có
+        try:
+            local_meta = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "storage", "novels", novel_id)
+            if os.path.exists(local_meta):
+                import shutil
+                shutil.rmtree(local_meta, ignore_errors=True)
+        except Exception:
+            pass
 
         self._cache.pop(novel_id, None)
         return True

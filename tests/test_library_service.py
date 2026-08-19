@@ -3,7 +3,14 @@ import uuid
 import tempfile
 import pytest
 from app.schemas.library import NovelCreateRequest, NovelUpdateRequest, ChapterStatus
-from app.services.library_service import LibraryService
+from app.services.library_service import LibraryService, slugify
+
+
+def test_slugify_vietnamese_characters():
+    assert slugify("Đấu La Đại Lục 3 - Long Vương Truyền Thuyết") == "dau-la-dai-luc-3-long-vuong-truyen-thuyet"
+    assert slugify("Đấu Phá Thương Khung") == "dau-pha-thuong-khung"
+    assert slugify("Đi Năng Giáo Sư") == "di-nang-giao-su"
+    assert slugify("Cổ Chân Nhân (Bản Dịch)") == "co-chan-nhan-ban-dich"
 
 
 def test_library_create_and_get_novel(tmp_path):

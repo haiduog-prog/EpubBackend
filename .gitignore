@@ -12,6 +12,7 @@ ENV/
 
 # Temporary storage & uploaded files
 storage/
+data/
 serviceAccountKey.json
 *.epub
 *.txt

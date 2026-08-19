@@ -433,7 +433,26 @@ class StorageRepository:
                     doc_id = bible.novel_id or "default"
                     self._bibles[doc_id] = bible
                 return self._bibles
-        return self._bibles
+    def delete_bible(self, job_or_novel_id: str) -> bool:
+        if not hasattr(self, "_bibles"):
+            self._bibles = {}
+        lock = self._get_lock(job_or_novel_id)
+        with lock:
+            self._bibles.pop(job_or_novel_id, None)
+            if self.is_r2_active and settings.cloudflare_r2_bucket_name:
+                try:
+                    self.r2_client.delete_object(
+                        Bucket=settings.cloudflare_r2_bucket_name,
+                        Key=f"data/bibles/{job_or_novel_id}.json",
+                    )
+                except Exception as exc:
+                    logger.warning("Failed to delete Book Bible from Cloudflare R2: %s", exc)
+            if self.is_firebase_active:
+                try:
+                    self.firestore_db.collection("book_bibles").document(job_or_novel_id).delete()
+                except Exception as exc:
+                    logger.warning("Failed to delete Book Bible from Firestore: %s", exc)
+            return True
 
 
 storage_repo = StorageRepository()

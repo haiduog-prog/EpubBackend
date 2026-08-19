@@ -73,3 +73,53 @@ def clean_test_data():
         "deleted_keys": [item["Key"] for item in deleted_keys],
     }
 
+
+@router.post("/purge-legacy-data-folders")
+def purge_legacy_data_folders():
+    """
+    Xóa toàn bộ các file rời rạc cũ trong prefix data/ (data/profile_submissions/, data/profile_events/, data/profile_books/, data/profile_editions/, data/bibles/)
+    để chuyển sang 100% cấu trúc mới gom theo thư mục tên truyện: novels/{novel_id}/.
+    """
+    if not storage_repo.is_r2_active:
+        return {
+            "status": "skipped",
+            "reason": "R2 is not active on this environment",
+            "deleted_count": 0,
+            "deleted_keys": [],
+        }
+
+    from app.config import settings
+
+    bucket = settings.cloudflare_r2_bucket_name
+    client = storage_repo.r2_client
+    paginator = client.get_paginator("list_objects_v2")
+
+    deleted_keys = []
+    legacy_prefixes = [
+        "data/profile_submissions/",
+        "data/profile_events/",
+        "data/profile_books/",
+        "data/profile_editions/",
+        "data/bibles/",
+    ]
+
+    for prefix in legacy_prefixes:
+        for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+            for item in page.get("Contents", []):
+                key = item.get("Key", "")
+                if key:
+                    deleted_keys.append({"Key": key})
+
+    if deleted_keys:
+        for i in range(0, len(deleted_keys), 500):
+            chunk = deleted_keys[i : i + 500]
+            client.delete_objects(Bucket=bucket, Delete={"Objects": chunk})
+
+    return {
+        "status": "success",
+        "message": f"Đã dọn dẹp sạch {len(deleted_keys)} file cũ trong data/! Giờ đây toàn bộ dữ liệu chỉ nằm gọn trong novels/{{novel_id}}/",
+        "deleted_count": len(deleted_keys),
+        "deleted_keys": [item["Key"] for item in deleted_keys],
+    }
+
+

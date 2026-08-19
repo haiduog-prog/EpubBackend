@@ -275,7 +275,8 @@ class StorageRepository:
             )
 
             if self.is_r2_active:
-                self._r2_put_json(f"data/bibles/{doc_key}.json", merged.model_dump(mode="json"))
+                # Lưu Book Bible trực tiếp vào folder của truyện trên R2
+                self._r2_put_json(f"novels/{doc_key}/bible.json", merged.model_dump(mode="json"))
 
             if self.is_firebase_active:
                 try:
@@ -307,7 +308,7 @@ class StorageRepository:
         with lock:
             existing = self._bibles.get(job_or_novel_id)
             if existing is None and self.is_r2_active:
-                r2_data = self._r2_get_json(f"data/bibles/{job_or_novel_id}.json")
+                r2_data = self._r2_get_json(f"novels/{job_or_novel_id}/bible.json") or self._r2_get_json(f"data/bibles/{job_or_novel_id}.json")
                 if r2_data:
                     existing = BookBibleService.ensure_timeline(BookBible.model_validate(r2_data))
             target = existing.model_copy(deep=True) if existing else BookBible(
@@ -317,7 +318,7 @@ class StorageRepository:
             self._cache_bible(job_or_novel_id, job_or_novel_id, merged)
 
             if self.is_r2_active:
-                self._r2_put_json(f"data/bibles/{job_or_novel_id}.json", merged.model_dump(mode="json"))
+                self._r2_put_json(f"novels/{job_or_novel_id}/bible.json", merged.model_dump(mode="json"))
 
             if self.is_firebase_active:
                 try:
@@ -343,11 +344,12 @@ class StorageRepository:
             except Exception as exc:
                 logger.warning("Failed to fetch Book Bible from Firestore, using local memory: %s", exc)
         if self.is_r2_active and job_id not in self._bibles:
-            data = self._r2_get_json(f"data/bibles/{job_id}.json")
+            data = self._r2_get_json(f"novels/{job_id}/bible.json") or self._r2_get_json(f"data/bibles/{job_id}.json")
             if data:
                 bible = BookBibleService.ensure_timeline(BookBible.model_validate(data))
                 self._bibles[job_id] = bible
                 return bible
+
         bible = self._bibles.get(job_id)
         return BookBibleService.ensure_timeline(bible) if bible else None
 
@@ -426,13 +428,19 @@ class StorageRepository:
             except Exception as exc:
                 logger.warning("Failed to list Book Bibles from Firestore, falling back: %s", exc)
         if self.is_r2_active:
-            items = self._r2_list_json_objects("data/bibles/")
+            items = self._r2_list_json_objects("novels/") + self._r2_list_json_objects("data/bibles/")
             if items:
                 for data in items:
-                    bible = BookBibleService.ensure_timeline(BookBible.model_validate(data))
-                    doc_id = bible.novel_id or "default"
-                    self._bibles[doc_id] = bible
+                    if isinstance(data, dict) and ("characters" in data or "character_events" in data):
+                        try:
+                            bible = BookBibleService.ensure_timeline(BookBible.model_validate(data))
+                            doc_id = bible.novel_id or "default"
+                            self._bibles[doc_id] = bible
+                        except Exception:
+                            pass
                 return self._bibles
+        return self._bibles
+
     def delete_bible(self, job_or_novel_id: str) -> bool:
         if not hasattr(self, "_bibles"):
             self._bibles = {}
@@ -440,13 +448,14 @@ class StorageRepository:
         with lock:
             self._bibles.pop(job_or_novel_id, None)
             if self.is_r2_active and settings.cloudflare_r2_bucket_name:
-                try:
-                    self.r2_client.delete_object(
-                        Bucket=settings.cloudflare_r2_bucket_name,
-                        Key=f"data/bibles/{job_or_novel_id}.json",
-                    )
-                except Exception as exc:
-                    logger.warning("Failed to delete Book Bible from Cloudflare R2: %s", exc)
+                for key_to_del in [f"novels/{job_or_novel_id}/bible.json", f"data/bibles/{job_or_novel_id}.json"]:
+                    try:
+                        self.r2_client.delete_object(
+                            Bucket=settings.cloudflare_r2_bucket_name,
+                            Key=key_to_del,
+                        )
+                    except Exception as exc:
+                        logger.warning("Failed to delete Book Bible %s from Cloudflare R2: %s", key_to_del, exc)
             if self.is_firebase_active:
                 try:
                     self.firestore_db.collection("book_bibles").document(job_or_novel_id).delete()
@@ -456,5 +465,6 @@ class StorageRepository:
 
 
 storage_repo = StorageRepository()
+
 
 

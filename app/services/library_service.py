@@ -595,6 +595,32 @@ class LibraryService:
         if meta.author:
             book.add_author(meta.author)
 
+        # Check and add cover image if available
+        cover_content = None
+        if storage_repo.is_r2_active and settings.cloudflare_r2_bucket_name:
+            try:
+                resp = storage_repo.r2_client.get_object(
+                    Bucket=settings.cloudflare_r2_bucket_name,
+                    Key=f"novels/{novel_id}/cover.jpg",
+                )
+                cover_content = resp["Body"].read()
+            except Exception:
+                pass
+        if not cover_content:
+            local_cover = os.path.join("storage", "novels", novel_id, "cover.jpg")
+            if os.path.exists(local_cover):
+                try:
+                    with open(local_cover, "rb") as cf:
+                        cover_content = cf.read()
+                except Exception:
+                    pass
+
+        if cover_content:
+            try:
+                book.set_cover("cover.jpg", cover_content)
+            except Exception as cover_err:
+                logger.debug("Failed to set EPUB cover: %s", cover_err)
+
         # Style CSS
         style = """
         @namespace epub "http://www.idpf.org/2007/ops";
@@ -641,6 +667,190 @@ class LibraryService:
         return output_path
 
     # ------------------------------------------------------------------
+    # EPUB Extraction & Continuous Indexing Helpers
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _extract_raw_chapters_from_epub(book: epub.EpubBook) -> List[Tuple[str, str]]:
+        """
+        Trích xuất danh sách (chapter_title, full_text) từ sách EPUB.
+        - Duyệt theo thứ tự reading order chuẩn (book.spine).
+        - Bỏ qua các mục phụ bản (cover, toc, nav, titlepage, copyright).
+        - Tự động gộp trang tiêu đề ngắn (<150 ký tự) vào trang nội dung kế tiếp.
+        - Hỗ trợ phân tách nếu 1 file HTML chứa nhiều chương.
+        - Làm sạch DOM tránh nhân bản đoạn văn do thẻ lồng nhau.
+        """
+        from bs4 import BeautifulSoup
+
+        # 1. Lấy danh sách item theo đúng thứ tự reading order (spine)
+        items = []
+        if getattr(book, "spine", None):
+            for entry in book.spine:
+                item_id = entry[0] if isinstance(entry, (list, tuple)) else entry
+                if not item_id or item_id in ("nav", "ncx"):
+                    continue
+                item = book.get_item_with_id(item_id)
+                if item and item.get_type() == ebooklib.ITEM_DOCUMENT:
+                    items.append(item)
+
+        # Fallback nếu spine rỗng hoặc không trích xuất được document
+        if not items:
+            items = list(book.get_items_of_type(ebooklib.ITEM_DOCUMENT))
+
+        raw_sections: List[Tuple[str, str]] = []
+        pending_title: str = ""
+
+        # Các từ khóa nhận diện file phụ bản không chứa nội dung truyện
+        ignored_names = {
+            "cover", "nav", "toc", "titlepage", "title_page", "halftitle",
+            "copyright", "colophon", "about", "feedback", "author"
+        }
+
+        for item in items:
+            name_lower = (item.get_name() or "").lower()
+            id_lower = (getattr(item, "id", "") or "").lower()
+
+            content_html = item.get_content().decode("utf-8", errors="ignore")
+            soup = BeautifulSoup(content_html, "html.parser")
+
+            # Xóa các thẻ không phục vụ đọc
+            for tag in soup(["script", "style", "nav", "noscript"]):
+                tag.decompose()
+
+            # Bỏ qua file cover / toc / nav nếu tên rõ ràng và không có nhiều nội dung truyện
+            if any(ign in name_lower or ign in id_lower for ign in ignored_names):
+                p_tags = soup.find_all(["p", "div"])
+                total_text_len = sum(len(p.get_text().strip()) for p in p_tags)
+                if total_text_len < 300:
+                    continue
+
+            # Kiểm tra nếu tài liệu có nhiều tiêu đề chương (multi-chapter file)
+            headings = soup.find_all(["h1", "h2", "h3", "h4"])
+            chapter_headings = []
+            for h in headings:
+                h_text = h.get_text().strip()
+                if parse_chapter_index_from_title(h_text) is not None or re.search(r"^(?:chương|chuong|hồi|hoi|tiết|tiet|chapter)\s*\d+", h_text, re.IGNORECASE):
+                    chapter_headings.append(h)
+
+            if len(chapter_headings) > 1:
+                # Tài liệu chứa nhiều chương gộp chung -> Tách theo từng heading
+                pending_title = ""
+                body = soup.find("body") or soup
+                current_split_title = chapter_headings[0].get_text().strip()
+                current_split_lines: List[str] = []
+
+                for elem in body.find_all(["p", "h1", "h2", "h3", "h4", "div", "blockquote", "li"]):
+                    if elem in chapter_headings:
+                        if current_split_lines:
+                            sec_text = "\n\n".join(current_split_lines).strip()
+                            if len(sec_text) >= 30:
+                                raw_sections.append((current_split_title, sec_text))
+                        current_split_title = elem.get_text().strip()
+                        current_split_lines = []
+                    elif elem.name in ["p", "blockquote", "li"]:
+                        t = elem.get_text().strip()
+                        if t:
+                            current_split_lines.append(t)
+                    elif elem.name == "div" and not elem.find(["p", "div", "blockquote"]):
+                        t = elem.get_text().strip()
+                        if t:
+                            current_split_lines.append(t)
+
+                if current_split_lines:
+                    sec_text = "\n\n".join(current_split_lines).strip()
+                    if len(sec_text) >= 30:
+                        raw_sections.append((current_split_title, sec_text))
+                continue
+
+            # Trường hợp thông thường: 1 file = 1 chương (hoặc 1 trang tiêu đề lẻ)
+            text_lines = []
+            for elem in soup.find_all(["p", "h1", "h2", "h3", "h4", "blockquote", "li"]):
+                t = elem.get_text().strip()
+                if t:
+                    text_lines.append(t)
+
+            if not text_lines:
+                for div in soup.find_all("div"):
+                    if not div.find(["p", "div", "blockquote"]):
+                        t = div.get_text().strip()
+                        if t:
+                            text_lines.append(t)
+
+            if not text_lines:
+                raw_t = soup.get_text("\n").strip()
+                text_lines = [l.strip() for l in raw_t.split("\n") if l.strip()]
+
+            full_text = "\n\n".join(text_lines).strip()
+            if not full_text:
+                continue
+
+            h_tag = soup.find(["h1", "h2", "h3", "h4"])
+            ch_title = h_tag.get_text().strip() if h_tag else ""
+            if not ch_title and text_lines:
+                first_line = text_lines[0]
+            # Xử lý trang chỉ có Tiêu đề (Title-only page / không có đoạn văn truyện)
+            p_tags = soup.find_all(["p", "blockquote"])
+            story_text_len = sum(len(p.get_text().strip()) for p in p_tags)
+
+            is_title_only = False
+            if not p_tags:
+                if len(full_text) < 100 and (bool(ch_title) or parse_chapter_index_from_title(full_text) is not None):
+                    is_title_only = True
+            elif len(p_tags) == 1 and story_text_len < 40 and parse_chapter_index_from_title(full_text) is not None:
+                is_title_only = True
+
+            if is_title_only:
+                pending_title = ch_title or full_text
+                continue
+
+            # Nếu có pending_title từ trang tiêu đề trước đó, ưu tiên sử dụng
+            final_title = ch_title
+            if pending_title:
+                if not final_title or len(final_title) > 80 or parse_chapter_index_from_title(final_title) is None:
+                    final_title = pending_title
+                pending_title = ""
+
+            if len(full_text) >= 30:
+                raw_sections.append((final_title, full_text))
+
+        return raw_sections
+
+    @staticmethod
+    def _assign_canonical_chapter_indices(
+        raw_sections: List[Tuple[str, str]],
+        start_chapter_index: Optional[int] = None,
+    ) -> List[Tuple[int, str, str]]:
+        """
+        Gán số thứ tự chương duy nhất, đơn điệu tăng dần cho từng chương.
+        Đảm bảo không bao giờ bị trùng lặp, lệch pha hay nhảy cóc.
+        """
+        assigned: List[Tuple[int, str, str]] = []
+        curr_idx = (start_chapter_index or 1) - 1
+
+        for i, (title, full_text) in enumerate(raw_sections):
+            extracted_num = parse_chapter_index_from_title(title)
+
+            if start_chapter_index is not None and start_chapter_index > 1:
+                # Chế độ upload từng phần có chỉ định mốc bắt đầu
+                if extracted_num is not None and extracted_num >= start_chapter_index and extracted_num > curr_idx:
+                    idx = extracted_num
+                else:
+                    idx = curr_idx + 1 if curr_idx >= start_chapter_index else start_chapter_index
+            else:
+                # Chế độ nạp thông thường
+                if i == 0 and extracted_num is not None and extracted_num > 0:
+                    idx = extracted_num
+                elif extracted_num is not None and extracted_num > curr_idx and extracted_num <= curr_idx + 10:
+                    idx = extracted_num
+                else:
+                    idx = curr_idx + 1
+
+            curr_idx = idx
+            clean_title = title if (title and len(title) <= 80) else f"Chương {idx}"
+            assigned.append((idx, clean_title, full_text))
+
+        return assigned
+
+    # ------------------------------------------------------------------
     # EPUB Direct & Incremental Import
     # ------------------------------------------------------------------
     def _process_epub_chapters_sync(
@@ -652,26 +862,23 @@ class LibraryService:
         force_overwrite: bool = False,
         job: Optional[ImportJobStatus] = None,
     ) -> NovelMetadata:
-        from bs4 import BeautifulSoup
-
         with self._get_novel_lock(actual_id):
             meta = self.get_novel(actual_id)
             if not meta:
                 raise ValueError(f"Không tìm thấy thông tin bộ truyện '{actual_id}' trong kho.")
 
-            # Pre-filter document items to get total valid chapters
-            doc_items = []
-            for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
-                content_html = item.get_content().decode("utf-8", errors="ignore")
-                soup = BeautifulSoup(content_html, "html.parser")
-                text_lines = [p.get_text().strip() for p in soup.find_all(["p", "h1", "h2", "h3", "div"]) if p.get_text().strip()]
-                full_text = "\n\n".join(text_lines)
-                if full_text.strip() and len(full_text.strip()) >= 30:
-                    h_tag = soup.find(["h1", "h2", "h3"])
-                    ch_title = h_tag.get_text().strip() if h_tag else ""
-                    doc_items.append((ch_title, full_text))
+            # 1. Trích xuất các section thô từ EPUB
+            raw_sections = self._extract_raw_chapters_from_epub(book)
+            if not raw_sections:
+                raise ValueError("Không tìm thấy nội dung chương hợp lệ trong file EPUB.")
 
-            total = len(doc_items)
+            # 2. Đánh số thứ tự chương chuẩn hóa, liên tục
+            canonical_chapters = self._assign_canonical_chapter_indices(
+                raw_sections,
+                start_chapter_index=start_chapter_index,
+            )
+
+            total = len(canonical_chapters)
             if job:
                 job.total_chapters = total
 
@@ -681,20 +888,7 @@ class LibraryService:
             skipped_count = 0
             updated_count = 0
 
-            running_base = start_chapter_index or 1
-
-            for seq_idx, (ch_title, full_text) in enumerate(doc_items, start=1):
-                extracted_num = parse_chapter_index_from_title(ch_title)
-                if start_chapter_index is not None and start_chapter_index > 1:
-                    actual_index = start_chapter_index + (seq_idx - 1)
-                elif extracted_num is not None:
-                    actual_index = extracted_num
-                else:
-                    actual_index = running_base + (seq_idx - 1)
-
-                if not ch_title or len(ch_title) > 80:
-                    ch_title = f"Chương {actual_index}"
-
+            for seq_idx, (actual_index, ch_title, full_text) in enumerate(canonical_chapters, start=1):
                 ch_id = f"ch_{actual_index:04d}"
                 folder = "translated" if is_translated else "original"
                 ch_key = f"novels/{actual_id}/{folder}/{ch_id}.txt"
@@ -836,6 +1030,9 @@ class LibraryService:
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
             upload_key = f"novels/{actual_id}/uploads/{timestamp}.epub"
             self._save_raw_file(upload_key, epub_bytes, content_type="application/epub+zip")
+            if is_translated and start_chapter_index is None:
+                full_key = f"novels/{actual_id}/full.epub"
+                self._save_raw_file(full_key, epub_bytes, content_type="application/epub+zip")
 
             return self._process_epub_chapters_sync(
                 book=book,
@@ -946,6 +1143,9 @@ class LibraryService:
                 # Save uploaded epub file into isolated uploads folder
                 upload_key = f"novels/{actual_id}/uploads/{job_id}.epub"
                 self._save_raw_file(upload_key, epub_bytes, content_type="application/epub+zip")
+                if is_translated and start_chapter_index is None:
+                    full_key = f"novels/{actual_id}/full.epub"
+                    self._save_raw_file(full_key, epub_bytes, content_type="application/epub+zip")
 
                 # Process chapters with dual-version diff and checkpointing
                 meta = self._process_epub_chapters_sync(

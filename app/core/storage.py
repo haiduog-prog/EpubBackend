@@ -179,6 +179,18 @@ class StorageRepository:
             return []
 
 
+    def file_exists_in_r2(self, object_name: str) -> bool:
+        if not self.is_r2_active or not settings.cloudflare_r2_bucket_name:
+            return False
+        try:
+            self.r2_client.head_object(
+                Bucket=settings.cloudflare_r2_bucket_name,
+                Key=object_name,
+            )
+            return True
+        except Exception:
+            return False
+
     def upload_file_to_r2(self, file_path: str, object_name: str) -> Optional[str]:
         if not self.is_r2_active or not settings.cloudflare_r2_bucket_name:
             return None

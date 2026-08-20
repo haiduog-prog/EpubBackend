@@ -2116,9 +2116,8 @@
                 btn.disabled = true;
             }
 
-            // Direct Cloudflare R2 CDN download link (Super fast, no backend timeout)
-            const cdnUrl = `https://pub-698cb88b6743407a8590d8e8d2f5b65b.r2.dev/novels/${novelId}/full.epub`;
-            window.location.href = cdnUrl;
+            // Route through backend endpoint: redirects to CDN if cached on R2, or compiles & serves on demand
+            window.location.href = apiUrl(`/api/v1/library/novels/${novelId}/export/epub`);
 
             setTimeout(() => {
                 if (btn) {

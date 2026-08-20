@@ -1,10 +1,12 @@
 import json
+import logging
 from urllib.parse import quote
 from typing import List, Optional
 from fastapi import APIRouter, File, Form, Header, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse
 
 from app.config import settings
+from app.core.storage import storage_repo
 
 from app.schemas.book_bible import BookBible
 from app.schemas.library import (
@@ -18,6 +20,8 @@ from app.schemas.library import (
     NovelUpdateRequest,
 )
 from app.services.library_service import library_service
+
+logger = logging.getLogger("EpubBackend.LibraryAPI")
 
 router = APIRouter(prefix="/library", tags=["Novel Library"])
 
@@ -275,17 +279,34 @@ async def translate_chapter_endpoint(
 
 
 @router.get("/novels/{novel_id}/export/epub")
-def export_novel_epub_endpoint(novel_id: str):
+def export_novel_epub_endpoint(
+    novel_id: str,
+    force_rebuild: bool = Query(default=False, description="Bắt buộc biên dịch lại file EPUB thay vì dùng bản cache trên R2"),
+):
     try:
-        # 1. If public CDN URL is configured, redirect directly to Cloudflare CDN (Fastest, 0ms latency)
-        if settings.cloudflare_r2_public_url:
-            cdn_url = f"{settings.cloudflare_r2_public_url.rstrip('/')}/novels/{novel_id}/full.epub"
+        novel = library_service.get_novel(novel_id)
+        if not novel:
+            raise HTTPException(status_code=404, detail=f"Không tìm thấy bộ truyện '{novel_id}'")
+
+        r2_key = f"novels/{novel_id}/full.epub"
+
+        # 1. If public CDN URL is configured, file exists on R2, and not force rebuilding:
+        if not force_rebuild and settings.cloudflare_r2_public_url and storage_repo.file_exists_in_r2(r2_key):
+            cdn_url = f"{settings.cloudflare_r2_public_url.rstrip('/')}/{r2_key}"
             return RedirectResponse(url=cdn_url, status_code=307)
 
-        # 2. Local fallback
+        # 2. File does not exist on R2 or force_rebuild requested -> compile full EPUB
         output_path = library_service.export_full_epub(novel_id)
-        meta = library_service.get_novel(novel_id)
-        title = meta.title if meta else novel_id
+
+        # 3. If R2 is active, cache the compiled EPUB to R2 so subsequent requests hit CDN
+        if storage_repo.is_r2_active:
+            try:
+                storage_repo.upload_file_to_r2(output_path, r2_key)
+            except Exception as exc:
+                logger.warning("Failed to cache compiled EPUB to R2: %s", exc)
+
+        # 4. Return the compiled EPUB file directly
+        title = novel.title if novel else novel_id
         safe_ascii_name = f"{novel_id}_vi.epub"
         encoded_name = quote(f"{title}.epub")
 
@@ -297,6 +318,8 @@ def export_novel_epub_endpoint(novel_id: str):
             media_type="application/epub+zip",
             headers=headers,
         )
+    except HTTPException:
+        raise
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:

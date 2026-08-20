@@ -76,12 +76,15 @@
 - **Fix**: Lưu identity link như event; resolver chỉ áp dụng link có `canonical_chapter <= requested_chapter`, có regression test cho reveal ở chương 300.
 - **Files liên quan**: `app/services/character_profile_service.py`, `tests/test_character_identity_timeline.py`
 
-### EPUB Export Timeout trên truyện dung lượng lớn
-- **Ngày**: 2026-08-17
-- **Vấn đề**: Tải file EPUB cho bộ truyện hơn 2.000 chương (10MB+) bị timeout qua Backend HTTP/Tunnel.
-- **Root cause**: Gom tuần tự hàng nghìn chương từ storage qua loop gây nghẽn kết nối và vượt quá timeout 5-30s của client.
-- **Fix**: Trả về `RedirectResponse(url=cdn_url, status_code=307)` để chuyển hướng tải trực tiếp từ Cloudflare R2 Public CDN (`pub-*.r2.dev`), giảm thời gian tải cả cuốn xuống 1-2 giây.
-- **Files liên quan**: `app/api/v1/library.py`, `app/services/library_service.py`
+### EPUB Export Timeout & 404 Missing R2 CDN Cache
+- **Ngày**: 2026-08-20
+- **Vấn đề**: Tải file EPUB từ client Android/Web bị lỗi 404 Not Found từ Cloudflare R2 (`pub-*.r2.dev/novels/{novel_id}/full.epub`).
+- **Root cause**: Backend tự động 307 Redirect đến URL CDN R2 `novels/{novel_id}/full.epub` khi cấu hình CDN mà không kiểm tra xem file đã tồn tại trên bucket R2 hay chưa (do truyện mới nạp hoặc chưa từng biên dịch file nguyên cuốn lên R2).
+- **Fix**: 
+  1. Thêm phương thức `storage_repo.file_exists_in_r2(key)` kiểm tra sự tồn tại trên R2 trước khi chuyển hướng.
+  2. Nếu file chưa có trên R2 hoặc có cờ `force_rebuild=true`, backend tự động biên dịch EPUB từ các chương (`library_service.export_full_epub`), tự động nạp ảnh bìa (cover.jpg), đẩy file lên R2 cache (`upload_file_to_r2`), và trả về `FileResponse` cho client.
+  3. Lưu song song `full.epub` ngay khi người dùng nạp file EPUB hoàn chỉnh (`import_epub_novel`).
+- **Files liên quan**: `app/api/v1/library.py`, `app/core/storage.py`, `app/services/library_service.py`
 
 ### Non-ASCII UTF-8 Filename trong FileResponse Header
 - **Ngày**: 2026-08-17

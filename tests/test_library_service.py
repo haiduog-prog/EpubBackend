@@ -249,3 +249,203 @@ def test_import_chapter_title_regex_auto_detection():
     service.delete_novel(novel_id)
 
 
+def test_storage_repo_file_exists_in_r2():
+    from app.core.storage import storage_repo
+    # When R2 is not active or key doesn't exist, returns False safely
+    assert storage_repo.file_exists_in_r2("non-existent-key.epub") is False
+
+
+def test_export_novel_epub_endpoint_fallback_and_redirect(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.config import settings
+    from app.core.storage import storage_repo
+    from app.services.library_service import library_service
+
+    client = TestClient(app)
+    novel_id = f"export-endpoint-test-{uuid.uuid4().hex[:6]}"
+
+    epub_data = _create_mock_epub(
+        "Đấu La Đại Lục",
+        [
+            ("Chương 1", "Đường Tam thức tỉnh Võ Hồn Lam Ngân Thảo..."),
+            ("Chương 2", "Hạo Thiên Chùy xuất hiện chấn động..."),
+        ],
+    )
+    meta = library_service.import_epub_novel(epub_data, is_translated=True, novel_id=novel_id)
+
+    # Scenario 1: File is NOT in R2 (file_exists_in_r2 returns False)
+    monkeypatch.setattr(storage_repo, "file_exists_in_r2", lambda key: False)
+    monkeypatch.setattr(settings, "cloudflare_r2_public_url", "https://pub-test.r2.dev")
+
+    # Should NOT 307 redirect to missing CDN file, but generate and return EPUB file (200 OK)
+    resp = client.get(f"/api/v1/library/novels/{novel_id}/export/epub", follow_redirects=False)
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/epub+zip"
+    assert len(resp.content) > 500
+
+    # Scenario 2: File is cached on R2 (file_exists_in_r2 returns True)
+    monkeypatch.setattr(storage_repo, "file_exists_in_r2", lambda key: True)
+    resp_redirect = client.get(f"/api/v1/library/novels/{novel_id}/export/epub", follow_redirects=False)
+    assert resp_redirect.status_code == 307
+    assert resp_redirect.headers["location"] == f"https://pub-test.r2.dev/novels/{novel_id}/full.epub"
+
+    # Scenario 3: Force rebuild bypasses CDN redirect
+    resp_force = client.get(f"/api/v1/library/novels/{novel_id}/export/epub?force_rebuild=true", follow_redirects=False)
+    assert resp_force.status_code == 200
+    assert resp_force.headers["content-type"] == "application/epub+zip"
+
+    # Clean up
+    library_service.delete_novel(novel_id)
+
+
+def test_epub_with_separated_title_and_content_files():
+    """Kiểm tra EPUB có các file tiêu đề ngắn tách rời các file nội dung (như lỗi của Đấu La Đại Lục 3)"""
+    service = LibraryService()
+    novel_id = f"sep-test-{uuid.uuid4().hex[:6]}"
+
+    book = epub.EpubBook()
+    book.set_identifier(f"id-{uuid.uuid4().hex[:6]}")
+    book.set_title("Đấu La Đại Lục 3 - Long Vương Truyền Thuyết")
+    book.set_language("vi")
+
+    # Item 1: Title page for Ch 1 (35 bytes)
+    t1 = epub.EpubHtml(title="Chương 1", file_name="ch01_title.xhtml", lang="vi")
+    t1.content = b"<h1>Ch\xc6\xb0\xc6\xa1ng 1: Th\xe1\xbb\xa9c T\xe1\xbb\x89nh V\xc3\xb5 H\xe1\xbb\x93n</h1>"
+    book.add_item(t1)
+
+    # Item 2: Content page for Ch 1 (story paragraphs, no h1)
+    c1 = epub.EpubHtml(title="", file_name="ch01_content.xhtml", lang="vi")
+    c1.content = b"<p>\xc4\x90\xc6\xb0\xe1\xbb\x9dng V\xc5\xa9 L\xc3\xa2n \xc4\x91\xe1\xbb\xa9ng tr\xc6\xb0\xe1\xbb\x9bc g\xc6\xb0\xc6\xa1ng nh\xc3\xacn th\xe1\xba\xa5y v\xc3\xb5 h\xe1\xbb\x93n Lam Ng\xc3\xa2n Th\xe1\xba\xa3o xu\xe1\xba\xa5t hi\xe1\xbb\x87n r\xe1\xba\xa5t r\xc3\xb5 r\xc3\xa0ng...</p>"
+    book.add_item(c1)
+
+    # Item 3: Title page for Ch 2 (35 bytes)
+    t2 = epub.EpubHtml(title="Chương 2", file_name="ch02_title.xhtml", lang="vi")
+    t2.content = b"<h1>Ch\xc6\xb0\xc6\xa1ng 2: Kim Long V\xc6\xb0\xc6\xa1ng Huy\xe1\xba\xbft M\xe1\xba\xa1ch</h1>"
+    book.add_item(t2)
+
+    # Item 4: Content page for Ch 2
+    c2 = epub.EpubHtml(title="", file_name="ch02_content.xhtml", lang="vi")
+    c2.content = b"<p>N\xc4\x83ng l\xc6\xb0\xe1\xbb\xa3ng huy\xe1\xba\xbft m\xe1\xba\xa1ch th\xe1\xba\xa7n b\xc3\xad b\xe1\xba\xaft \xc4\x91\xe1\xba\xa7u th\xe1\xbb\xa9c t\xe1\xbb\x89nh trong c\xc6\xa1 th\xe1\xbb\x83 c\xe1\xba\xaduli\xe1\xbb\x87t...</p>"
+    book.add_item(c2)
+
+    book.spine = ["nav", t1, c1, t2, c2]
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".epub") as tmp:
+        tmp_path = tmp.name
+    try:
+        epub.write_epub(tmp_path, book)
+        with open(tmp_path, "rb") as f:
+            epub_bytes = f.read()
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+    meta = service.import_epub_novel(epub_bytes, is_translated=True, novel_id=novel_id)
+    assert meta.total_chapters == 2
+    assert [c.chapter_index for c in meta.chapters] == [1, 2]
+    assert "Thức Tỉnh Võ Hồn" in meta.chapters[0].chapter_title
+    assert "Kim Long Vương" in meta.chapters[1].chapter_title
+    assert meta.chapters[0].word_count > 5
+    assert meta.chapters[1].word_count > 5
+
+    service.delete_novel(novel_id)
+
+
+def test_epub_multi_chapters_in_single_file():
+    """Kiểm tra EPUB có nhiều chương gộp trong cùng 1 file HTML"""
+    service = LibraryService()
+    novel_id = f"multi-test-{uuid.uuid4().hex[:6]}"
+
+    book = epub.EpubBook()
+    book.set_identifier(f"id-{uuid.uuid4().hex[:6]}")
+    book.set_title("Bộ Truyện Đa Chương")
+    book.set_language("vi")
+
+    c = epub.EpubHtml(title="Toàn Bộ", file_name="all_chapters.xhtml", lang="vi")
+    c.content = (
+        b"<div>"
+        b"<h1>Ch\xc6\xb0\xc6\xa1ng 1: Kh\xe1\xbb\x9fi \xc4\x90\xe1\xba\xa7u</h1>"
+        b"<p>\xc4\x90o\xe1\xba\xa1n v\xc4\x83n ch\xc6\xb0\xc6\xa1ng 1 r\xe1\xba\xa5t d\xc3\xa0i v\xc3\xa0 \xc4\x91\xe1\xba\xa7y \xc4\x91\xe1\xbb\xa7...</p>"
+        b"<h1>Ch\xc6\xb0\xc6\xa1ng 2: Ti\xe1\xba\xbfn B\xc6\xb0\xe1\xbb\x9bc</h1>"
+        b"<p>\xc4\x90o\xe1\xba\xa1n v\xc4\x83n ch\xc6\xb0\xc6\xa1ng 2 c\xc5\xa9ng r\xe1\xba\xa5t d\xc3\xa0i v\xc3\xa0 chi ti\xe1\xba\xbft...</p>"
+        b"<h1>Ch\xc6\xb0\xc6\xa1ng 3: Cao Tr\xc3\xa0o</h1>"
+        b"<p>\xc4\x90o\xe1\xba\xa1n v\xc4\x83n ch\xc6\xb0\xc6\xa1ng 3 b\xc3\xb9ng n\xe1\xbb\x95 tr\xe1\xba\xadn chi\xe1\xba\xbfn...</p>"
+        b"</div>"
+    )
+    book.add_item(c)
+    book.spine = ["nav", c]
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".epub") as tmp:
+        tmp_path = tmp.name
+    try:
+        epub.write_epub(tmp_path, book)
+        with open(tmp_path, "rb") as f:
+            epub_bytes = f.read()
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+    meta = service.import_epub_novel(epub_bytes, is_translated=True, novel_id=novel_id)
+    assert meta.total_chapters == 3
+    assert [c.chapter_index for c in meta.chapters] == [1, 2, 3]
+    assert "Khởi Đầu" in meta.chapters[0].chapter_title
+    assert "Tiến Bước" in meta.chapters[1].chapter_title
+    assert "Cao Trào" in meta.chapters[2].chapter_title
+
+    service.delete_novel(novel_id)
+
+
+def test_epub_with_nav_toc_cover_filtering():
+    """Kiểm tra EPUB có chứa cover.xhtml và toc.xhtml rác được lọc bỏ chính xác"""
+    service = LibraryService()
+    novel_id = f"filter-test-{uuid.uuid4().hex[:6]}"
+
+    book = epub.EpubBook()
+    book.set_identifier(f"id-{uuid.uuid4().hex[:6]}")
+    book.set_title("Truyện Có Bìa Và Mục Lục")
+    book.set_language("vi")
+
+    # Cover page (boilerplate)
+    cov = epub.EpubHtml(title="Cover", file_name="cover.xhtml", lang="vi")
+    cov.content = b"<div><img src='cover.jpg'/><p>B\xc3\xaca s\xc3\xa1ch</p></div>"
+    book.add_item(cov)
+
+    # TOC page (boilerplate list)
+    toc_doc = epub.EpubHtml(title="TOC", file_name="toc.xhtml", lang="vi")
+    toc_doc.content = b"<div><h2>M\xe1\xbb\xa5c L\xe1\xbb\xa5c</h2><ul><li>Ch\xc6\xb0\xc6\xa1ng 1</li><li>Ch\xc6\xb0\xc6\xa1ng 2</li></ul></div>"
+    book.add_item(toc_doc)
+
+    # Actual chapter 1
+    c1 = epub.EpubHtml(title="Chương 1", file_name="ch_001.xhtml", lang="vi")
+    c1.content = b"<h1>Ch\xc6\xb0\xc6\xa1ng 1: Th\xe1\xba\xbf Gi\xe1\xbb\x9bi M\xe1\xbb\x9bi</h1><p>N\xe1\xbb\x99i dung ch\xc6\xb0\xc6\xa1ng th\xe1\xbb\xb1c s\xe1\xbb\xb1 b\xe1\xba\xaft \xc4\x91\xe1\xba\xa7u \xe1\xbb\x9f \xc4\x91\xc3\xa2y...</p>"
+    book.add_item(c1)
+
+    book.spine = ["nav", cov, toc_doc, c1]
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".epub") as tmp:
+        tmp_path = tmp.name
+    try:
+        epub.write_epub(tmp_path, book)
+        with open(tmp_path, "rb") as f:
+            epub_bytes = f.read()
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+    meta = service.import_epub_novel(epub_bytes, is_translated=True, novel_id=novel_id)
+    assert meta.total_chapters == 1
+    assert meta.chapters[0].chapter_index == 1
+    assert "Thế Giới Mới" in meta.chapters[0].chapter_title
+
+    service.delete_novel(novel_id)
+
+
+
+

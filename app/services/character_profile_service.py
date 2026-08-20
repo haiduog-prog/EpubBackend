@@ -95,13 +95,14 @@ class CharacterProfileService:
         self._hydrated_from_storage: bool = False
         self._hydrate_all_from_storage()
 
-    # ------------------------------------------------------------------
-    # Book and edition identity
-    # ------------------------------------------------------------------
     @staticmethod
     def book_id_for(metadata: BookMetadata) -> str:
+        slug = _slugify(metadata.title)
+        if slug and slug != "novel":
+            return slug
         raw = f"{_norm(metadata.title)}|{_norm(metadata.author)}|{_norm(metadata.language)}"
         return f"book-{_hash(raw, 24)}"
+
 
     @staticmethod
     def edition_id_for(book_id: str, metadata: BookMetadata, fingerprints: FingerprintBundle) -> str:

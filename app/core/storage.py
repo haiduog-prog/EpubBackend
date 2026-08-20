@@ -142,6 +142,9 @@ class StorageRepository:
             )
             content = response["Body"].read().decode("utf-8")
             return json.loads(content)
+        except json.JSONDecodeError as exc:
+            logger.warning("Corrupted JSON in Cloudflare R2 (%s): %s", object_name, exc)
+            return None
         except Exception as exc:
             err_code = getattr(exc, "response", {}).get("Error", {}).get("Code", "")
             if err_code not in ("NoSuchKey", "404"):
@@ -149,7 +152,6 @@ class StorageRepository:
                 if raise_on_error:
                     raise exc
             return None
-
 
     def _r2_list_json_objects(self, prefix: str) -> List[dict]:
         if not self.is_r2_active or not settings.cloudflare_r2_bucket_name:
@@ -175,6 +177,7 @@ class StorageRepository:
         except Exception as exc:
             logger.warning("Failed to list JSON objects from Cloudflare R2 (prefix=%s): %s", prefix, exc)
             return []
+
 
     def upload_file_to_r2(self, file_path: str, object_name: str) -> Optional[str]:
         if not self.is_r2_active or not settings.cloudflare_r2_bucket_name:
@@ -607,6 +610,8 @@ class StorageRepository:
             try:
                 with open(local_path, "r", encoding="utf-8") as f:
                     return json.load(f)
+            except json.JSONDecodeError as exc:
+                logger.warning("Corrupted local JSON %s (skipping): %s", local_path, exc)
             except Exception as exc:
                 logger.warning("Failed to read local JSON %s: %s", local_path, exc)
                 if raise_on_error:
@@ -615,10 +620,13 @@ class StorageRepository:
             try:
                 with open(object_name, "r", encoding="utf-8") as f:
                     return json.load(f)
+            except json.JSONDecodeError as exc:
+                logger.warning("Corrupted local JSON %s (skipping): %s", object_name, exc)
             except Exception as exc:
                 if raise_on_error:
                     raise exc
         return None
+
 
 
     def delete_file(self, object_name: str) -> bool:

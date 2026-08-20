@@ -1,3 +1,4 @@
+import concurrent.futures
 import hashlib
 import json
 import logging
@@ -6,6 +7,7 @@ import sys
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set, Tuple
 from sqlalchemy import select, func
+
 
 # Add project root to sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -75,6 +77,26 @@ def parse_datetime(dt_val: Any) -> Optional[datetime]:
         return datetime.fromisoformat(str(dt_val))
     except Exception:
         return datetime.now(timezone.utc)
+
+
+def download_all_json_parallel(keys: List[str], max_workers: int = 20) -> Dict[str, dict]:
+    """Download multiple JSON files concurrently with ThreadPoolExecutor."""
+    results: Dict[str, dict] = {}
+    if not keys:
+        return results
+    unique_keys = list(set(keys))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_key = {executor.submit(storage_repo.download_json, k, True): k for k in unique_keys}
+        for fut in concurrent.futures.as_completed(future_to_key):
+            k = future_to_key[fut]
+            try:
+                data = fut.result()
+                if data and isinstance(data, dict):
+                    results[k] = data
+            except Exception as exc:
+                logger.warning(f"Failed to download or parse JSON {k} (skipping): {exc}")
+    return results
+
 
 
 def migrate_novels(session) -> int:
@@ -190,17 +212,31 @@ def migrate_character_profiles(session) -> Dict[str, int]:
     }
 
     all_keys = storage_repo.list_files(prefix='', raise_on_error=True)
-    novel_profile_keys = [k for k in all_keys if '/profile/' in k and k.endswith('.json')]
+    profile_keys = [k for k in all_keys if (k.startswith('profile_') or k.startswith('data/profile_') or '/profile/' in k) and k.endswith('.json')]
+    logger.info(f'Downloading {len(profile_keys)} profile JSON files in parallel...')
+    profile_json_map = download_all_json_parallel(profile_keys, max_workers=30)
+    logger.info(f'Downloaded {len(profile_json_map)} profile JSON files successfully.')
 
-    # 1. Profile Books — group by book_id, prefer highest revision
-    book_keys = [k for k in all_keys if k.startswith('profile_books/') or k.startswith('data/profile_books/')]
-    for k in novel_profile_keys:
-        if '/profile/profile_books/' in k or '/profile/books/' in k or k.endswith('/profile/book.json') or '/profile/book_' in k:
-            book_keys.append(k)
+    # Pre-fetch all existing DB IDs in 1 pass
+    db_existing_book_ids = set(session.scalars(select(ProfileBookModel.book_id)).all())
+    db_existing_edition_ids = set(session.scalars(select(ProfileEditionModel.edition_id)).all())
+    db_existing_mapping_tuples = set(session.execute(select(ProfileChapterMappingModel.edition_id, ProfileChapterMappingModel.local_chapter_index)).all())
+    db_existing_sub_ids = set(session.scalars(select(ProfileSubmissionModel.submission_id)).all())
+    db_existing_event_ids = set(session.scalars(select(ProfileEventModel.event_id)).all())
+    db_existing_evi_ids = set(session.scalars(select(ProfileEvidenceModel.evidence_id)).all())
 
+    logical_key_to_event_id: Dict[str, str] = {}
+    event_id_to_logical_key: Dict[str, str] = {}
+    for eid, ekey in session.execute(select(ProfileEventModel.event_id, ProfileEventModel.event_key)).all():
+        if ekey:
+            logical_key_to_event_id[ekey] = eid
+            event_id_to_logical_key[eid] = ekey
+
+    # 1. Profile Books
+    book_keys = [k for k in profile_keys if k.startswith('profile_books/') or k.startswith('data/profile_books/') or '/profile/profile_books/' in k or '/profile/books/' in k or k.endswith('/profile/book.json') or '/profile/book_' in k]
     books_by_id: Dict[str, Tuple[dict, str]] = {}
-    for key in set(book_keys):
-        data = storage_repo.download_json(key, raise_on_error=True)
+    for key in book_keys:
+        data = profile_json_map.get(key)
         if not data or not isinstance(data, dict):
             continue
         book_id = data.get('book_id')
@@ -216,30 +252,30 @@ def migrate_character_profiles(session) -> Dict[str, int]:
 
     for book_id, (data, key) in books_by_id.items():
         meta = data.get('metadata') or {}
-        book_dict = {
-            'book_id': book_id,
-            'title': meta.get('title') or data.get('title', ''),
-            'author': meta.get('author') or data.get('author', ''),
-            'language': meta.get('language') or data.get('language', ''),
-            'publisher': meta.get('publisher') or data.get('publisher', ''),
-            'identifier': meta.get('identifier') or data.get('identifier'),
-            'title_key': data.get('title_key', ''),
-            'author_key': data.get('author_key', ''),
-            'sampled_chapters': data.get('sampled_chapters', []),
-            'revision': data.get('revision', 0),
-        }
-        CharacterProfileRepository.save_book(session, book_dict)
+        b_model = ProfileBookModel(
+            book_id=book_id,
+            novel_id=book_id if not book_id.startswith('book-') else None,
+            title=meta.get('title') or data.get('title', ''),
+            author=meta.get('author') or data.get('author', ''),
+            language=meta.get('language') or data.get('language', ''),
+            publisher=meta.get('publisher') or data.get('publisher', ''),
+            identifier=meta.get('identifier') or data.get('identifier'),
+            title_key=data.get('title_key', ''),
+            author_key=data.get('author_key', ''),
+            sampled_chapters=data.get('sampled_chapters', []),
+            revision=data.get('revision', 0),
+            created_at=parse_datetime(data.get('created_at')) or datetime.now(timezone.utc),
+            updated_at=parse_datetime(data.get('updated_at')) or datetime.now(timezone.utc),
+        )
+        session.merge(b_model)
+        db_existing_book_ids.add(book_id)
         counts['books'] += 1
 
-    # 2. Profile Editions — group by edition_id, prefer highest mapping_revision
-    edition_keys = [k for k in all_keys if k.startswith('profile_editions/') or k.startswith('data/profile_editions/')]
-    for k in novel_profile_keys:
-        if '/profile/profile_editions/' in k or '/profile/editions/' in k:
-            edition_keys.append(k)
-
+    # 2. Profile Editions
+    edition_keys = [k for k in profile_keys if k.startswith('profile_editions/') or k.startswith('data/profile_editions/') or '/profile/profile_editions/' in k or '/profile/editions/' in k]
     editions_by_id: Dict[str, Tuple[dict, str]] = {}
-    for key in set(edition_keys):
-        data = storage_repo.download_json(key, raise_on_error=True)
+    for key in edition_keys:
+        data = profile_json_map.get(key)
         if not data or not isinstance(data, dict):
             continue
         edition_id = data.get('edition_id')
@@ -256,8 +292,16 @@ def migrate_character_profiles(session) -> Dict[str, int]:
 
     for edition_id, (data, key) in editions_by_id.items():
         book_id = data.get('book_id')
-        if not CharacterProfileRepository.get_book(session, book_id):
-            CharacterProfileRepository.save_book(session, {'book_id': book_id, 'title': 'Unknown Book'})
+        if book_id not in db_existing_book_ids:
+            session.merge(ProfileBookModel(
+                book_id=book_id,
+                novel_id=book_id if not book_id.startswith('book-') else None,
+                title='Unknown Book',
+                revision=0,
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            ))
+            db_existing_book_ids.add(book_id)
 
         ed_model = ProfileEditionModel(
             edition_id=edition_id,
@@ -269,19 +313,14 @@ def migrate_character_profiles(session) -> Dict[str, int]:
             created_at=parse_datetime(data.get('created_at')) or datetime.now(timezone.utc),
         )
         session.merge(ed_model)
+        db_existing_edition_ids.add(edition_id)
         counts['editions'] += 1
 
-    session.flush()
-
-    # 3. Chapter Mappings — group by (edition_id, local_chapter_index)
-    mapping_keys = [k for k in all_keys if k.startswith('profile_chapter_mappings/') or k.startswith('data/profile_chapter_mappings/')]
-    for k in novel_profile_keys:
-        if '/profile/profile_chapter_mappings/' in k or '/profile/mappings/' in k or '/profile/chapter_mappings/' in k:
-            mapping_keys.append(k)
-
+    # 3. Chapter Mappings
+    mapping_keys = [k for k in profile_keys if k.startswith('profile_chapter_mappings/') or k.startswith('data/profile_chapter_mappings/') or '/profile/profile_chapter_mappings/' in k or '/profile/mappings/' in k or '/profile/chapter_mappings/' in k]
     mappings_by_tuple: Dict[Tuple[str, int], Tuple[dict, str]] = {}
-    for key in set(mapping_keys):
-        data = storage_repo.download_json(key, raise_on_error=True)
+    for key in mapping_keys:
+        data = profile_json_map.get(key)
         if not data or not isinstance(data, dict):
             continue
         edition_id = data.get('edition_id')
@@ -309,17 +348,11 @@ def migrate_character_profiles(session) -> Dict[str, int]:
         session.merge(m_model)
         counts['mappings'] += 1
 
-    session.flush()
-
-    # 4. Submissions — group by submission_id
-    sub_keys = [k for k in all_keys if k.startswith('profile_submissions/') or k.startswith('data/profile_submissions/')]
-    for k in novel_profile_keys:
-        if '/profile/profile_submissions/' in k or '/profile/submissions/' in k:
-            sub_keys.append(k)
-
+    # 4. Submissions
+    sub_keys = [k for k in profile_keys if k.startswith('profile_submissions/') or k.startswith('data/profile_submissions/') or '/profile/profile_submissions/' in k or '/profile/submissions/' in k]
     subs_by_id: Dict[str, Tuple[dict, str]] = {}
-    for key in set(sub_keys):
-        data = storage_repo.download_json(key, raise_on_error=True)
+    for key in sub_keys:
+        data = profile_json_map.get(key)
         if not data or not isinstance(data, dict):
             continue
         sub_id = data.get('submission_id')
@@ -338,9 +371,17 @@ def migrate_character_profiles(session) -> Dict[str, int]:
     for sub_id, (data, key) in subs_by_id.items():
         book_id = data.get('book_id')
         edition_id = data.get('edition_id')
-        if not CharacterProfileRepository.get_book(session, book_id):
-            CharacterProfileRepository.save_book(session, {'book_id': book_id})
-        if not CharacterProfileRepository.get_edition(session, edition_id):
+        if book_id not in db_existing_book_ids:
+            session.merge(ProfileBookModel(
+                book_id=book_id,
+                novel_id=book_id if not book_id.startswith('book-') else None,
+                title='Unknown Book',
+                revision=0,
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            ))
+            db_existing_book_ids.add(book_id)
+        if edition_id not in db_existing_edition_ids:
             ed_obj = ProfileEditionModel(
                 edition_id=edition_id,
                 book_id=book_id,
@@ -349,7 +390,8 @@ def migrate_character_profiles(session) -> Dict[str, int]:
                 created_at=datetime.now(timezone.utc),
             )
             session.merge(ed_obj)
-            session.flush()
+            db_existing_edition_ids.add(edition_id)
+
 
         s_model = ProfileSubmissionModel(
             submission_id=sub_id,
@@ -370,24 +412,14 @@ def migrate_character_profiles(session) -> Dict[str, int]:
             completed_at=parse_datetime(data.get('completed_at')),
         )
         session.merge(s_model)
+        db_existing_sub_ids.add(sub_id)
         counts['submissions'] += 1
 
-    session.flush()
-
-    # 5. Events — collect all data per event_id, prefer newest timestamp
-    event_keys = [k for k in all_keys if k.startswith('profile_events/') or k.startswith('data/profile_events/')]
-    for k in novel_profile_keys:
-        if '/profile/profile_events/' in k or '/profile/events/' in k:
-            event_keys.append(k)
-
-    # Maintain mapping of logical_event_key -> event_id
-    logical_key_to_event_id: Dict[str, str] = {}
-    event_id_to_logical_key: Dict[str, str] = {}
-
-    # Group by event_id, keep the record with the newest created_at
+    # 5. Events
+    event_keys = [k for k in profile_keys if k.startswith('profile_events/') or k.startswith('data/profile_events/') or '/profile/profile_events/' in k or '/profile/events/' in k]
     event_data_by_id: Dict[str, Tuple[dict, str]] = {}
-    for key in set(event_keys):
-        data = storage_repo.download_json(key, raise_on_error=True)
+    for key in event_keys:
+        data = profile_json_map.get(key)
         if not data or not isinstance(data, dict):
             continue
         event_id = data.get('event_id')
@@ -398,7 +430,7 @@ def migrate_character_profiles(session) -> Dict[str, int]:
             existing_dt = parse_datetime(existing[0].get('created_at'))
             new_dt = parse_datetime(data.get('created_at'))
             if existing_dt and new_dt and new_dt <= existing_dt:
-                continue  # Keep existing (newer or equal)
+                continue
         event_data_by_id[event_id] = (data, key)
 
     for event_id, (data, key) in event_data_by_id.items():
@@ -407,25 +439,14 @@ def migrate_character_profiles(session) -> Dict[str, int]:
         if not book_id or not sub_id:
             continue
 
-        # Skip if already exists in DB (don't overwrite)
-        if session.get(ProfileEventModel, event_id):
-            ev_existing = session.get(ProfileEventModel, event_id)
-            logical_key_to_event_id[ev_existing.event_key] = event_id
-            event_id_to_logical_key[event_id] = ev_existing.event_key
+        if event_id in db_existing_event_ids:
             continue
 
-        sub = session.get(ProfileSubmissionModel, sub_id)
-        if not sub:
-            sub = ProfileSubmissionModel(
-                submission_id=sub_id,
-                idempotency_key=sub_id,
-                book_id=book_id,
-                edition_id='default-edition',
-                created_at=datetime.now(timezone.utc),
-            )
-            if not session.get(ProfileEditionModel, 'default-edition'):
-                if not session.get(ProfileBookModel, book_id):
+        if sub_id not in db_existing_sub_ids:
+            if 'default-edition' not in db_existing_edition_ids:
+                if book_id not in db_existing_book_ids:
                     CharacterProfileRepository.save_book(session, {'book_id': book_id})
+                    db_existing_book_ids.add(book_id)
                 session.merge(ProfileEditionModel(
                     edition_id='default-edition',
                     book_id=book_id,
@@ -433,14 +454,20 @@ def migrate_character_profiles(session) -> Dict[str, int]:
                     fingerprints={},
                     created_at=datetime.now(timezone.utc),
                 ))
-                session.flush()
+                db_existing_edition_ids.add('default-edition')
+            sub = ProfileSubmissionModel(
+                submission_id=sub_id,
+                idempotency_key=sub_id,
+                book_id=book_id,
+                edition_id='default-edition',
+                created_at=datetime.now(timezone.utc),
+            )
             session.add(sub)
-            session.flush()
+            db_existing_sub_ids.add(sub_id)
 
         val = data.get('value')
         val_to_save = val if isinstance(val, (dict, list)) else {'val': val}
 
-        # RECONSTRUCT LOGICAL EVENT KEY IF NOT PRESENT
         char_id = data.get('character_id', '')
         canonical_chapter = int(data.get('canonical_chapter', 0))
         category = data.get('category', 'identity')
@@ -485,19 +512,14 @@ def migrate_character_profiles(session) -> Dict[str, int]:
             schema_version=int(data.get('schema_version', 1)),
         )
         session.add(ev_model)
+        db_existing_event_ids.add(event_id)
         counts['events'] += 1
 
-    session.flush()
-
-    # 6. Evidence — group by evidence_id, prefer newest timestamp
-    evi_keys = [k for k in all_keys if k.startswith('profile_evidence/') or k.startswith('data/profile_evidence/')]
-    for k in novel_profile_keys:
-        if '/profile/profile_evidence/' in k or '/profile/evidence/' in k:
-            evi_keys.append(k)
-
+    # 6. Evidence
+    evi_keys = [k for k in profile_keys if k.startswith('profile_evidence/') or k.startswith('data/profile_evidence/') or '/profile/profile_evidence/' in k or '/profile/evidence/' in k]
     evi_data_by_id: Dict[str, Tuple[dict, str]] = {}
-    for key in set(evi_keys):
-        data = storage_repo.download_json(key, raise_on_error=True)
+    for key in evi_keys:
+        data = profile_json_map.get(key)
         if not data or not isinstance(data, dict):
             continue
         evi_id = data.get('evidence_id')
@@ -517,42 +539,30 @@ def migrate_character_profiles(session) -> Dict[str, int]:
         sub_id = data.get('submission_id')
 
         if not event_id and event_key:
-            # 1. Lookup from memory mapping
             event_id = logical_key_to_event_id.get(event_key)
             if not event_id and event_key.startswith('ev-'):
                 event_id = event_key[3:]
-            # 2. Lookup from DB
-            if not event_id:
-                stmt = select(ProfileEventModel.event_id).where(ProfileEventModel.event_key == event_key)
-                event_id = session.execute(stmt).scalar_one_or_none()
 
         if not event_id or not sub_id:
-            logger.warning(f'Skipping orphan evidence {key}: evi_id={evi_id}, event_id={event_id}, sub_id={sub_id}')
             continue
 
-        # Skip if already exists in DB (don't overwrite)
-        if session.get(ProfileEvidenceModel, evi_id):
+        if evi_id in db_existing_evi_ids:
             continue
 
-        # Ensure parent event and submission exist
-        if not session.get(ProfileEventModel, event_id):
-            logger.warning(f'Parent event {event_id} not found in DB for evidence {evi_id}')
+        if event_id not in db_existing_event_ids:
             continue
 
-        if not session.get(ProfileSubmissionModel, sub_id):
-            # Create placeholder submission if missing
-            parent_event = session.get(ProfileEventModel, event_id)
+        if sub_id not in db_existing_sub_ids:
             session.merge(ProfileSubmissionModel(
                 submission_id=sub_id,
                 idempotency_key=sub_id,
-                book_id=parent_event.book_id if parent_event else 'default-book',
+                book_id='default-book',
                 edition_id='default-edition',
                 created_at=datetime.now(timezone.utc),
             ))
-            session.flush()
+            db_existing_sub_ids.add(sub_id)
 
         resolved_event_key = event_key or event_id_to_logical_key.get(event_id, f'ev-{event_id}')
-
         evi_model = ProfileEvidenceModel(
             evidence_id=evi_id,
             event_id=event_id,
@@ -564,11 +574,11 @@ def migrate_character_profiles(session) -> Dict[str, int]:
             created_at=parse_datetime(data.get('created_at')) or datetime.now(timezone.utc),
         )
         session.add(evi_model)
+        db_existing_evi_ids.add(evi_id)
         counts['evidence'] += 1
 
     session.flush()
     return counts
-
 
 
 def run_audit_verification(session) -> bool:
@@ -619,6 +629,8 @@ def main():
         if not audit_ok:
             logger.error('CRITICAL: Post-migration audit failed! Aborting.')
             sys.exit(1)
+
+
 
     logger.info('=== Migration Summary ===')
     logger.info(f'Novels imported: {novels_count}')

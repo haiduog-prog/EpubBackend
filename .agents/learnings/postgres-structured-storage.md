@@ -50,6 +50,13 @@
 - **Fix**: Bỏ dấu chấm ở đuôi, chạy đúng lệnh: `python -m alembic upgrade head`.
 - **Files liên quan**: `alembic/versions/2865c48fe099_initial_schema.py`
 
+### Supabase Direct IPv6 vs Render Network Unreachable
+- **Ngày**: 2026-08-20
+- **Vấn đề**: Deploy lên Render bị crash khi khởi động với lỗi `psycopg.OperationalError: connection to server at "2406:da14:...", port 5432 failed: Network is unreachable`.
+- **Root cause**: Supabase Direct hostname (`db.<ref>.supabase.co`) chỉ hỗ trợ IPv6 theo mặc định, trong khi Render Web Service chỉ hỗ trợ outbound IPv4.
+- **Fix**: Sử dụng **Connection Pooler (Supavisor)** URI của Supabase (`aws-0-<region>.pooler.supabase.com` port 5432 - Session mode hoặc 6543 - Transaction mode) vì host pooler hỗ trợ đầy đủ IPv4. User dạng `postgres.<ref>`.
+- **Files liên quan**: `render.yaml`, `app/config.py`, `app/db/session.py`
+
 ### Supabase Policy Exists RLS Disabled & Public Warnings
 - **Ngày**: 2026-08-20
 - **Vấn đề**: Supabase Advisor cảnh báo Critical: `Policy Exists RLS Disabled` và `RLS Disabled in Public`.

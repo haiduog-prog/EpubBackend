@@ -1,3 +1,4 @@
+import concurrent.futures
 import json
 import logging
 import os
@@ -25,9 +26,28 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger('AuditScript')
 
 
-def audit_entities(session) -> bool:
+def download_all_json_parallel(keys: List[str], max_workers: int = 20) -> Dict[str, dict]:
+    results: Dict[str, dict] = {}
+    if not keys:
+        return results
+    unique_keys = list(set(keys))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_key = {executor.submit(storage_repo.download_json, k, True): k for k in unique_keys}
+        for fut in concurrent.futures.as_completed(future_to_key):
+            k = future_to_key[fut]
+            try:
+                data = fut.result()
+                if data and isinstance(data, dict):
+                    results[k] = data
+            except Exception as exc:
+                logger.warning(f"Failed to download JSON {k} (skipping): {exc}")
+    return results
+
+
+def audit_entities(session, all_files: List[str] = None, json_map: Dict[str, dict] = None) -> bool:
     logger.info('=== Starting Comprehensive Structured Storage Audit ===')
-    all_files = storage_repo.list_files(prefix='', raise_on_error=True)
+    if all_files is None:
+        all_files = storage_repo.list_files(prefix='', raise_on_error=True)
     
     # 1. Collect Storage IDs
     storage_novel_ids: Set[str] = set()
@@ -41,12 +61,17 @@ def audit_entities(session) -> bool:
     storage_event_ids: Set[str] = set()
     storage_evidence_ids: Set[str] = set()
 
+    if json_map is None:
+        json_keys_to_fetch = [k for k in all_files if k.endswith('.json')]
+        json_map = download_all_json_parallel(json_keys_to_fetch)
+
+
     for k in all_files:
         if k.endswith('/metadata.json'):
             parts = k.split('/')
             if len(parts) >= 2:
                 storage_novel_ids.add(parts[1])
-                data = storage_repo.download_json(k, raise_on_error=True)
+                data = json_map.get(k)
                 if isinstance(data, dict):
                     for ch in data.get('chapters', []):
                         if isinstance(ch, dict) and 'chapter_index' in ch:
@@ -65,34 +90,35 @@ def audit_entities(session) -> bool:
             storage_job_ids.add(fname)
 
         elif k.startswith('profile_books/') or k.startswith('data/profile_books/') or '/profile/profile_books/' in k or '/profile/books/' in k or k.endswith('/profile/book.json'):
-            data = storage_repo.download_json(k, raise_on_error=True)
+            data = json_map.get(k)
             if isinstance(data, dict) and data.get('book_id'):
                 storage_profile_book_ids.add(data['book_id'])
 
         elif k.startswith('profile_editions/') or k.startswith('data/profile_editions/') or '/profile/profile_editions/' in k or '/profile/editions/' in k:
-            data = storage_repo.download_json(k, raise_on_error=True)
+            data = json_map.get(k)
             if isinstance(data, dict) and data.get('edition_id'):
                 storage_edition_ids.add(data['edition_id'])
 
         elif k.startswith('profile_chapter_mappings/') or k.startswith('data/profile_chapter_mappings/') or '/profile/profile_chapter_mappings/' in k or '/profile/mappings/' in k:
-            data = storage_repo.download_json(k, raise_on_error=True)
+            data = json_map.get(k)
             if isinstance(data, dict) and data.get('edition_id') and 'local_chapter_index' in data:
                 storage_mapping_tuples.add((data['edition_id'], int(data['local_chapter_index'])))
 
         elif k.startswith('profile_submissions/') or k.startswith('data/profile_submissions/') or '/profile/profile_submissions/' in k or '/profile/submissions/' in k:
-            data = storage_repo.download_json(k, raise_on_error=True)
+            data = json_map.get(k)
             if isinstance(data, dict) and data.get('submission_id'):
                 storage_submission_ids.add(data['submission_id'])
 
         elif k.startswith('profile_events/') or k.startswith('data/profile_events/') or '/profile/profile_events/' in k or '/profile/events/' in k:
-            data = storage_repo.download_json(k, raise_on_error=True)
+            data = json_map.get(k)
             if isinstance(data, dict) and data.get('event_id'):
                 storage_event_ids.add(data['event_id'])
 
         elif k.startswith('profile_evidence/') or k.startswith('data/profile_evidence/') or '/profile/profile_evidence/' in k or '/profile/evidence/' in k:
-            data = storage_repo.download_json(k, raise_on_error=True)
+            data = json_map.get(k)
             if isinstance(data, dict) and data.get('evidence_id'):
                 storage_evidence_ids.add(data['evidence_id'])
+
 
 
     # 2. Collect DB IDs

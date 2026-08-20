@@ -761,23 +761,21 @@ class LibraryService:
                         raw_sections.append((current_split_title, sec_text))
                 continue
 
+            # Thay thế thẻ br bằng dấu xuống dòng
+            for br in soup.find_all("br"):
+                br.replace_with("\n")
+
             # Trường hợp thông thường: 1 file = 1 chương (hoặc 1 trang tiêu đề lẻ)
-            text_lines = []
-            for elem in soup.find_all(["p", "h1", "h2", "h3", "h4", "blockquote", "li"]):
-                t = elem.get_text().strip()
-                if t:
-                    text_lines.append(t)
-
-            if not text_lines:
-                for div in soup.find_all("div"):
-                    if not div.find(["p", "div", "blockquote"]):
-                        t = div.get_text().strip()
-                        if t:
-                            text_lines.append(t)
-
-            if not text_lines:
-                raw_t = soup.get_text("\n").strip()
-                text_lines = [l.strip() for l in raw_t.split("\n") if l.strip()]
+            p_tags = soup.find_all(["p", "blockquote", "li"])
+            if len(p_tags) > 0:
+                text_lines = [
+                    elem.get_text().strip()
+                    for elem in soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6", "p", "blockquote", "li"])
+                    if elem.get_text().strip()
+                ]
+            else:
+                body = soup.find("body") or soup
+                text_lines = [l.strip() for l in body.get_text("\n").split("\n") if l.strip()]
 
             full_text = "\n\n".join(text_lines).strip()
             if not full_text:
@@ -787,16 +785,18 @@ class LibraryService:
             ch_title = h_tag.get_text().strip() if h_tag else ""
             if not ch_title and text_lines:
                 first_line = text_lines[0]
-            # Xử lý trang chỉ có Tiêu đề (Title-only page / không có đoạn văn truyện)
-            p_tags = soup.find_all(["p", "blockquote"])
-            story_text_len = sum(len(p.get_text().strip()) for p in p_tags)
+                if parse_chapter_index_from_title(first_line) is not None and len(first_line) <= 80:
+                    ch_title = first_line
 
+            # Xử lý trang chỉ có Tiêu đề (Title-only page / không có nội dung đoạn văn truyện)
+            story_p_len = sum(len(p.get_text().strip()) for p in p_tags)
             is_title_only = False
-            if not p_tags:
-                if len(full_text) < 100 and (bool(ch_title) or parse_chapter_index_from_title(full_text) is not None):
+            if len(p_tags) > 0:
+                if story_p_len < 20 and (bool(ch_title) or parse_chapter_index_from_title(full_text) is not None):
                     is_title_only = True
-            elif len(p_tags) == 1 and story_text_len < 40 and parse_chapter_index_from_title(full_text) is not None:
-                is_title_only = True
+            else:
+                if len(full_text) < 80 and len(text_lines) <= 1 and (bool(ch_title) or parse_chapter_index_from_title(full_text) is not None):
+                    is_title_only = True
 
             if is_title_only:
                 pending_title = ch_title or full_text
@@ -824,7 +824,7 @@ class LibraryService:
         Đảm bảo không bao giờ bị trùng lặp, lệch pha hay nhảy cóc.
         """
         assigned: List[Tuple[int, str, str]] = []
-        curr_idx = (start_chapter_index or 1) - 1
+        curr_idx = 0
 
         for i, (title, full_text) in enumerate(raw_sections):
             extracted_num = parse_chapter_index_from_title(title)
@@ -837,8 +837,12 @@ class LibraryService:
                     idx = curr_idx + 1 if curr_idx >= start_chapter_index else start_chapter_index
             else:
                 # Chế độ nạp thông thường
-                if i == 0 and extracted_num is not None and extracted_num > 0:
-                    idx = extracted_num
+                if i == 0:
+                    idx = extracted_num if (extracted_num is not None and extracted_num > 0) else 1
+                elif extracted_num == 1 and curr_idx == 1 and len(assigned) == 1 and parse_chapter_index_from_title(assigned[0][1]) is None:
+                    # Section đầu là trang Thông tin/Giới thiệu không số -> dời về index 0
+                    assigned[0] = (0, assigned[0][1], assigned[0][2])
+                    idx = 1
                 elif extracted_num is not None and extracted_num > curr_idx and extracted_num <= curr_idx + 10:
                     idx = extracted_num
                 else:

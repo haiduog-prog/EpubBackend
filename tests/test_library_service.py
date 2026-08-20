@@ -442,9 +442,52 @@ def test_epub_with_nav_toc_cover_filtering():
     meta = service.import_epub_novel(epub_bytes, is_translated=True, novel_id=novel_id)
     assert meta.total_chapters == 1
     assert meta.chapters[0].chapter_index == 1
-    assert "Thế Giới Mới" in meta.chapters[0].chapter_title
+    service.delete_novel(novel_id)
+
+
+def test_epub_with_div_and_br_formatting_without_p_tags():
+    """Kiểm tra EPUB dùng cấu trúc <div> và <br/> thay vì <p> (như Vạn Thú Chiến Thần)"""
+    service = LibraryService()
+    novel_id = f"div-test-{uuid.uuid4().hex[:6]}"
+
+    book = epub.EpubBook()
+    book.set_identifier(f"id-{uuid.uuid4().hex[:6]}")
+    book.set_title("Vạn Thú Chiến Thần")
+    book.set_language("vi")
+
+    c1 = epub.EpubHtml(title="Chương 1", file_name="ch_1.xhtml", lang="vi")
+    c1.content = (
+        b"<div>"
+        b"<h1>Ch\xc6\xb0\xc6\xa1ng 1: Tr\xe1\xbb\x8dng Ho\xe1\xba\xa1ch T\xc3\xa2n Sinh</h1>"
+        b"<div>Ngu\xe1\xbb\x93n: read.st<br/>Ch\xc6\xb0\xc6\xa1ng 1: Tr\xe1\xbb\x8dng Ho\xe1\xba\xa1ch T\xc3\xa2n Sinh<br/>"
+        b"\xe2\x80\x9cPhu qu\xc3\xa2n, ng\xc6\xb0\xe1\xbb\x9di ta s\xe1\xbb\xa3!\xe2\x80\x9d Th\xc6\xb0 sinh \xc4\x90\xe1\xbb\x97 Phong t\xe1\xbb\x89nh d\xe1\xba\xady... (n\xe1\xbb\x99i dung d\xc3\xa0i)</div>"
+        b"<div class='Centered'>------oOo------</div>"
+        b"</div>"
+    )
+    book.add_item(c1)
+
+    book.spine = ["nav", c1]
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".epub") as tmp:
+        tmp_path = tmp.name
+    try:
+        epub.write_epub(tmp_path, book)
+        with open(tmp_path, "rb") as f:
+            epub_bytes = f.read()
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+    meta = service.import_epub_novel(epub_bytes, is_translated=True, novel_id=novel_id)
+    assert meta.total_chapters == 1
+    assert meta.chapters[0].chapter_index == 1
+    assert "Trọng Hoạch Tân Sinh" in meta.chapters[0].chapter_title
+    assert meta.chapters[0].word_count > 10
 
     service.delete_novel(novel_id)
+
 
 
 

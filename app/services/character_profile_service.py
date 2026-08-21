@@ -94,6 +94,149 @@ def _token_similarity(s1: Optional[str], s2: Optional[str]) -> float:
     return intersection / union
 
 
+CANONICAL_KEY_MAP: Dict[str, Tuple[str, str]] = {
+    # Realm / Cultivation / Soul Power / Level
+    "current": ("realm", "current"),
+    "realm": ("realm", "realm"),
+    "realm_rank": ("realm", "realm"),
+    "hon_luc": ("realm", "realm"),
+    "hon_luc_level": ("realm", "realm"),
+    "hon_luc_rank": ("realm", "realm"),
+    "hồn lực": ("realm", "realm"),
+    "cấp bậc": ("realm", "realm"),
+    "cap_bac": ("realm", "realm"),
+    "tu_vi": ("realm", "realm"),
+    "tu vi": ("realm", "realm"),
+    "canh_gioi": ("realm", "realm"),
+    "cảnh giới": ("realm", "realm"),
+    "cultivation": ("realm", "realm"),
+    "cultivation_level": ("realm", "realm"),
+    "level": ("realm", "realm"),
+    "rank": ("realm", "realm"),
+
+    # Power / Martial Soul / Bloodline / Physique
+    "vo_hun": ("power", "martial_soul"),
+    "vo_hon": ("power", "martial_soul"),
+    "võ hồn": ("power", "martial_soul"),
+    "wuhun": ("power", "martial_soul"),
+    "martial_soul": ("power", "martial_soul"),
+    "spirit": ("power", "martial_soul"),
+    "bloodline": ("power", "bloodline"),
+    "huyet_mach": ("power", "bloodline"),
+    "huyết mạch": ("power", "bloodline"),
+    "the_chat": ("power", "physique"),
+    "thể chất": ("power", "physique"),
+    "physique": ("power", "physique"),
+
+    # Profession / Blacksmith / Alchemy
+    "blacksmith_rank": ("faction", "profession"),
+    "blacksmith_level": ("faction", "profession"),
+    "doan_tao_su": ("faction", "profession"),
+    "đoán tạo sư": ("faction", "profession"),
+    "học nghề": ("faction", "profession"),
+    "hoc_nghe": ("faction", "profession"),
+    "profession": ("faction", "profession"),
+    "profession_rank": ("faction", "profession"),
+    "nghe_nghiep": ("faction", "profession"),
+    "nghề nghiệp": ("faction", "profession"),
+
+    # Academy / Sect / Organization / Clan
+    "hoc_sinh_su_lai_khac": ("faction", "academy"),
+    "hoc_vien": ("faction", "academy"),
+    "học viện": ("faction", "academy"),
+    "lop_hoc": ("faction", "academy"),
+    "lớp học": ("faction", "academy"),
+    "academy": ("faction", "academy"),
+    "school": ("faction", "academy"),
+    "sect": ("faction", "sect"),
+    "mon_phai": ("faction", "sect"),
+    "môn phái": ("faction", "sect"),
+    "membership": ("faction", "organization"),
+    "organization": ("faction", "organization"),
+    "to_chuc": ("faction", "organization"),
+    "tổ chức": ("faction", "organization"),
+    "gia_toc": ("faction", "clan"),
+    "gia tộc": ("faction", "clan"),
+    "clan": ("faction", "clan"),
+
+    # Items / Weapons / Equipment / Artifacts
+    "weapon": ("item", "weapon"),
+    "weapons": ("item", "weapon"),
+    "vu_khi": ("item", "weapon"),
+    "vũ khí": ("item", "weapon"),
+    "equipment": ("item", "equipment"),
+    "trang_bi": ("item", "equipment"),
+    "trang bị": ("item", "equipment"),
+    "artifact": ("item", "artifacts"),
+    "artifacts": ("item", "artifacts"),
+    "phap_bao": ("item", "artifacts"),
+    "pháp bảo": ("item", "artifacts"),
+
+    # Skills / Techniques / Soul Skills
+    "techniques": ("skill", "techniques"),
+    "technique": ("skill", "techniques"),
+    "soul_skills": ("skill", "soul_skills"),
+    "hon_ky": ("skill", "soul_skills"),
+    "hồn kỹ": ("skill", "soul_skills"),
+    "skills": ("skill", "techniques"),
+    "martial_arts": ("skill", "techniques"),
+    "cong_phap": ("skill", "techniques"),
+    "công pháp": ("skill", "techniques"),
+    "vo_ky": ("skill", "techniques"),
+    "võ kỹ": ("skill", "techniques"),
+    "chieu_thuc": ("skill", "techniques"),
+    "chiêu thức": ("skill", "techniques"),
+
+    # Profile / Identity / Relationship
+    "profile": ("identity", "profile"),
+    "identity": ("identity", "profile"),
+    "address_terms": ("relationship", "address_terms"),
+}
+
+
+def _canonicalize_attribute_info(
+    category: str,
+    attribute_key: str,
+    value: Any = None,
+    operation: str = "set",
+) -> Tuple[str, str, Any, str]:
+    """Canonicalize (category, attribute_key, value, operation) to prevent duplicate/fragmented keys."""
+    raw_key = (attribute_key or "").strip()
+    if not raw_key:
+        return category, attribute_key, value, operation
+
+    norm_key = _norm(raw_key).replace("-", "_").replace(" ", "_")
+    norm_key_clean = _norm(_clean_title(raw_key)).replace("-", "_").replace(" ", "_")
+    slug_key = _slugify(raw_key).replace("-", "_")
+
+    # 1. Exact match in canonical dictionary
+    for lookup in (raw_key.lower(), norm_key, norm_key_clean, slug_key):
+        if lookup in CANONICAL_KEY_MAP:
+            cat, can_key = CANONICAL_KEY_MAP[lookup]
+            op = operation
+            val = value
+            if can_key in ("techniques", "soul_skills", "artifacts"):
+                if op == "set" and val and not isinstance(val, (list, dict)):
+                    op = "add"
+            return cat, can_key, val, op
+
+    # 2. Detect techniques/skills named directly as attribute_key (e.g. "Loạn Phi Phong Chuy Pháp", "Huyền Thiên Công")
+    skill_indicators = ["phap", "chuy", "kiem", "dao", "quyen", "chuong", "cong", "ky", "quyet", "quang", "than_thong"]
+    if any(ind in slug_key for ind in skill_indicators):
+        val_str = f"{raw_key}: {value}" if value and str(value).strip() and str(value).strip() not in ("True", "1") else raw_key
+        return "skill", "techniques", val_str, "add"
+
+    # 3. Detect weapons named directly as attribute_key
+    weapon_indicators = ["kiem", "chuy", "dao", "thuong", "cung", "giap", "khien", "dinh"]
+    if (category in ("item", "custom", "") or any(ind in slug_key for ind in weapon_indicators)) and any(ind in slug_key for ind in weapon_indicators):
+        val_str = f"{raw_key}: {value}" if value and str(value).strip() and str(value).strip() not in ("True", "1") else raw_key
+        return "item", "weapon", val_str, "add"
+
+    # 4. Normalize raw_key to snake_case if custom
+    final_key = slug_key if slug_key else raw_key
+    return category, final_key, value, operation
+
+
 class CharacterProfileService:
     """In-process canonical event store with optional Firestore mirroring."""
 
@@ -1007,6 +1150,14 @@ class CharacterProfileService:
         submission: SubmissionRecord,
         candidate: CharacterEventCandidate,
     ) -> Optional[str]:
+        cat, key, val, op = _canonicalize_attribute_info(
+            candidate.category, candidate.attribute_key, candidate.value, candidate.operation
+        )
+        candidate.category = cat
+        candidate.attribute_key = key
+        candidate.value = val
+        candidate.operation = op
+
         character_id = self._character_id(submission.book_id, candidate, submission.canonical_chapter_end)
         event_key = self._event_key(
             submission.book_id,
@@ -1571,13 +1722,16 @@ class CharacterProfileService:
 
     @staticmethod
     def _apply_event(states: Dict[str, CharacterSnapshot], event: CharacterEvent) -> None:
-        if event.category == "identity" and event.operation == "link" and isinstance(event.value, dict):
-            target_id = event.value.get("target_character_id")
-            if not target_id and event.value.get("target_original_name"):
-                target_id = f"char-{_hash(f"{event.book_id}:{_norm(str(event.value["target_original_name"]))}", 24)}"
+        cat, attr_key, val, op = _canonicalize_attribute_info(
+            event.category, event.attribute_key, event.value, event.operation
+        )
+        if cat == "identity" and op == "link" and isinstance(val, dict):
+            target_id = val.get("target_character_id")
+            if not target_id and val.get("target_original_name"):
+                target_id = f"char-{_hash(f"{event.book_id}:{_norm(str(val["target_original_name"]))}", 24)}"
             if target_id:
                 source = states.get(event.character_id)
-                target = states.setdefault(str(target_id), CharacterSnapshot(character_id=str(target_id), original_name=str(event.value.get("target_original_name") or event.character_original_name)))
+                target = states.setdefault(str(target_id), CharacterSnapshot(character_id=str(target_id), original_name=str(val.get("target_original_name") or event.character_original_name)))
                 if source:
                     for key, value in source.attributes.items():
                         if key not in target.attributes:
@@ -1595,38 +1749,38 @@ class CharacterProfileService:
             )
             states[event.character_id] = state
         state.last_changed_chapter = event.canonical_chapter
-        if event.operation in {"set", "correct"}:
-            state.attributes[event.attribute_key] = deepcopy(event.value)
-        elif event.operation == "add":
-            values = state.attributes.setdefault(event.attribute_key, [])
+        if op in {"set", "correct"}:
+            state.attributes[attr_key] = deepcopy(val)
+        elif op == "add":
+            values = state.attributes.setdefault(attr_key, [])
             if not isinstance(values, list):
                 values = [values]
-                state.attributes[event.attribute_key] = values
-            if event.value not in values:
-                values.append(deepcopy(event.value))
-        elif event.operation == "remove":
-            values = state.attributes.get(event.attribute_key)
+                state.attributes[attr_key] = values
+            if val not in values:
+                values.append(deepcopy(val))
+        elif op == "remove":
+            values = state.attributes.get(attr_key)
             if isinstance(values, list):
-                state.attributes[event.attribute_key] = [item for item in values if item != event.value]
-            elif values == event.value:
-                state.attributes.pop(event.attribute_key, None)
-        elif event.operation in {"increase", "decrease"}:
-            current = state.attributes.get(event.attribute_key, 0)
+                state.attributes[attr_key] = [item for item in values if item != val]
+            elif values == val:
+                state.attributes.pop(attr_key, None)
+        elif op in {"increase", "decrease"}:
+            current = state.attributes.get(attr_key, 0)
             try:
-                amount = float(event.value)
-                next_value = current + amount if event.operation == "increase" else current - amount
-                state.attributes[event.attribute_key] = int(next_value) if next_value.is_integer() else next_value
+                amount = float(val)
+                next_value = current + amount if op == "increase" else current - amount
+                state.attributes[attr_key] = int(next_value) if next_value.is_integer() else next_value
             except (TypeError, ValueError):
-                state.attributes[event.attribute_key] = deepcopy(event.value)
-        elif event.operation in {"link", "unlink"}:
-            values = state.attributes.setdefault(event.attribute_key, [])
+                state.attributes[attr_key] = deepcopy(val)
+        elif op in {"link", "unlink"}:
+            values = state.attributes.setdefault(attr_key, [])
             if not isinstance(values, list):
                 values = [values]
-                state.attributes[event.attribute_key] = values
-            if event.operation == "link" and event.value not in values:
-                values.append(deepcopy(event.value))
-            if event.operation == "unlink":
-                state.attributes[event.attribute_key] = [item for item in values if item != event.value]
+                state.attributes[attr_key] = values
+            if op == "link" and val not in values:
+                values.append(deepcopy(val))
+            if op == "unlink":
+                state.attributes[attr_key] = [item for item in values if item != val]
 
     def snapshot(
         self,

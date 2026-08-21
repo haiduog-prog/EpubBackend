@@ -1,7 +1,7 @@
 # Novel Translation Engine
 
 > Tổng hợp kiến thức về hệ thống dịch truyện thuần Việt (v2) hỗ trợ EPUB/HTML/TXT với Structured Outputs, Prompt Caching và Decoupled LLM Providers.
-> Cập nhật lần cuối: 2026-08-17
+> Cập nhật lần cuối: 2026-08-21
 
 ---
 
@@ -44,7 +44,25 @@
 - **Chi tiết**: Alias/identity link cũng là event có mốc chương. Trước chương tiết lộ, hai nhân vật vẫn độc lập; sau link đã duyệt, snapshot mới merge state. Book Bible dùng chung nhưng không có personal overlay trong MVP.
 - **Files liên quan**: `app/services/character_profile_service.py`, `tests/test_character_identity_timeline.py`
 
+### Resilient Fault-tolerant EPUB Ingestion Engine
+- **Ngày**: 2026-08-21
+- **Chi tiết**: Xây dựng lớp đọc EPUB chống lỗi (`ResilientEpubReader`) tích hợp trực tiếp vào pipeline và library service. Cô lập toàn bộ lỗi cấu trúc của các file EPUB tải lên (thiếu cover/css/font trong archive, sai cấu trúc nav/ncx, lệch hoa thường trên Linux OS) để đảm bảo tác vụ import EPUB luôn trích xuất thành công 100% nội dung truyện.
+- **Files liên quan**: `app/parsers/epub_parser.py`, `app/services/library_service.py`
+
+---
+
 ## Bugs & Solutions
+
+### EPUB Manifest KeyError on Missing/Mismatched Assets (cover.png)
+- **Ngày**: 2026-08-21
+- **Vấn đề**: Nhập truyện EPUB bị sập tiến trình với lỗi `KeyError: "There is no item named 'OEBPS/Images/cover.png' in the archive"`.
+- **Root cause**: File `content.opf` (manifest) trong EPUB khai báo file ảnh bìa/css/font nhưng file thực tế không tồn tại trong ZIP archive, hoặc bị lệch chữ hoa/thường (case-mismatch) hay lệch đường dẫn tương đối. Thư viện `ebooklib` gọi trực tiếp `zipfile.read()` không có try/except hay fallback.
+- **Fix**: Xây dựng `ResilientEpubReader` và `read_epub_safe` kế thừa `EpubReader` với cơ chế:
+  1. Chuẩn hóa đường dẫn posix và tìm kiếm case-insensitive trong zip archive.
+  2. Fallback tìm theo basename nếu lệch prefix thư mục.
+  3. Trả về `b""` và ghi log cảnh báo đối với các tài nguyên phụ bị thiếu thay vì để `KeyError` sập import job.
+  4. Trích xuất ảnh bìa an toàn qua `extract_cover_from_epub` (quét trực tiếp zip nếu manifest hỏng).
+- **Files liên quan**: `app/parsers/epub_parser.py`, `app/services/library_service.py`, `tests/test_library_service.py`
 
 ### Gemini TTS Model 400 Invalid Argument
 - **Ngày**: 2026-08-10
@@ -170,4 +188,10 @@
   return response.parsed
   ```
 - **Files liên quan**: `app/llm/gemini_provider.py`
+ 
+### Safe EPUB Asset & Cover Extraction Fallback
+- **Ngày**: 2026-08-21
+- **Chi tiết**: Pattern trích xuất asset an toàn: ưu tiên đọc từ ebooklib image item có nội dung hợp lệ (`len(bytes) > 0`). Nếu thất bại hoặc manifest bị hỏng, tự động fallback quét trực tiếp danh sách file trong ZIP archive (`zf.namelist()`) theo định dạng ảnh (`.jpg`, `.png`, `.webp`, `.jpeg`) và từ khóa `cover` hoặc ảnh đầu tiên.
+- **Files liên quan**: `app/parsers/epub_parser.py`, `app/services/library_service.py`
+
 

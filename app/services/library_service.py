@@ -7,8 +7,7 @@ import tempfile
 import threading
 import unicodedata
 import uuid
-from datetime import datetime
-from datetime import timezone, timezone
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import ebooklib
@@ -17,6 +16,7 @@ from ebooklib import epub
 from app.config import settings
 from app.core.storage import storage_repo
 from app.db.session import db_session
+from app.parsers.epub_parser import extract_cover_from_epub, read_epub_safe
 from app.repositories.library_repository import LibraryRepository
 from app.repositories.book_bible_repository import BookBibleRepository
 from app.llm.factory import create_llm_client
@@ -692,7 +692,13 @@ class LibraryService:
             name_lower = (item.get_name() or "").lower()
             id_lower = (getattr(item, "id", "") or "").lower()
 
-            content_html = item.get_content().decode("utf-8", errors="ignore")
+            try:
+                content_bytes = item.get_content() or b""
+            except Exception as read_err:
+                logger.warning("Không thể đọc nội dung item %s: %s", item.get_name(), read_err)
+                continue
+
+            content_html = content_bytes.decode("utf-8", errors="ignore")
             soup = BeautifulSoup(content_html, "html.parser")
 
             # Xóa các thẻ không phục vụ đọc
@@ -981,7 +987,7 @@ class LibraryService:
             tmp_path = tmp.name
 
         try:
-            book = epub.read_epub(tmp_path)
+            book = read_epub_safe(tmp_path)
 
             # Extract metadata
             titles = book.get_metadata("DC", "title")
@@ -993,15 +999,8 @@ class LibraryService:
             descriptions = book.get_metadata("DC", "description")
             description = descriptions[0][0] if descriptions else ""
 
-            # Extract Cover Image
-            cover_data = None
-            cover_ext = "jpg"
-            for item in book.get_items_of_type(ebooklib.ITEM_IMAGE):
-                if "cover" in item.get_name().lower() or not cover_data:
-                    cover_data = item.get_content()
-                    cover_ext = item.get_name().split(".")[-1].lower() if "." in item.get_name() else "jpg"
-                    if "cover" in item.get_name().lower():
-                        break
+            # Extract Cover Image safely
+            cover_data, cover_ext = extract_cover_from_epub(book, epub_bytes)
 
             # Create/Update Novel metadata
             req = NovelCreateRequest(
@@ -1090,7 +1089,7 @@ class LibraryService:
                 tmp_path = tmp.name
 
             try:
-                book = epub.read_epub(tmp_path)
+                book = read_epub_safe(tmp_path)
 
                 # Extract metadata
                 titles = book.get_metadata("DC", "title")
@@ -1106,15 +1105,8 @@ class LibraryService:
                 job.current_step = f"Đang tạo/so khớp bộ truyện '{title}' & trích xuất ảnh bìa..."
                 job.progress_percentage = 10
 
-                # Extract Cover Image
-                cover_data = None
-                cover_ext = "jpg"
-                for item in book.get_items_of_type(ebooklib.ITEM_IMAGE):
-                    if "cover" in item.get_name().lower() or not cover_data:
-                        cover_data = item.get_content()
-                        cover_ext = item.get_name().split(".")[-1].lower() if "." in item.get_name() else "jpg"
-                        if "cover" in item.get_name().lower():
-                            break
+                # Extract Cover Image safely
+                cover_data, cover_ext = extract_cover_from_epub(book, epub_bytes)
 
                 # Create Novel metadata
                 req = NovelCreateRequest(

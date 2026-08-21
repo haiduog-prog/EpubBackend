@@ -489,6 +489,106 @@ def test_epub_with_div_and_br_formatting_without_p_tags():
     service.delete_novel(novel_id)
 
 
+def test_epub_with_missing_cover_image_in_archive():
+    """Kiểm tra file EPUB có manifest khai báo cover.png nhưng không tồn tại trong ZIP archive (lỗi OEBPS/Images/cover.png)"""
+    import io
+    import zipfile
+    service = LibraryService()
+    novel_id = f"missing-cover-test-{uuid.uuid4().hex[:6]}"
+
+    container_xml = """<?xml version='1.0' encoding='utf-8'?>
+<container version='1.0' xmlns='urn:oasis:names:tc:opendocument:xmlns:container'>
+  <rootfiles>
+    <rootfile full-path='OEBPS/content.opf' media-type='application/oebps-package+xml'/>
+  </rootfiles>
+</container>"""
+
+    content_opf = """<?xml version='1.0' encoding='utf-8'?>
+<package xmlns='http://www.idpf.org/2007/opf' unique-identifier='bookid' version='2.0'>
+  <metadata xmlns:dc='http://purl.org/dc/elements/1.1/'>
+    <dc:title>Truyện Thiếu Ảnh Bìa</dc:title>
+    <dc:creator>Tác Giả Ẩn Danh</dc:creator>
+  </metadata>
+  <manifest>
+    <item id='cover-image' href='Images/cover.png' media-type='image/png' properties='cover-image'/>
+    <item id='missing-css' href='Styles/style.css' media-type='text/css'/>
+    <item id='ch1' href='chapter1.xhtml' media-type='application/xhtml+xml'/>
+  </manifest>
+  <spine>
+    <itemref idref='ch1'/>
+  </spine>
+</package>"""
+
+    ch1_html = "<html><body><h1>Chương 1: Khởi Đầu Mới</h1><p>Nội dung chương 1 dài trên 30 ký tự để được nhận diện chính xác...</p></body></html>"
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("META-INF/container.xml", container_xml)
+        zf.writestr("OEBPS/content.opf", content_opf)
+        zf.writestr("OEBPS/chapter1.xhtml", ch1_html)
+
+    epub_bytes = buf.getvalue()
+
+    # Nhập truyện không bị crash bởi lỗi KeyError: There is no item named 'OEBPS/Images/cover.png' in the archive
+    meta = service.import_epub_novel(epub_bytes, is_translated=True, novel_id=novel_id)
+    assert meta.total_chapters == 1
+    assert meta.title == "Truyện Thiếu Ảnh Bìa"
+    assert meta.author == "Tác Giả Ẩn Danh"
+    assert meta.chapters[0].chapter_index == 1
+    assert "Khởi Đầu Mới" in meta.chapters[0].chapter_title
+
+    service.delete_novel(novel_id)
+
+
+def test_epub_with_case_mismatched_cover_in_archive():
+    """Kiểm tra file EPUB có manifest khai báo Images/cover.png nhưng trong ZIP thực tế là OEBPS/images/Cover.PNG"""
+    import io
+    import zipfile
+    service = LibraryService()
+    novel_id = f"case-mismatch-cover-test-{uuid.uuid4().hex[:6]}"
+
+    container_xml = """<?xml version='1.0' encoding='utf-8'?>
+<container version='1.0' xmlns='urn:oasis:names:tc:opendocument:xmlns:container'>
+  <rootfiles>
+    <rootfile full-path='OEBPS/content.opf' media-type='application/oebps-package+xml'/>
+  </rootfiles>
+</container>"""
+
+    content_opf = """<?xml version='1.0' encoding='utf-8'?>
+<package xmlns='http://www.idpf.org/2007/opf' unique-identifier='bookid' version='2.0'>
+  <metadata xmlns:dc='http://purl.org/dc/elements/1.1/'>
+    <dc:title>Truyện Bìa Khác Case</dc:title>
+    <dc:creator>Tác Giả</dc:creator>
+  </metadata>
+  <manifest>
+    <item id='cover-image' href='Images/cover.png' media-type='image/png' properties='cover-image'/>
+    <item id='ch1' href='chapter1.xhtml' media-type='application/xhtml+xml'/>
+  </manifest>
+  <spine>
+    <itemref idref='ch1'/>
+  </spine>
+</package>"""
+
+    ch1_html = "<html><body><h1>Chương 1: Thử Nghiệm</h1><p>Nội dung chương 1 dài trên 30 ký tự để được nhận diện...</p></body></html>"
+    fake_png_bytes = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15c4"
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("META-INF/container.xml", container_xml)
+        zf.writestr("OEBPS/content.opf", content_opf)
+        zf.writestr("OEBPS/chapter1.xhtml", ch1_html)
+        zf.writestr("OEBPS/images/Cover.PNG", fake_png_bytes)
+
+    epub_bytes = buf.getvalue()
+
+    meta = service.import_epub_novel(epub_bytes, is_translated=True, novel_id=novel_id)
+    assert meta.total_chapters == 1
+    assert meta.cover_url is not None
+
+    service.delete_novel(novel_id)
+
+
+
 
 
 

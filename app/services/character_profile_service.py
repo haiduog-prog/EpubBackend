@@ -237,6 +237,216 @@ def _canonicalize_attribute_info(
     return category, final_key, value, operation
 
 
+KINSHIP_HONORIFIC_TERMS: Set[str] = {
+    "phu than", "phụ thân", "phuthan",
+    "mau than", "mẫu thân", "mauthan",
+    "cha", "ba", "ba ba", "bố", "papa",
+    "me", "mẹ", "ma", "má", "mama",
+    "su to", "sư tổ", "suto",
+    "su phu", "sư phụ", "suphu", "thay", "thầy",
+    "su huynh", "sư huynh", "suhuynh",
+    "su de", "sư đệ", "sude",
+    "su ty", "sư tỷ", "suty",
+    "su muoi", "sư muội", "sumuoi",
+    "su ba", "sư bá", "suba",
+    "su thuc", "sư thúc", "suthuc",
+    "thuc thuc", "thúc thúc", "chu", "chú",
+    "ba ba", "bá bá", "bac", "bác",
+    "gia gia", "ông", "noi", "ngoai",
+    "nai nai", "nãi nãi", "ba", "bà",
+    "tien boi", "tiền bối", "tienboi",
+    "hau boi", "hậu bối", "hauboi",
+    "doi phuong", "đối phương", "nguoi la", "người lạ",
+}
+
+
+def _merge_address_term_list(
+    terms: List[Dict[str, Any]],
+    new_term: Any,
+) -> List[Dict[str, Any]]:
+    """Deduplicate and merge address terms by with_person."""
+    if not isinstance(new_term, dict):
+        if hasattr(new_term, "model_dump"):
+            new_term = new_term.model_dump(by_alias=True)
+        else:
+            return terms
+
+    target_with = (
+        new_term.get("with")
+        or new_term.get("counterpart_original_name")
+        or new_term.get("counterpart_text")
+        or new_term.get("with_person")
+        or ""
+    ).strip()
+    if not target_with:
+        return terms
+
+    norm_target = _norm(target_with)
+    clean_target = _clean_title(target_with).lower()
+
+    for existing in terms:
+        if not isinstance(existing, dict):
+            continue
+        existing_with = (
+            existing.get("with")
+            or existing.get("counterpart_original_name")
+            or existing.get("counterpart_text")
+            or existing.get("with_person")
+            or ""
+        ).strip()
+        norm_existing = _norm(existing_with)
+        clean_existing = _clean_title(existing_with).lower()
+
+        if norm_existing == norm_target or clean_existing == clean_target:
+            # Merge self
+            if not existing.get("self") and new_term.get("self"):
+                existing["self"] = new_term["self"]
+            elif not existing.get("self_term") and new_term.get("self_term"):
+                existing["self_term"] = new_term["self_term"]
+
+            # Merge other
+            ex_other = (existing.get("other") or existing.get("other_term") or "").strip()
+            new_other = (new_term.get("other") or new_term.get("other_term") or "").strip()
+            if new_other and new_other.lower() not in ex_other.lower():
+                merged_other = f"{ex_other} / {new_other}" if ex_other else new_other
+                if "other" in existing:
+                    existing["other"] = merged_other
+                if "other_term" in existing:
+                    existing["other_term"] = merged_other
+                if "other" not in existing and "other_term" not in existing:
+                    existing["other"] = merged_other
+
+            # Merge context
+            ex_ctx = (existing.get("context") or "").strip()
+            new_ctx = (new_term.get("context") or "").strip()
+            if new_ctx and new_ctx.lower() not in ex_ctx.lower():
+                if ex_ctx:
+                    lines = [line.strip().lstrip("• ") for line in ex_ctx.split("\n") if line.strip()]
+                    if new_ctx.lstrip("• ") not in lines:
+                        lines.append(new_ctx.lstrip("• "))
+                    existing["context"] = "\n".join(f"• {line}" for line in lines)
+                else:
+                    existing["context"] = new_ctx
+            return terms
+
+    terms.append(deepcopy(new_term))
+    return terms
+
+
+def _resolve_and_deduplicate_address_terms(states: Dict[str, CharacterSnapshot]) -> None:
+    """Post-process all character address terms in states to resolve kinship/honorific terms and merge duplicate cards."""
+    import re
+
+    all_names: Dict[str, str] = {}  # norm_name -> canonical_name
+    alias_to_name: Dict[str, str] = {}  # norm_alias / slug_alias -> canonical_name
+    kinship_to_name: Dict[str, str] = {}  # norm_kinship / slug_kinship -> canonical_name
+
+    for char_id, char in states.items():
+        canonical_name = char.original_name
+        all_names[_norm(canonical_name)] = canonical_name
+        all_names[_slugify(canonical_name).replace("-", " ")] = canonical_name
+
+        profile = char.attributes.get("profile") or {}
+        if isinstance(profile, dict):
+            vi_name = profile.get("vi_name")
+            if vi_name:
+                all_names[_norm(vi_name)] = canonical_name
+                all_names[_slugify(vi_name).replace("-", " ")] = canonical_name
+
+            aliases = profile.get("aliases") or []
+            if isinstance(aliases, list):
+                for alias in aliases:
+                    if alias and isinstance(alias, str):
+                        alias_to_name[_norm(alias)] = canonical_name
+                        alias_to_name[_slugify(alias).replace("-", " ")] = canonical_name
+
+            role = (profile.get("role") or "").lower()
+            role_slug = _slugify(role).replace("-", " ")
+            if "cha" in role or "phụ thân" in role or "phu than" in role_slug:
+                for kw in ("phu than", "phụ thân", "cha", "ba", "bố", "ba ba", "phuthan"):
+                    kinship_to_name[_norm(kw)] = canonical_name
+                    kinship_to_name[_slugify(kw).replace("-", " ")] = canonical_name
+            if "mẹ" in role or "mẫu thân" in role or "mau than" in role_slug:
+                for kw in ("mau than", "mẫu thân", "me", "mẹ", "má", "mama", "mauthan"):
+                    kinship_to_name[_norm(kw)] = canonical_name
+                    kinship_to_name[_slugify(kw).replace("-", " ")] = canonical_name
+            if "sư tổ" in role or "su to" in role_slug:
+                for kw in ("su to", "sư tổ", "suto"):
+                    kinship_to_name[_norm(kw)] = canonical_name
+                    kinship_to_name[_slugify(kw).replace("-", " ")] = canonical_name
+            if "sư phụ" in role or "thầy" in role or "su phu" in role_slug:
+                for kw in ("su phu", "sư phụ", "thay", "thầy", "suphu"):
+                    kinship_to_name[_norm(kw)] = canonical_name
+                    kinship_to_name[_slugify(kw).replace("-", " ")] = canonical_name
+
+    for char_id, char in states.items():
+        terms = char.attributes.get("address_terms")
+        if not terms or not isinstance(terms, list):
+            continue
+
+        resolved_terms: List[Dict[str, Any]] = []
+        for raw_term in terms:
+            if not isinstance(raw_term, dict):
+                continue
+            term = deepcopy(raw_term)
+            with_name = (
+                term.get("with")
+                or term.get("counterpart_original_name")
+                or term.get("counterpart_text")
+                or term.get("with_person")
+                or ""
+            ).strip()
+            norm_with = _norm(with_name)
+            slug_with = _slugify(with_name).replace("-", " ")
+            context = (term.get("context") or "")
+            evidence = (term.get("evidence") or "")
+            full_context = f"{context} {evidence}"
+
+            resolved_target: Optional[str] = None
+
+            # 1. Check if any known character name is mentioned in context/evidence (whole word match)
+            for c_id, other_char in states.items():
+                c_name = other_char.original_name
+                if c_name != char.original_name and len(c_name) >= 3:
+                    if re.search(rf"\b{re.escape(c_name)}\b", full_context, re.IGNORECASE):
+                        resolved_target = c_name
+                        break
+
+            # 2. Check alias map
+            if not resolved_target:
+                resolved_target = alias_to_name.get(norm_with) or alias_to_name.get(slug_with)
+
+            # 3. Check kinship map
+            if not resolved_target:
+                resolved_target = kinship_to_name.get(norm_with) or kinship_to_name.get(slug_with)
+
+            # 4. Check direct name match
+            if not resolved_target:
+                resolved_target = all_names.get(norm_with) or all_names.get(slug_with)
+
+            if resolved_target:
+                if norm_with in KINSHIP_HONORIFIC_TERMS or slug_with in KINSHIP_HONORIFIC_TERMS:
+                    ex_other = (term.get("other") or term.get("other_term") or "").strip()
+                    if not ex_other:
+                        if "other" in term:
+                            term["other"] = with_name
+                        if "other_term" in term:
+                            term["other_term"] = with_name
+
+                if "with" in term:
+                    term["with"] = resolved_target
+                if "counterpart_original_name" in term:
+                    term["counterpart_original_name"] = resolved_target
+                if "counterpart_text" in term:
+                    term["counterpart_text"] = resolved_target
+                if "with_person" in term:
+                    term["with_person"] = resolved_target
+
+            _merge_address_term_list(resolved_terms, term)
+
+        char.attributes["address_terms"] = resolved_terms
+
+
 class CharacterProfileService:
     """In-process canonical event store with optional Firestore mirroring."""
 
@@ -1239,21 +1449,23 @@ class CharacterProfileService:
             event.status = "pending"
             return
         # A different approved value set for the same attribute and chapter is
-        # a conflict. Keep the candidate pending instead of silently replacing it.
-        for other in self.events.values():
-            if other.event_id == event.event_id:
-                continue
-            if (
-                other.book_id == event.book_id
-                and other.character_id == event.character_id
-                and other.canonical_chapter == event.canonical_chapter
-                and other.category == event.category
-                and other.attribute_key == event.attribute_key
-                and other.status == "approved"
-                and other.value != event.value
-            ):
-                event.status = "pending"
-                return
+        # a conflict for scalar set/correct operations. Keep the candidate pending instead of silently replacing it.
+        if event.operation in {"set", "correct"}:
+            for other in self.events.values():
+                if other.event_id == event.event_id:
+                    continue
+                if (
+                    other.book_id == event.book_id
+                    and other.character_id == event.character_id
+                    and other.canonical_chapter == event.canonical_chapter
+                    and other.category == event.category
+                    and other.attribute_key == event.attribute_key
+                    and other.operation in {"set", "correct"}
+                    and other.status == "approved"
+                    and other.value != event.value
+                ):
+                    event.status = "pending"
+                    return
         was_approved = event.status == "approved"
         event.status = "approved"
         event.reviewed_at = datetime.now(timezone.utc)
@@ -1752,12 +1964,19 @@ class CharacterProfileService:
         if op in {"set", "correct"}:
             state.attributes[attr_key] = deepcopy(val)
         elif op == "add":
-            values = state.attributes.setdefault(attr_key, [])
-            if not isinstance(values, list):
-                values = [values]
-                state.attributes[attr_key] = values
-            if val not in values:
-                values.append(deepcopy(val))
+            if attr_key == "address_terms" and isinstance(val, dict):
+                terms = state.attributes.setdefault(attr_key, [])
+                if not isinstance(terms, list):
+                    terms = [terms]
+                    state.attributes[attr_key] = terms
+                _merge_address_term_list(terms, val)
+            else:
+                values = state.attributes.setdefault(attr_key, [])
+                if not isinstance(values, list):
+                    values = [values]
+                    state.attributes[attr_key] = values
+                if val not in values:
+                    values.append(deepcopy(val))
         elif op == "remove":
             values = state.attributes.get(attr_key)
             if isinstance(values, list):
@@ -1805,6 +2024,7 @@ class CharacterProfileService:
             states: Dict[str, CharacterSnapshot] = {}
             for event in self._approved_events(edition.book_id, through):
                 self._apply_event(states, event)
+            _resolve_and_deduplicate_address_terms(states)
             processed = self._processed_chapters.get(edition.book_id, set())
             complete_through = max((chapter for chapter in processed if chapter <= through), default=None)
             pending = sorted(

@@ -1,3 +1,4 @@
+import json
 import pytest
 from app.schemas.character_profile import (
     BookMetadata,
@@ -218,3 +219,159 @@ def test_character_snapshot_deduplication_and_overwrite():
     assert attrs.get("weapon") == "Linh Đoán Trầm Ngân Chuy"
     assert any("Loạn Phi Phong Chuy Pháp" in t for t in attrs.get("techniques", []))
     assert "Loạn Phi Phong Chuy Pháp" not in attrs
+
+
+def test_address_terms_kinship_resolution_and_deduplication():
+    service = CharacterProfileService(min_independent_sources=1, auto_approve=True)
+
+    meta = BookMetadata(title="Vạn Cổ Thần Đế Kinship Edition", author="Phi Thiên Ngư", language="vi")
+    res = service.resolve_book(
+        BookResolutionRequest(
+            metadata=meta,
+            create_if_missing=True,
+        )
+    )
+    book_id = res.book_id
+    assert book_id is not None
+    edition = service.create_edition(
+        book_id,
+        EditionCreateRequest(
+            metadata=meta,
+            chapter_count=500,
+        ),
+    )
+    edition_id = edition.edition_id
+
+    # Chapter 1: Create characters with profile roles
+    service.submit(
+        book_id=book_id,
+        edition_id=edition_id,
+        idempotency_key="sub-ch1-profiles",
+        local_chapter_index=1,
+        input_type="structured_events",
+        content_fingerprint="fp-ch1-profiles",
+        candidates=[
+            CharacterEventCandidate(
+                character_original_name="Đường Vũ Lân",
+                category="identity",
+                attribute_key="profile",
+                operation="set",
+                value={"vi_name": "Đường Vũ Lân", "role": "Nam chính", "aliases": ["Vũ Lân"]},
+                confidence=1.0,
+            ),
+            CharacterEventCandidate(
+                character_original_name="Đường Tư Nhiên",
+                category="identity",
+                attribute_key="profile",
+                operation="set",
+                value={"vi_name": "Đường Tư Nhiên", "role": "Phụ thân của Đường Vũ Lân", "aliases": ["Đường thúc"]},
+                confidence=1.0,
+            ),
+            CharacterEventCandidate(
+                character_original_name="Lang Nguyệt",
+                category="identity",
+                attribute_key="profile",
+                operation="set",
+                value={"vi_name": "Lang Nguyệt", "role": "Mẫu thân của Đường Vũ Lân", "aliases": []},
+                confidence=1.0,
+            ),
+            CharacterEventCandidate(
+                character_original_name="Trọc Thế",
+                category="identity",
+                attribute_key="profile",
+                operation="set",
+                value={"vi_name": "Trọc Thế", "role": "Sư tổ của Đường Vũ Lân, Xích Hỏa Đấu La", "aliases": ["Sư tổ", "Xích Long Đấu La"]},
+                confidence=1.0,
+            ),
+        ],
+    )
+
+    # Chapter 5: Add address terms with kinship/honorific "phụ thân", "mẫu thân", "Mang Thiên"
+    service.submit(
+        book_id=book_id,
+        edition_id=edition_id,
+        idempotency_key="sub-ch5-addr",
+        local_chapter_index=5,
+        input_type="structured_events",
+        content_fingerprint="fp-ch5-addr",
+        candidates=[
+            CharacterEventCandidate(
+                character_original_name="Đường Vũ Lân",
+                category="relationship",
+                attribute_key="address_terms",
+                operation="add",
+                value={"with": "Mang Thiên", "self": "con", "other": "thúc thúc", "context": "Giao tiếp với người lớn"},
+                confidence=0.9,
+            ),
+            CharacterEventCandidate(
+                character_original_name="Đường Vũ Lân",
+                category="relationship",
+                attribute_key="address_terms",
+                operation="add",
+                value={"with": "phụ thân", "self": "con", "other": "phụ thân", "context": "Trò chuyện giữa cha và con"},
+                confidence=0.9,
+            ),
+            CharacterEventCandidate(
+                character_original_name="Đường Vũ Lân",
+                category="relationship",
+                attribute_key="address_terms",
+                operation="add",
+                value={"with": "mẫu thân", "self": "con", "other": "mẫu thân", "context": "Con trò chuyện với mẹ"},
+                confidence=0.9,
+            ),
+        ],
+    )
+
+    # Chapter 200: Add address terms for Trọc Thế (one with with="Trọc Thế", one with with="Sư tổ")
+    service.submit(
+        book_id=book_id,
+        edition_id=edition_id,
+        idempotency_key="sub-ch200-addr",
+        local_chapter_index=200,
+        input_type="structured_events",
+        content_fingerprint="fp-ch200-addr",
+        candidates=[
+            CharacterEventCandidate(
+                character_original_name="Đường Vũ Lân",
+                category="relationship",
+                attribute_key="address_terms",
+                operation="add",
+                value={"with": "Trọc Thế", "self": "ta", "other": "Sư tổ", "context": "Đường Vũ Lân chào hỏi, tôn kính Trọc Thế"},
+                confidence=0.9,
+            ),
+            CharacterEventCandidate(
+                character_original_name="Đường Vũ Lân",
+                category="relationship",
+                attribute_key="address_terms",
+                operation="add",
+                value={"with": "Sư tổ", "self": "", "other": "sư tổ", "context": "Đường Vũ Lân hành lễ với Trọc Thế sau khi tỉnh lại"},
+                confidence=0.9,
+            ),
+        ],
+    )
+
+    # Snapshot at Chapter 250
+    snap = service.snapshot(edition_id=edition_id, local_chapter_index=250)
+    vu_lan = next(c for c in snap.characters if c.original_name == "Đường Vũ Lân")
+    terms = vu_lan.attributes.get("address_terms", [])
+
+    with_names = [t.get("with") for t in terms]
+
+    # 1. Verify that kinship names are resolved to real names
+    assert "Đường Tư Nhiên" in with_names
+    assert "Lang Nguyệt" in with_names
+    assert "Mang Thiên" in with_names
+    assert "Trọc Thế" in with_names
+
+    # 2. Verify that there are NO unresolved generic kinship cards
+    assert "phụ thân" not in with_names
+    assert "mẫu thân" not in with_names
+    assert "Sư tổ" not in with_names
+
+    # 3. Verify Trọc Thế was merged into ONE card with merged context
+    troc_the_terms = [t for t in terms if t.get("with") == "Trọc Thế"]
+    assert len(troc_the_terms) == 1
+    troc_the = troc_the_terms[0]
+    assert "Sư tổ" in troc_the.get("other", "")
+    assert "chào hỏi" in troc_the.get("context", "")
+    assert "hành lễ" in troc_the.get("context", "")

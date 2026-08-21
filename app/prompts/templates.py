@@ -26,6 +26,12 @@ QUY TẮC PHÂN LOẠI & ĐẶT ATTRIBUTE_KEY CHO CHARACTER_EVENTS:
 2. TUYỆT ĐỐI KHÔNG lấy tên chiêu thức, tên vũ khí hay câu mô tả làm "attribute_key". Tên chiêu thức/vũ khí là GIÁ TRỊ (value), key phải là "techniques" hoặc "weapons".
 3. Khi thuộc tính có sự tiến cấp/thay đổi (như Hồn lực tăng từ Cấp 3 lên Nhị hoàn), dùng operation="set" với cùng key "cultivation_level" để hệ thống tự động ghi đè.
 
+4. QUY TẮC BẮT BUỘC CHO "address_terms" VÀ "address_observations":
+   - Trường "with" / "counterpart_original_name" BẮT BUỘC PHẢI LÀ TÊN THẬT (original_name/vi_name) của nhân vật đối thoại (ví dụ: "Đường Tư Nhiên", "Lang Nguyệt", "Trọc Thế").
+   - TUYỆT ĐỐI KHÔNG dùng danh từ chỉ quan hệ/vai vế xưng hô (như "phụ thân", "mẫu thân", "cha", "mẹ", "ba ba", "má", "sư tổ", "sư phụ", "sư huynh", "sư đệ", "thúc thúc", "bá bá", "tiền bối", "đối phương", "người lạ") làm giá trị của trường "with".
+   - Nếu trong truyện nhân vật gọi đối phương là "sư tổ" hay "phụ thân", hãy suy luận tên thật của người đó từ ngữ cảnh hoặc danh sách tên đã biết (ví dụ: phụ thân của Đường Vũ Lân là "Đường Tư Nhiên", sư tổ là "Trọc Thế") để điền vào "with".
+   - Từ xưng hô như "phụ thân", "mẫu thân", "Sư tổ" PHẢI được điền vào trường "other" / "other_term" (cách gọi đối phương), TUYỆT ĐỐI KHÔNG điền vào "with".
+
 Trả JSON theo schema sau, CHỈ gồm phần mới hoặc thay đổi:
 {{
   "new_characters": [
@@ -35,7 +41,7 @@ Trả JSON theo schema sau, CHỈ gồm phần mới hoặc thay đổi:
       "role": "string",
       "voice_notes": "string",
       "address_terms": [
-        {{"with": "string", "self": "string", "other": "string", "context": "string"}}
+        {{"with": "string (TÊN THẬT của người đối thoại, KHÔNG dùng 'phụ thân'/'sư tổ')", "self": "string", "other": "string", "context": "string"}}
       ],
       "aliases": ["string"]
     }}
@@ -44,7 +50,7 @@ Trả JSON theo schema sau, CHỈ gồm phần mới hoặc thay đổi:
     {{
       "character_original_name": "string (tên nhân vật ĐÃ có trong danh sách, để code biết upsert vào entry nào)",
       "address_terms": [
-        {{"with": "string", "self": "string", "other": "string", "context": "string"}}
+        {{"with": "string (TÊN THẬT của người đối thoại, KHÔNG dùng 'phụ thân'/'sư tổ')", "self": "string", "other": "string", "context": "string"}}
       ]
     }}
   ],
@@ -53,7 +59,7 @@ Trả JSON theo schema sau, CHỈ gồm phần mới hoặc thay đổi:
   "address_observations": [
     {{
       "character_original_name": "string",
-      "counterpart_original_name": "string",
+      "counterpart_original_name": "string (TÊN THẬT của người đối thoại, KHÔNG dùng 'phụ thân'/'sư tổ')",
       "counterpart_text": "string",
       "self_term": "string",
       "other_term": "string",
@@ -81,7 +87,7 @@ Trả JSON theo schema sau, CHỈ gồm phần mới hoặc thay đổi:
 
 Quy tắc:
 1. Chỉ liệt kê thực thể THỰC SỰ xuất hiện trong văn bản được cung cấp.
-2. "address_terms" quan trọng nhất — phản ánh đúng xưng hô theo quan hệ và thời điểm.
+2. "address_terms" quan trọng nhất — phản ánh đúng xưng hô theo quan hệ và thời điểm. "with" phải là tên thật.
 3. Trích xuất biệt danh/chức danh vào "aliases" để giữ mapping canonical.
 4. Nhân vật đã có trong danh sách đã biết mà không có gì mới thì KHÔNG liệt kê lại.
 5. "style_guide" chỉ trả nếu đây là lần trích xuất đầu tiên hoặc có thay đổi rõ rệt.

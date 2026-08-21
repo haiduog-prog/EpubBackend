@@ -1,82 +1,150 @@
 import pytest
-from app.schemas.book_bible import (
-    BookBible,
-    BookBibleDelta,
-    CharacterEntry,
-    AddressTerm,
-    AddressTermUpdate,
-    PlaceEntry,
-    TermEntry,
-    StyleGuide
+from app.schemas.character_profile import (
+    BookMetadata,
+    BookResolutionRequest,
+    CharacterEventCandidate,
+    EditionCreateRequest,
 )
-from app.services import BookBibleService
+from app.services.character_profile_service import (
+    CharacterProfileService,
+    _clean_title,
+    _token_similarity,
+)
 
 
-def test_merge_delta_new_character():
-    bible = BookBible()
-    delta = BookBibleDelta(
-        new_characters=[
-            CharacterEntry(
-                original_name="萧炎",
-                vi_name="Tiêu Viêm",
-                role="Nam chính",
-                voice_notes="Tự tin, kiên định",
-                address_terms=[
-                    AddressTerm(with_person="Huân Nhi", self="ta", other="Huân Nhi", context="thân mật")
-                ]
-            )
-        ]
+def test_clean_title_and_token_similarity():
+    # 1. Clean title removes bracketed tags and punctuation
+    t1 = "Ta Tại Bệnh Viện Tâm Thần Học Trảm Thần [AI]"
+    t2 = "Trảm Thần: Ta Học Trảm Thần Ở Bệnh Viện Tâm Thần"
+    
+    assert _clean_title(t1) == "Ta Tại Bệnh Viện Tâm Thần Học Trảm Thần"
+    assert "Trảm Thần" in _clean_title(t2)
+    assert ":" not in _clean_title(t2)
+
+    # 2. Token similarity between variants should be high
+    sim = _token_similarity(t1, t2)
+    assert sim >= 0.60, f"Expected similarity >= 0.60, got {sim}"
+
+
+def test_resolve_book_matches_variant_titles_with_same_author():
+    service = CharacterProfileService(min_independent_sources=2)
+
+    # 1. Initial book creation (e.g. from Online Novel with [AI] tag)
+    initial_res = service.resolve_book(
+        BookResolutionRequest(
+            metadata=BookMetadata(
+                title="Ta Tại Bệnh Viện Tâm Thần Học Trảm Thần [AI]",
+                author="Tam Cửu Âm Vực",
+                language="vi",
+            ),
+            create_if_missing=True,
+        )
+    )
+    assert initial_res.status == "new_book"
+    canonical_book_id = initial_res.book_id
+    assert canonical_book_id == "ta-tai-benh-vien-tam-than-hoc-tram-than-ai"
+
+    # 2. EPUB upload resolution with different title formatting and same author
+    epub_res = service.resolve_book(
+        BookResolutionRequest(
+            metadata=BookMetadata(
+                title="Trảm Thần: Ta Học Trảm Thần Ở Bệnh Viện Tâm Thần",
+                author="Tam Cửu Âm Vực",
+                language="vi",
+            ),
+            create_if_missing=True,
+        )
     )
 
-    merged = BookBibleService.merge_delta(bible, delta)
-    assert len(merged.characters) == 1
-    assert merged.characters[0].original_name == "萧炎"
-    assert merged.characters[0].vi_name == "Tiêu Viêm"
-    assert len(merged.characters[0].address_terms) == 1
+    # Should match the existing book_id instead of creating a duplicate!
+    assert epub_res.status == "matched"
+    assert epub_res.book_id == canonical_book_id
 
 
-def test_merge_delta_update_existing_character_address_terms():
-    bible = BookBible(
-        characters=[
-            CharacterEntry(
-                original_name="萧炎",
-                vi_name="Tiêu Viêm",
-                role="Nam chính",
-                address_terms=[
-                    AddressTerm(with_person="Dược Lão", self="đệ tử", other="Sư phụ", context="bái sư")
-                ]
-            )
-        ]
+def test_service_merge_books():
+    service = CharacterProfileService(min_independent_sources=2)
+
+    # Create Book A (source)
+    res_a = service.resolve_book(
+        BookResolutionRequest(
+            metadata=BookMetadata(title="Book Duplicate A", author="Author X", language="vi"),
+            create_if_missing=True,
+        )
+    )
+    book_a_id = res_a.book_id
+
+    # Create Book B (target)
+    res_b = service.resolve_book(
+        BookResolutionRequest(
+            metadata=BookMetadata(title="Book Canonical B", author="Author X", language="vi"),
+            create_if_missing=True,
+        )
+    )
+    book_b_id = res_b.book_id
+
+    # Create edition and event on Book A
+    ed_a = service.create_edition(
+        book_a_id,
+        EditionCreateRequest(
+            metadata=BookMetadata(title="Book Duplicate A", author="Author X", language="vi"),
+            chapter_count=100,
+        ),
+    )
+    candidate = CharacterEventCandidate(
+        character_original_name="Trieu Khong Thanh",
+        category="status",
+        attribute_key="alive",
+        operation="set",
+        value=True,
+        confidence=0.9,
+    )
+    sub = service.submit(
+        book_id=book_a_id,
+        edition_id=ed_a.edition_id,
+        idempotency_key="sub-test-1",
+        local_chapter_index=1,
+        input_type="structured_events",
+        content_fingerprint="fp1",
+        candidates=[candidate],
     )
 
-    delta = BookBibleDelta(
-        new_address_terms_for_existing=[
-            AddressTermUpdate(
-                character_original_name="萧炎",
-                address_terms=[
-                    AddressTerm(with_person="Dược Lão", self="ta", other="lão đầu", context="trêu chọc")
-                ]
-            )
-        ]
+    assert service.editions[ed_a.edition_id].book_id == book_a_id
+    assert service.submissions[sub.submission_id].book_id == book_a_id
+
+    # Perform Merge
+    success = service.merge_books(source_book_id=book_a_id, target_book_id=book_b_id)
+    assert success is True
+
+    # Book A must be removed from books dict
+    assert book_a_id not in service.books
+    assert book_b_id in service.books
+
+    # Editions and submissions must be reparented to Book B
+    assert service.editions[ed_a.edition_id].book_id == book_b_id
+    assert service.submissions[sub.submission_id].book_id == book_b_id
+    for ev in service.events.values():
+        assert ev.book_id != book_a_id
+
+
+def test_get_edition_fuzzy_title_fallback():
+    service = CharacterProfileService(min_independent_sources=2)
+    res = service.resolve_book(
+        BookResolutionRequest(
+            metadata=BookMetadata(
+                title="Ta Tại Bệnh Viện Tâm Thần Học Trảm Thần [AI]",
+                author="Tam Cửu Âm Vực",
+                language="vi",
+            ),
+            create_if_missing=True,
+        )
     )
+    book_id = res.book_id
 
-    merged = BookBibleService.merge_delta(bible, delta)
-    assert len(merged.characters) == 1
-    assert len(merged.characters[0].address_terms) == 2
-    assert merged.characters[0].address_terms[1].other_term == "lão đầu"
-
-
-def test_merge_delta_places_and_terms():
-    bible = BookBible()
-    delta = BookBibleDelta(
-        new_places=[PlaceEntry(original_name="乌坦城", vi_name="Ô Tản Thành", notes="Thành phố xuất phát")],
-        new_terms=[TermEntry(original_name="斗者", vi_name="Đấu Giả", category="Cảnh giới")],
-        style_guide=StyleGuide(genre="Tiên hiệp", tone="Hào hùng", era_setting="Huyền ảo")
+    # Request edition by ad-hoc edition_id with variant title
+    ed = service.get_edition(
+        edition_id="edition-custom-test-12345",
+        title="Trảm Thần: Ta Học Trảm Thần Ở Bệnh Viện Tâm Thần",
+        author="Tam Cửu Âm Vực",
     )
-
-    merged = BookBibleService.merge_delta(bible, delta)
-    assert len(merged.places) == 1
-    assert merged.places[0].vi_name == "Ô Tản Thành"
-    assert len(merged.terms) == 1
-    assert merged.terms[0].vi_name == "Đấu Giả"
-    assert merged.style_guide.genre == "Tiên hiệp"
+    assert ed is not None
+    assert ed.book_id == book_id

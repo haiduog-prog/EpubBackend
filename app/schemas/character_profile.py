@@ -262,3 +262,6 @@ class BookUpdateRequest(BaseModel):
     author: Optional[str] = Field(default=None, description="Tác giả")
 
 
+class BookMergeRequest(BaseModel):
+    source_book_id: str = Field(description="ID sách bị trùng cần gộp (sẽ bị xóa sau khi chuyển dữ liệu)")
+    target_book_id: str = Field(description="ID sách đích giữ lại làm ID chuẩn")

@@ -63,6 +63,37 @@ def _slugify(text: str) -> str:
     return re.sub(r"[-\s]+", "-", text)
 
 
+def _clean_title(text: Optional[str]) -> str:
+    """Clean book title by removing bracketed tags like [AI], [Dịch], parentheses, and punctuation."""
+    import re
+    if not text:
+        return ""
+    # Strip bracketed content like [AI], [Dịch], [Convert], (Bản dịch)...
+    cleaned = re.sub(r"\[.*?\]|\(.*?\)", " ", text)
+    # Replace colons, hyphens, pipes, dashes with spaces
+    cleaned = re.sub(r"[:\-|–—]", " ", cleaned)
+    return " ".join(cleaned.split()).strip()
+
+
+def _token_similarity(s1: Optional[str], s2: Optional[str]) -> float:
+    """Calculate token Jaccard similarity between two Vietnamese titles."""
+    if not s1 or not s2:
+        return 0.0
+    slug1 = _slugify(_clean_title(s1))
+    slug2 = _slugify(_clean_title(s2))
+    t1 = set(slug1.split("-"))
+    t2 = set(slug2.split("-"))
+    # Remove common Vietnamese stop-words
+    stop_words = {"o", "tai", "va", "cua", "la", "tap", "quyen", "ai", "dich", "bo", "phan", "hoi", "chuong"}
+    t1 = {w for w in t1 if w and w not in stop_words}
+    t2 = {w for w in t2 if w and w not in stop_words}
+    if not t1 or not t2:
+        return 0.0
+    intersection = len(t1 & t2)
+    union = len(t1 | t2)
+    return intersection / union
+
+
 class CharacterProfileService:
     """In-process canonical event store with optional Firestore mirroring."""
 
@@ -463,12 +494,29 @@ class CharacterProfileService:
         # Fallback 2: If title is provided, search existing books for a title match
         if title:
             norm_title = _norm(title)
+            clean_title_norm = _norm(_clean_title(title))
             matched_book_id = None
+            best_match_score = 0.0
             for b_id, b_data in self.books.items():
+                b_meta = b_data.get("metadata")
+                b_title = b_meta.title if hasattr(b_meta, "title") else str(b_meta or "")
                 b_title_key = b_data.get("title_key", "")
-                if norm_title == b_title_key or (norm_title and norm_title in b_title_key) or (b_title_key and b_title_key in norm_title):
+                b_clean_norm = _norm(_clean_title(b_title))
+
+                if norm_title == b_title_key or (clean_title_norm and clean_title_norm == b_clean_norm):
                     matched_book_id = b_id
                     break
+                if (norm_title and norm_title in b_title_key) or (b_title_key and b_title_key in norm_title):
+                    matched_book_id = b_id
+                    break
+                if (clean_title_norm and clean_title_norm in b_clean_norm) or (b_clean_norm and b_clean_norm in clean_title_norm):
+                    matched_book_id = b_id
+                    break
+                tok_sim = _token_similarity(title, b_title)
+                if author and _norm(author) == b_data.get("author_key", "") and tok_sim >= 0.60:
+                    if tok_sim > best_match_score:
+                        best_match_score = tok_sim
+                        matched_book_id = b_id
 
             if matched_book_id:
                 new_ed = EditionRecord(
@@ -560,32 +608,61 @@ class CharacterProfileService:
                     self._create_book(request.book_id, request.metadata, request.fingerprints)
                 return BookResolutionResponse(status="matched", book_id=request.book_id)
 
-            title_key = _norm(request.metadata.title)
-            author_key = _norm(request.metadata.author)
+            req_title = request.metadata.title or ""
+            req_author = request.metadata.author or ""
+            title_key = _norm(req_title)
+            author_key = _norm(req_author)
+            clean_req_title_norm = _norm(_clean_title(req_title))
+
             candidates: List[BookMatchCandidate] = []
             for book_id, book in self.books.items():
                 score = 0.0
                 reasons: List[str] = []
-                if title_key and title_key == book["title_key"]:
+                b_meta = book.get("metadata")
+                b_title = b_meta.title if hasattr(b_meta, "title") else str(b_meta or "")
+                b_title_key = book.get("title_key", "")
+                b_author_key = book.get("author_key", "")
+                b_clean_title_norm = _norm(_clean_title(b_title))
+
+                # Title match scoring
+                if title_key and title_key == b_title_key:
                     score += 0.55
                     reasons.append("normalized_title")
-                elif title_key and title_key in book["title_key"]:
+                elif clean_req_title_norm and clean_req_title_norm == b_clean_title_norm:
+                    score += 0.50
+                    reasons.append("cleaned_title_exact")
+                elif title_key and (title_key in b_title_key or b_title_key in title_key):
                     score += 0.30
                     reasons.append("title_contains")
-                if author_key and author_key == book["author_key"]:
+                elif clean_req_title_norm and (clean_req_title_norm in b_clean_title_norm or b_clean_title_norm in clean_req_title_norm):
+                    score += 0.30
+                    reasons.append("cleaned_title_contains")
+                else:
+                    tok_sim = _token_similarity(req_title, b_title)
+                    if tok_sim >= 0.60:
+                        score += 0.30 + round(0.25 * tok_sim, 4)
+                        reasons.append(f"token_similarity_{round(tok_sim, 2)}")
+
+                # Author match scoring
+                if author_key and author_key == b_author_key:
                     score += 0.30
                     reasons.append("normalized_author")
+                elif author_key and (author_key in b_author_key or b_author_key in author_key):
+                    score += 0.15
+                    reasons.append("author_partial")
+
                 incoming_samples = set(request.fingerprints.sampled_chapters)
                 if incoming_samples & set(book.get("sampled_chapters", [])):
                     score += 0.15
                     reasons.append("sample_fingerprint")
+
                 if score:
                     candidates.append(
                         BookMatchCandidate(
                             book_id=book_id,
-                            title=book["metadata"].title,
-                            author=book["metadata"].author,
-                            score=round(score, 4),
+                            title=book["metadata"].title if hasattr(book["metadata"], "title") else str(book["metadata"]),
+                            author=book["metadata"].author if hasattr(book["metadata"], "author") else "",
+                            score=round(min(score, 1.0), 4),
                             reasons=reasons,
                         )
                     )
@@ -1099,6 +1176,61 @@ class CharacterProfileService:
                         shutil.rmtree(local_dir, ignore_errors=True)
                 except Exception:
                     pass
+
+            return True
+
+    def merge_books(self, source_book_id: str, target_book_id: str) -> bool:
+        """Gộp toàn bộ ấn bản, sự kiện, submission từ source_book_id sang target_book_id và xóa source_book_id."""
+        with self._lock:
+            if source_book_id == target_book_id:
+                return True
+
+            db_success = False
+            if settings.structured_storage_backend in ("dual", "postgres"):
+                try:
+                    with db_session() as session:
+                        db_success = CharacterProfileRepository.merge_books(session, source_book_id, target_book_id)
+                        session.commit()
+                except Exception as exc:
+                    if settings.structured_storage_backend == "postgres":
+                        logger.error("Failed to merge books %s -> %s in DB: %s", source_book_id, target_book_id, exc)
+                        raise exc
+                    logger.warning("Failed to merge books %s -> %s in DB (dual mode): %s", source_book_id, target_book_id, exc)
+
+            if not db_success and target_book_id not in self.books and source_book_id not in self.books:
+                return False
+
+            # In-memory updates:
+            for ed in self.editions.values():
+                if ed.book_id == source_book_id:
+                    ed.book_id = target_book_id
+                    self._persist("profile_editions", ed.edition_id, ed)
+
+            for sub in self.submissions.values():
+                if sub.book_id == source_book_id:
+                    sub.book_id = target_book_id
+                    self._persist("profile_submissions", sub.submission_id, sub)
+
+            for ev in self.events.values():
+                if ev.book_id == source_book_id:
+                    ev.book_id = target_book_id
+                    self._persist("profile_events", ev.event_id, ev)
+
+            self.books.pop(source_book_id, None)
+            self._book_revisions.pop(source_book_id, None)
+
+            self._snapshot_cache = {
+                k: v for k, v in self._snapshot_cache.items()
+                if k[0] != source_book_id and k[0] != target_book_id
+            }
+            if target_book_id in self.books:
+                self._book_revisions[target_book_id] = self._book_revisions.get(target_book_id, 0) + 1
+
+            if self.firestore_db and settings.structured_storage_backend in ("legacy", "dual"):
+                try:
+                    self.firestore_db.collection("profile_books").document(source_book_id).delete()
+                except Exception as exc:
+                    logger.warning("Failed to delete source book from Firestore: %s", exc)
 
             return True
 

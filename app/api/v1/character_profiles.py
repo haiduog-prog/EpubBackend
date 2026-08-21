@@ -15,6 +15,7 @@ from app.llm import create_llm_client
 from app.schemas.character_profile import (
     ApproveAllRequest,
     BookListItem,
+    BookMergeRequest,
     BookResolutionRequest,
     BookResolutionResponse,
     BookUpdateRequest,
@@ -90,6 +91,26 @@ def delete_book(
     _require_trusted_client(x_book_bible_client_key)
     success = profile_service.delete_book(book_id)
     return {"status": "success", "book_id": book_id, "deleted": success}
+
+
+@router.post("/books/merge")
+def merge_books(
+    payload: BookMergeRequest,
+    x_book_bible_client_key: Optional[str] = Header(default=None),
+):
+    """Gộp hai đầu sách bị trùng lặp thành một (chuyển toàn bộ ấn bản, sự kiện, submission sang target_book_id)."""
+    _require_trusted_client(x_book_bible_client_key)
+    success = profile_service.merge_books(payload.source_book_id, payload.target_book_id)
+    if not success:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Không thể gộp: source '{payload.source_book_id}' hoặc target '{payload.target_book_id}' không tồn tại.",
+        )
+    return {
+        "status": "success",
+        "source_book_id": payload.source_book_id,
+        "target_book_id": payload.target_book_id,
+    }
 
 
 @router.post("/books/{book_id}/editions", response_model=EditionRecord)

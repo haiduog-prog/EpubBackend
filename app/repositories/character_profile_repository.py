@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
-from sqlalchemy import select, delete, desc, func, and_, or_
+from sqlalchemy import select, update, delete, desc, func, and_, or_
 from sqlalchemy.orm import Session, selectinload
 
 from app.config import settings
@@ -142,6 +142,39 @@ class CharacterProfileRepository:
         if not model:
             return False
         session.delete(model)
+        session.flush()
+        return True
+
+    @classmethod
+    def merge_books(cls, session: Session, source_book_id: str, target_book_id: str) -> bool:
+        source = session.get(ProfileBookModel, source_book_id)
+        target = session.get(ProfileBookModel, target_book_id)
+        if not source or not target:
+            return False
+
+        # 1. Update editions
+        session.execute(
+            update(ProfileEditionModel)
+            .where(ProfileEditionModel.book_id == source_book_id)
+            .values(book_id=target_book_id)
+        )
+
+        # 2. Update submissions
+        session.execute(
+            update(ProfileSubmissionModel)
+            .where(ProfileSubmissionModel.book_id == source_book_id)
+            .values(book_id=target_book_id)
+        )
+
+        # 3. Update events
+        session.execute(
+            update(ProfileEventModel)
+            .where(ProfileEventModel.book_id == source_book_id)
+            .values(book_id=target_book_id)
+        )
+
+        # 4. Delete source book
+        session.delete(source)
         session.flush()
         return True
 

@@ -15,6 +15,16 @@ services:
         value: 10
       - key: DB_MAX_OVERFLOW
         value: 20
+      - key: STORAGE_PROVIDER
+        value: supabase
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: SUPABASE_STORAGE_BUCKET
+        value: novels
+      - key: SUPABASE_STORAGE_PUBLIC_URL
+        sync: false
       - key: CLOUDFLARE_ACCOUNT_ID
         sync: false
       - key: CLOUDFLARE_R2_ACCESS_KEY_ID

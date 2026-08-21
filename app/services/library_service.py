@@ -305,19 +305,14 @@ class LibraryService:
                 logger.warning("Failed to delete novel %s from database in dual mode: %s", novel_id, exc)
                 return False
 
-        if storage_repo.is_r2_active:
+        if storage_repo.is_blob_active or storage_repo.is_r2_active:
             try:
-                paginator = storage_repo.r2_client.get_paginator("list_objects_v2")
                 prefix = f"novels/{novel_id}/"
-                for page in paginator.paginate(Bucket=settings.cloudflare_r2_bucket_name, Prefix=prefix):
-                    objects_to_delete = [{"Key": item["Key"]} for item in page.get("Contents", [])]
-                    if objects_to_delete:
-                        storage_repo.r2_client.delete_objects(
-                            Bucket=settings.cloudflare_r2_bucket_name,
-                            Delete={"Objects": objects_to_delete},
-                        )
+                files_to_delete = storage_repo.list_files(prefix)
+                if files_to_delete:
+                    storage_repo.delete_files(files_to_delete)
             except Exception as exc:
-                logger.warning("Error deleting novel files from R2: %s", exc)
+                logger.warning("Error deleting novel files from storage: %s", exc)
 
         # Xóa luôn Book Bible liên quan đến bộ truyện
         storage_repo.delete_bible(novel_id)
@@ -397,15 +392,12 @@ class LibraryService:
         is_trans = (version.lower() == "translated")
         key = self._chapter_key(novel_id, chapter_index, is_translated=is_trans)
 
-        if storage_repo.is_r2_active:
+        data_bytes = storage_repo.get_bytes(key)
+        if data_bytes is not None:
             try:
-                resp = storage_repo.r2_client.get_object(
-                    Bucket=settings.cloudflare_r2_bucket_name,
-                    Key=key,
-                )
-                return resp["Body"].read().decode("utf-8")
-            except Exception as exc:
-                logger.debug("Chapter content not found on R2: %s", exc)
+                return data_bytes.decode("utf-8")
+            except Exception:
+                return data_bytes.decode("latin1", errors="ignore")
 
         local_path = os.path.join("storage", key)
         if os.path.exists(local_path):
@@ -596,16 +588,7 @@ class LibraryService:
             book.add_author(meta.author)
 
         # Check and add cover image if available
-        cover_content = None
-        if storage_repo.is_r2_active and settings.cloudflare_r2_bucket_name:
-            try:
-                resp = storage_repo.r2_client.get_object(
-                    Bucket=settings.cloudflare_r2_bucket_name,
-                    Key=f"novels/{novel_id}/cover.jpg",
-                )
-                cover_content = resp["Body"].read()
-            except Exception:
-                pass
+        cover_content = storage_repo.get_bytes(f"novels/{novel_id}/cover.jpg")
         if not cover_content:
             local_cover = os.path.join("storage", "novels", novel_id, "cover.jpg")
             if os.path.exists(local_cover):
@@ -1227,19 +1210,9 @@ class LibraryService:
                 json.dump(data, f, ensure_ascii=False, indent=2)
 
     def _save_raw_file(self, key: str, data: bytes, content_type: str = "application/octet-stream") -> Optional[str]:
-        if storage_repo.is_r2_active and settings.cloudflare_r2_bucket_name:
-            try:
-                storage_repo.r2_client.put_object(
-                    Bucket=settings.cloudflare_r2_bucket_name,
-                    Key=key,
-                    Body=data,
-                    ContentType=content_type,
-                )
-                if settings.cloudflare_r2_public_url:
-                    return f"{settings.cloudflare_r2_public_url.rstrip('/')}/{key}"
-                return f"https://{settings.cloudflare_account_id}.r2.cloudflarestorage.com/{settings.cloudflare_r2_bucket_name}/{key}"
-            except Exception as exc:
-                logger.warning("Failed to save raw file to R2 (%s): %s", key, exc)
+        url = storage_repo.put_bytes(key, data, content_type=content_type)
+        if url:
+            return url
 
         local_path = os.path.join("storage", key)
         os.makedirs(os.path.dirname(local_path), exist_ok=True)

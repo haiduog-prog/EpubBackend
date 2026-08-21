@@ -288,22 +288,25 @@ def export_novel_epub_endpoint(
         if not novel:
             raise HTTPException(status_code=404, detail=f"Không tìm thấy bộ truyện '{novel_id}'")
 
-        r2_key = f"novels/{novel_id}/full.epub"
+        storage_key = f"novels/{novel_id}/full.epub"
 
-        # 1. If public CDN URL is configured, file exists on R2, and not force rebuilding:
-        if not force_rebuild and settings.cloudflare_r2_public_url and storage_repo.file_exists_in_r2(r2_key):
-            cdn_url = f"{settings.cloudflare_r2_public_url.rstrip('/')}/{r2_key}"
+        # 1. If public CDN URL is configured, file exists on storage, and not force rebuilding:
+        if not force_rebuild and settings.cloudflare_r2_public_url and storage_repo.file_exists_in_r2(storage_key):
+            cdn_url = f"{settings.cloudflare_r2_public_url.rstrip('/')}/{storage_key}"
+            return RedirectResponse(url=cdn_url, status_code=307)
+        elif not force_rebuild and settings.supabase_storage_public_url and storage_repo.file_exists(storage_key):
+            cdn_url = f"{settings.supabase_storage_public_url.rstrip('/')}/{storage_key}"
             return RedirectResponse(url=cdn_url, status_code=307)
 
-        # 2. File does not exist on R2 or force_rebuild requested -> compile full EPUB
+        # 2. File does not exist on storage or force_rebuild requested -> compile full EPUB
         output_path = library_service.export_full_epub(novel_id)
 
-        # 3. If R2 is active, cache the compiled EPUB to R2 so subsequent requests hit CDN
-        if storage_repo.is_r2_active:
+        # 3. Cache the compiled EPUB to storage so subsequent requests hit CDN
+        if storage_repo.is_blob_active or storage_repo.is_r2_active:
             try:
-                storage_repo.upload_file_to_r2(output_path, r2_key)
+                storage_repo.upload_file(output_path, storage_key, content_type="application/epub+zip")
             except Exception as exc:
-                logger.warning("Failed to cache compiled EPUB to R2: %s", exc)
+                logger.warning("Failed to cache compiled EPUB to storage: %s", exc)
 
         # 4. Return the compiled EPUB file directly
         title = novel.title if novel else novel_id

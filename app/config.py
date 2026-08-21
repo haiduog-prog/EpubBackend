@@ -16,6 +16,15 @@ class Settings(BaseModel):
     firebase_credentials_json: str = Field(default_factory=lambda: os.getenv("FIREBASE_CREDENTIALS_JSON", ""))
     firebase_storage_bucket: str = Field(default_factory=lambda: os.getenv("FIREBASE_STORAGE_BUCKET", ""))
 
+    # Blob Storage Provider ('supabase' | 'r2' | 'local')
+    storage_provider: str = Field(default_factory=lambda: os.getenv("STORAGE_PROVIDER", "supabase").lower())
+
+    # Supabase Storage Configuration
+    supabase_url: str = Field(default_factory=lambda: os.getenv("SUPABASE_URL", ""))
+    supabase_key: str = Field(default_factory=lambda: os.getenv("SUPABASE_KEY", os.getenv("SUPABASE_SERVICE_ROLE_KEY", os.getenv("SUPABASE_ANON_KEY", ""))))
+    supabase_storage_bucket: str = Field(default_factory=lambda: os.getenv("SUPABASE_STORAGE_BUCKET", "novels"))
+    supabase_storage_public_url: str = Field(default_factory=lambda: os.getenv("SUPABASE_STORAGE_PUBLIC_URL", ""))
+
     # Cloudflare R2 Storage Configuration (S3-Compatible Free 10GB Storage)
     cloudflare_account_id: str = Field(default_factory=lambda: os.getenv("CLOUDFLARE_ACCOUNT_ID", ""))
     cloudflare_r2_access_key_id: str = Field(default_factory=lambda: os.getenv("CLOUDFLARE_R2_ACCESS_KEY_ID", ""))

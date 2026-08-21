@@ -140,3 +140,9 @@
   ```
 - **Files liên quan**: `app/services/library_service.py`, `app/core/storage.py`, `app/services/character_profile_service.py`
 
+### Pluggable Supabase & Cloudflare R2 Blob Storage Architecture
+- **Ngày**: 2026-08-21
+- **Chi tiết**: Tầng Blob Storage (ảnh bìa, nội dung TXT chương, file EPUB xuất bản) được thiết kế theo mô hình Strategy/Provider với interface `BaseStorageProvider`. Hỗ trợ `SupabaseStorageProvider` (thông qua REST API/CDN) và `R2StorageProvider` (boto3 S3 API). Cho phép chuyển đổi lưu trữ hoàn toàn sang Supabase hoặc quay lại Cloudflare R2 bằng cách đổi biến môi trường `STORAGE_PROVIDER=supabase` hoặc `STORAGE_PROVIDER=r2`. Các phương thức cũ như `upload_file_to_r2`, `file_exists_in_r2`, `is_r2_active` được giữ nguyên tương thích ngược để không làm gãy mã nguồn hiện hữu.
+- **Files liên quan**: `app/core/storage.py`, `app/config.py`, `render.yaml`, `scripts/migrate_r2_to_supabase_storage.py`
+
+

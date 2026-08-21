@@ -43,7 +43,7 @@ class FakeFirestore:
 
 
 def make_repository():
-    repository = StorageRepository.__new__(StorageRepository)
+    repository = StorageRepository()
     repository._jobs = {}
     repository._bibles = {}
     repository.firebase_enabled = True
@@ -94,7 +94,7 @@ def test_save_and_get_bible_use_novel_document_key():
 
 
 def test_local_fallback_still_works_without_firestore():
-    repository = StorageRepository.__new__(StorageRepository)
+    repository = StorageRepository()
     repository._jobs = {}
     repository._bibles = {}
     repository.firebase_enabled = False
@@ -140,16 +140,16 @@ class FakeR2Client:
 
 def make_r2_repository():
     from app.config import settings
+    settings.storage_provider = "r2"
     settings.cloudflare_r2_bucket_name = "test-bucket"
-    repository = StorageRepository.__new__(StorageRepository)
+    repository = StorageRepository()
     repository._jobs = {}
     repository._bibles = {}
-    repository._locks = {}
-    repository._locks_guard = repository._get_lock("guard")
     repository.firebase_enabled = False
     repository.firestore_db = None
-    repository.r2_enabled = True
-    repository.r2_client = FakeR2Client()
+    repository.r2_provider.r2_client = FakeR2Client()
+    repository.r2_provider.r2_enabled = True
+    repository.r2_provider.bucket_name = "test-bucket"
     return repository
 
 

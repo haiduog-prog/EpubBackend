@@ -48,6 +48,12 @@ def _norm(value: Optional[str]) -> str:
     return " ".join((value or "").casefold().split())
 
 
+def _is_cjk(text: Optional[str]) -> bool:
+    """Kiểm tra chuỗi có chứa ký tự chữ Hán (Chinese/CJK) hay không."""
+    import re
+    return bool(re.search(r"[\u4e00-\u9fff]", text or ""))
+
+
 def _hash(value: str, length: int = 32) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:length]
 
@@ -1321,15 +1327,27 @@ class CharacterProfileService:
         if chapter is None:
             return base_id
         for event in self._approved_events(book_id, chapter):
-            if event.character_id != base_id or event.category != "identity" or event.operation != "link":
-                continue
-            if isinstance(event.value, dict):
-                target_id = event.value.get("target_character_id")
-                target_name = event.value.get("target_original_name")
-                if target_id:
-                    return str(target_id)
-                if target_name:
-                    return f"char-{_hash(f"{book_id}:{_norm(str(target_name))}", 24)}"
+            if event.category == "identity" and event.operation == "link" and event.character_id == base_id:
+                if isinstance(event.value, dict):
+                    target_id = event.value.get("target_character_id")
+                    target_name = event.value.get("target_original_name")
+                    if target_id:
+                        return str(target_id)
+                    if target_name:
+                        return f"char-{_hash(f"{book_id}:{_norm(str(target_name))}", 24)}"
+            # Auto-resolve matching identity profile events
+            if event.category == "identity" and event.attribute_key == "profile" and isinstance(event.value, dict):
+                ev_vi_name = _norm(event.value.get("vi_name"))
+                ev_orig = _norm(event.character_original_name)
+                cand_vi_name = _norm(candidate.value.get("vi_name")) if isinstance(candidate.value, dict) else ""
+                cand_orig = _norm(candidate.character_original_name)
+                if (
+                    (ev_vi_name and cand_vi_name and ev_vi_name == cand_vi_name)
+                    or (ev_vi_name and cand_orig and ev_vi_name == cand_orig)
+                    or (cand_vi_name and ev_orig and cand_vi_name == ev_orig)
+                ):
+                    if _is_cjk(event.character_original_name) or not _is_cjk(candidate.character_original_name):
+                        return event.character_id
         return base_id
 
     def _event_key(
@@ -1960,9 +1978,31 @@ class CharacterProfileService:
                 original_name=event.character_original_name,
             )
             states[event.character_id] = state
-        state.last_changed_chapter = event.canonical_chapter
+        if _is_cjk(event.character_original_name) and not _is_cjk(state.original_name):
+            state.original_name = event.character_original_name
         if op in {"set", "correct"}:
-            state.attributes[attr_key] = deepcopy(val)
+            if (
+                attr_key == "profile"
+                and isinstance(val, dict)
+                and isinstance(state.attributes.get("profile"), dict)
+            ):
+                current_profile = state.attributes["profile"]
+                for pk, pv in val.items():
+                    if pk == "aliases" and isinstance(pv, list):
+                        curr_aliases = current_profile.setdefault("aliases", [])
+                        for a in pv:
+                            if a and a not in curr_aliases:
+                                curr_aliases.append(a)
+                    elif pk == "voice_notes" and pv:
+                        curr_vn = current_profile.get("voice_notes")
+                        if curr_vn and pv not in curr_vn:
+                            current_profile["voice_notes"] = f"{curr_vn}; {pv}"
+                        elif not curr_vn:
+                            current_profile["voice_notes"] = pv
+                    elif pv or pk not in current_profile:
+                        current_profile[pk] = deepcopy(pv)
+            else:
+                state.attributes[attr_key] = deepcopy(val)
         elif op == "add":
             if attr_key == "address_terms" and isinstance(val, dict):
                 terms = state.attributes.setdefault(attr_key, [])
@@ -2001,6 +2041,118 @@ class CharacterProfileService:
             if op == "unlink":
                 state.attributes[attr_key] = [item for item in values if item != val]
 
+    @staticmethod
+    def _merge_duplicate_snapshots(states: Dict[str, CharacterSnapshot]) -> List[CharacterSnapshot]:
+        """Gộp các snapshot nhân vật trùng lặp thực thể (Entity Resolution / Deduplication).
+
+        So khớp dựa trên:
+        1. Tên tiếng Việt (vi_name) trong thuộc tính profile.
+        2. Tên gốc nguyên tác (original_name).
+        3. Biệt danh (aliases).
+
+        Khi gộp:
+        - Ưu tiên original_name có chứa chữ Hán (CJK) hoặc tên khác với vi_name.
+        - Gộp các danh mục thuộc tính (profile, relationship, realm, skill...).
+        """
+        snapshots = list(states.values())
+        if len(snapshots) <= 1:
+            return snapshots
+
+        merged: List[CharacterSnapshot] = []
+
+        for snap in snapshots:
+            snap_profile = snap.attributes.get("profile", {}) if isinstance(snap.attributes.get("profile"), dict) else {}
+            snap_vi_name = _norm(snap_profile.get("vi_name") or "")
+            snap_orig_name = _norm(snap.original_name or "")
+            snap_aliases = [_norm(a) for a in snap_profile.get("aliases", []) if a]
+
+            matched_idx = -1
+            for idx, existing in enumerate(merged):
+                ext_profile = existing.attributes.get("profile", {}) if isinstance(existing.attributes.get("profile"), dict) else {}
+                ext_vi_name = _norm(ext_profile.get("vi_name") or "")
+                ext_orig_name = _norm(existing.original_name or "")
+                ext_aliases = [_norm(a) for a in ext_profile.get("aliases", []) if a]
+
+                # Match criteria
+                matched = False
+                if snap_vi_name and ext_vi_name and snap_vi_name == ext_vi_name:
+                    matched = True
+                elif snap_orig_name and ext_orig_name and snap_orig_name == ext_orig_name:
+                    matched = True
+                elif snap_orig_name and (snap_orig_name == ext_vi_name or snap_orig_name in ext_aliases):
+                    matched = True
+                elif ext_orig_name and (ext_orig_name == snap_vi_name or ext_orig_name in snap_aliases):
+                    matched = True
+                elif snap_vi_name and (snap_vi_name == ext_orig_name or snap_vi_name in ext_aliases):
+                    matched = True
+                elif ext_vi_name and (ext_vi_name == snap_orig_name or ext_vi_name in snap_aliases):
+                    matched = True
+
+                if matched:
+                    matched_idx = idx
+                    break
+
+            if matched_idx == -1:
+                merged.append(snap.model_copy(deep=True))
+            else:
+                existing = merged[matched_idx]
+                ext_profile = existing.attributes.setdefault("profile", {})
+                if not isinstance(ext_profile, dict):
+                    ext_profile = {}
+                    existing.attributes["profile"] = ext_profile
+
+                # 1. Determine best original_name
+                if _is_cjk(snap.original_name) and not _is_cjk(existing.original_name):
+                    old_name = existing.original_name
+                    existing.original_name = snap.original_name
+                    existing.character_id = snap.character_id
+                    aliases = ext_profile.setdefault("aliases", [])
+                    if old_name and old_name not in aliases and old_name != existing.original_name:
+                        aliases.append(old_name)
+                elif not _is_cjk(snap.original_name) and _is_cjk(existing.original_name):
+                    aliases = ext_profile.setdefault("aliases", [])
+                    if snap.original_name and snap.original_name not in aliases and snap.original_name != existing.original_name:
+                        aliases.append(snap.original_name)
+                elif not existing.original_name and snap.original_name:
+                    existing.original_name = snap.original_name
+
+                # 2. Merge profile attributes
+                if snap_profile.get("vi_name") and not ext_profile.get("vi_name"):
+                    ext_profile["vi_name"] = snap_profile["vi_name"]
+                if snap_profile.get("role") and not ext_profile.get("role"):
+                    ext_profile["role"] = snap_profile["role"]
+                if snap_profile.get("voice_notes"):
+                    if ext_profile.get("voice_notes") and snap_profile["voice_notes"] not in ext_profile["voice_notes"]:
+                        ext_profile["voice_notes"] = f"{ext_profile['voice_notes']}; {snap_profile['voice_notes']}"
+                    elif not ext_profile.get("voice_notes"):
+                        ext_profile["voice_notes"] = snap_profile["voice_notes"]
+                for alias in snap_profile.get("aliases", []):
+                    aliases = ext_profile.setdefault("aliases", [])
+                    if alias and alias not in aliases and alias != existing.original_name:
+                        aliases.append(alias)
+
+                # 3. Merge other attributes
+                for attr_key, attr_val in snap.attributes.items():
+                    if attr_key == "profile":
+                        continue
+                    if attr_key not in existing.attributes:
+                        existing.attributes[attr_key] = deepcopy(attr_val)
+                    elif isinstance(existing.attributes[attr_key], list) and isinstance(attr_val, list):
+                        for item in attr_val:
+                            if item not in existing.attributes[attr_key]:
+                                existing.attributes[attr_key].append(deepcopy(item))
+                    elif isinstance(existing.attributes[attr_key], dict) and isinstance(attr_val, dict):
+                        for sub_k, sub_v in attr_val.items():
+                            if sub_k not in existing.attributes[attr_key] or not existing.attributes[attr_key][sub_k]:
+                                existing.attributes[attr_key][sub_k] = deepcopy(sub_v)
+
+                # 4. Update last_changed_chapter
+                chapters = [c for c in (existing.last_changed_chapter, snap.last_changed_chapter) if c is not None]
+                if chapters:
+                    existing.last_changed_chapter = max(chapters)
+
+        return merged
+
     def snapshot(
         self,
         edition_id: str,
@@ -2035,6 +2187,7 @@ class CharacterProfileService:
                 }
                 if chapter <= through
             )
+            merged_characters = self._merge_duplicate_snapshots(states)
             result = CharacterSnapshotResponse(
                 book_id=edition.book_id,
                 edition_id=edition_id,
@@ -2046,7 +2199,7 @@ class CharacterProfileService:
                 snapshot_status="complete" if complete_through is not None and complete_through >= through else "partial",
                 complete_through_chapter=complete_through,
                 pending_chapters=pending,
-                characters=list(states.values()),
+                characters=merged_characters,
             )
             self._snapshot_cache[cache_key] = result.model_copy(deep=True)
             return result

@@ -110,6 +110,16 @@
 - **Fix**: Mã hóa RFC 5987: `headers={"Content-Disposition": f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(utf8_name)}"}`.
 - **Files liên quan**: `app/api/v1/library.py`
 
+### Entity Duplication & CJK Resolution in Book Bible Snapshot
+- **Ngày**: 2026-08-22
+- **Vấn đề**: Xuất hiện 2 dòng cho cùng một nhân vật (ví dụ: `Tốn Bác (损伯)` và `Tốn Bác`) trên Mobile App do LLM trích xuất `original_name` không đồng nhất giữa các chương (lúc chữ Hán `损伯`, lúc phiên âm tiếng Việt `Tốn Bác`).
+- **Root cause**: Backend chỉ so khớp theo `original_name` nguyên bản, dẫn đến 2 `character_id` khác nhau. Khi trả snapshot, backend trả cả 2 thực thể.
+- **Fix**: 
+  1. Thêm `vi_map` và kiểm tra chữ Hán CJK `[\u4e00-\u9fff]` trong `BookBibleService.merge_delta` để so khớp đa tiêu chí (`original_name`, `vi_name`, `aliases`) và nâng cấp tên nguyên tác chữ Hán.
+  2. Bổ sung `_merge_duplicate_snapshots` trong `CharacterProfileService.snapshot` để gom nhóm và gộp thực thể trùng lặp trước khi gửi về client.
+  3. Cập nhật `PROMPT_1_EXTRACT_BOOK_BIBLE_DELTA` ràng buộc AI trích xuất đúng tên chữ Hán vào `original_name` và tên thuần Việt vào `vi_name`.
+- **Files liên quan**: `app/services/book_bible_service.py`, `app/services/character_profile_service.py`, `app/prompts/templates.py`, `tests/test_entity_resolution.py`
+
 ## How-To
 
 ### Thêm LLM Provider Mới

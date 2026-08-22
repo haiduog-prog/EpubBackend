@@ -1,4 +1,5 @@
 import hashlib
+import re
 from typing import Dict, Optional
 
 from app.schemas.book_bible import (
@@ -9,6 +10,11 @@ from app.schemas.book_bible import (
     PlaceEntry,
     TermEntry,
 )
+
+
+def _is_cjk(text: str) -> bool:
+    """Kiểm tra chuỗi có chứa ký tự chữ Hán (Chinese/CJK) hay không."""
+    return bool(re.search(r"[\u4e00-\u9fff]", text or ""))
 
 
 class BookBibleService:
@@ -69,13 +75,51 @@ class BookBibleService:
             for alias in c.aliases
             if alias
         }
+        vi_map: Dict[str, CharacterEntry] = {
+            BookBibleService._key(c.vi_name): c
+            for c in bible.characters
+            if c.vi_name
+        }
 
         for new_char in delta.new_characters:
             name_key = BookBibleService._key(new_char.original_name)
-            existing = char_map.get(name_key) or alias_map.get(name_key)
+            vi_key = BookBibleService._key(new_char.vi_name)
+
+            # Match via original_name, alias, or vi_name
+            existing = (
+                char_map.get(name_key)
+                or alias_map.get(name_key)
+                or (vi_map.get(name_key) if name_key else None)
+                or (vi_map.get(vi_key) if vi_key else None)
+                or (char_map.get(vi_key) if vi_key else None)
+            )
+
             if existing:
+                # If new_char has Chinese CJK characters and existing does not,
+                # upgrade existing.original_name to the CJK version and preserve old name as alias.
+                if _is_cjk(new_char.original_name) and not _is_cjk(existing.original_name):
+                    if (
+                        existing.original_name
+                        and existing.original_name not in existing.aliases
+                        and existing.original_name != new_char.original_name
+                    ):
+                        existing.aliases.append(existing.original_name)
+                        alias_map[BookBibleService._key(existing.original_name)] = existing
+                    existing.original_name = new_char.original_name
+                    char_map[name_key] = existing
+                elif not _is_cjk(new_char.original_name) and _is_cjk(existing.original_name):
+                    if (
+                        new_char.original_name
+                        and new_char.original_name not in existing.aliases
+                        and new_char.original_name != existing.original_name
+                    ):
+                        existing.aliases.append(new_char.original_name)
+                        alias_map[name_key] = existing
+
                 if new_char.vi_name and not existing.vi_name:
                     existing.vi_name = new_char.vi_name
+                    if vi_key:
+                        vi_map[vi_key] = existing
                 if new_char.role and not existing.role:
                     existing.role = new_char.role
                 if new_char.voice_notes:
@@ -100,6 +144,8 @@ class BookBibleService:
                     bible.novel_id, new_char.original_name
                 )
                 char_map[name_key] = new_char
+                if vi_key:
+                    vi_map[vi_key] = new_char
                 bible.characters.append(new_char)
                 for alias in new_char.aliases:
                     if alias:
@@ -107,7 +153,7 @@ class BookBibleService:
 
         for update in delta.new_address_terms_for_existing:
             name_key = BookBibleService._key(update.character_original_name)
-            target_char = char_map.get(name_key) or alias_map.get(name_key)
+            target_char = char_map.get(name_key) or alias_map.get(name_key) or vi_map.get(name_key)
             if target_char:
                 for address_term in update.address_terms:
                     if address_term not in target_char.address_terms:
@@ -116,39 +162,61 @@ class BookBibleService:
         place_map: Dict[str, PlaceEntry] = {
             BookBibleService._key(place.original_name): place for place in bible.places
         }
+        place_vi_map: Dict[str, PlaceEntry] = {
+            BookBibleService._key(place.vi_name): place for place in bible.places if place.vi_name
+        }
         for new_place in delta.new_places:
             name_key = BookBibleService._key(new_place.original_name)
-            if name_key in place_map:
-                existing = place_map[name_key]
-                if new_place.vi_name and not existing.vi_name:
-                    existing.vi_name = new_place.vi_name
+            vi_key = BookBibleService._key(new_place.vi_name)
+            existing_place = place_map.get(name_key) or (place_vi_map.get(vi_key) if vi_key else None)
+            if existing_place:
+                if _is_cjk(new_place.original_name) and not _is_cjk(existing_place.original_name):
+                    existing_place.original_name = new_place.original_name
+                    place_map[name_key] = existing_place
+                if new_place.vi_name and not existing_place.vi_name:
+                    existing_place.vi_name = new_place.vi_name
+                    if vi_key:
+                        place_vi_map[vi_key] = existing_place
                 if new_place.notes:
-                    if existing.notes and new_place.notes not in existing.notes:
-                        existing.notes = f"{existing.notes}; {new_place.notes}"
-                    elif not existing.notes:
-                        existing.notes = new_place.notes
+                    if existing_place.notes and new_place.notes not in existing_place.notes:
+                        existing_place.notes = f"{existing_place.notes}; {new_place.notes}"
+                    elif not existing_place.notes:
+                        existing_place.notes = new_place.notes
             else:
                 place_map[name_key] = new_place
+                if vi_key:
+                    place_vi_map[vi_key] = new_place
                 bible.places.append(new_place)
 
         term_map: Dict[str, TermEntry] = {
             BookBibleService._key(term.original_name): term for term in bible.terms
         }
+        term_vi_map: Dict[str, TermEntry] = {
+            BookBibleService._key(term.vi_name): term for term in bible.terms if term.vi_name
+        }
         for new_term in delta.new_terms:
             name_key = BookBibleService._key(new_term.original_name)
-            if name_key in term_map:
-                existing = term_map[name_key]
-                if new_term.vi_name and not existing.vi_name:
-                    existing.vi_name = new_term.vi_name
-                if new_term.category and not existing.category:
-                    existing.category = new_term.category
+            vi_key = BookBibleService._key(new_term.vi_name)
+            existing_term = term_map.get(name_key) or (term_vi_map.get(vi_key) if vi_key else None)
+            if existing_term:
+                if _is_cjk(new_term.original_name) and not _is_cjk(existing_term.original_name):
+                    existing_term.original_name = new_term.original_name
+                    term_map[name_key] = existing_term
+                if new_term.vi_name and not existing_term.vi_name:
+                    existing_term.vi_name = new_term.vi_name
+                    if vi_key:
+                        term_vi_map[vi_key] = existing_term
+                if new_term.category and not existing_term.category:
+                    existing_term.category = new_term.category
                 if new_term.notes:
-                    if existing.notes and new_term.notes not in existing.notes:
-                        existing.notes = f"{existing.notes}; {new_term.notes}"
-                    elif not existing.notes:
-                        existing.notes = new_term.notes
+                    if existing_term.notes and new_term.notes not in existing_term.notes:
+                        existing_term.notes = f"{existing_term.notes}; {new_term.notes}"
+                    elif not existing_term.notes:
+                        existing_term.notes = new_term.notes
             else:
                 term_map[name_key] = new_term
+                if vi_key:
+                    term_vi_map[vi_key] = new_term
                 bible.terms.append(new_term)
 
         if delta.style_guide:

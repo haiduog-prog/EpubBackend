@@ -87,10 +87,12 @@ Trả JSON theo schema sau, CHỈ gồm phần mới hoặc thay đổi:
 
 Quy tắc:
 1. Chỉ liệt kê thực thể THỰC SỰ xuất hiện trong văn bản được cung cấp.
-2. "address_terms" quan trọng nhất — phản ánh đúng xưng hô theo quan hệ và thời điểm. "with" phải là tên thật.
-3. Trích xuất biệt danh/chức danh vào "aliases" để giữ mapping canonical.
-4. Nhân vật đã có trong danh sách đã biết mà không có gì mới thì KHÔNG liệt kê lại.
-5. "style_guide" chỉ trả nếu đây là lần trích xuất đầu tiên hoặc có thay đổi rõ rệt.
+2. "original_name": BẮT BUỘC là tên gốc nguyên tác tiếng Trung (chữ Hán như 萧炎, 损伯, 药老) nếu văn bản gốc có chữ Hán. TUYỆT ĐỐI KHÔNG điền tên dịch tiếng Việt vào trường này nếu văn bản có chữ Hán nguyên tác.
+3. "vi_name": Tên dịch thuần Việt / Hán-Việt tương ứng (ví dụ: Tiêu Viêm, Tốn Bác, Dược Lão).
+4. "address_terms" quan trọng nhất — phản ánh đúng xưng hô theo quan hệ và thời điểm. "with" phải là tên thật (original_name/vi_name), tuyệt đối không dùng từ xưng hô vai vế như "phụ thân", "sư tổ".
+5. Trích xuất biệt danh/chức danh vào "aliases" để giữ mapping canonical.
+6. Nhân vật đã có trong danh sách đã biết mà không có gì mới thì KHÔNG liệt kê lại.
+7. "style_guide" chỉ trả nếu đây là lần trích xuất đầu tiên hoặc có thay đổi rõ rệt.
 
 Văn bản gốc cần phân tích:
 {source_text}"""

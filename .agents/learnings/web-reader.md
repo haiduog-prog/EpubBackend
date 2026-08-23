@@ -69,3 +69,20 @@
 - **Ngày**: 2026-08-24
 - **Chi tiết**: Xây dựng danh sách URL đã validate chỉ nhận `http`/`https`, loại trùng, thử storage trực tiếp theo thứ tự rồi fallback về API. Cách này tương thích dữ liệu chuyển đổi giữa Supabase và R2 mà không làm hỏng luồng đọc.
 - **Files liên quan**: `app/modules/library/legacy_service.py`, `app/static/reader.html`
+### R2 Public CDN Without Browser CORS
+- **Ngày**: 2026-08-24
+- **Vấn đề**: R2 public CDN trả file nhưng không có `Access-Control-Allow-Origin`, nên trình duyệt không thể đọc trực tiếp dù HTTP status là `206`.
+- **Root cause**: Frontend storage-read phụ thuộc CORS của CDN; fallback Render lại chỉ thử provider Supabase nên trả `404` với file legacy trên R2.
+- **Fix**: `StorageRepository.get_bytes()` thử provider chính, R2 S3 nếu có credential, rồi đọc HTTP từ R2 public URL server-side.
+- **Files liên quan**: `app/infrastructure/storage/legacy_storage.py`, `tests/test_storage_repository.py`
+
+### Missing Opening Chapters
+- **Ngày**: 2026-08-24
+- **Vấn đề**: Một số truyện có metadata nhiều chương nhưng file chương đầu đã thiếu; mở truyện ngay chương 1 làm UI báo lỗi dù các chương sau còn tồn tại.
+- **Fix**: Reader thử tuần tự tối đa 12 chương đầu, mở chương đầu tiên đọc được và loại chương `404` khỏi mục lục.
+- **Files liên quan**: `app/static/reader.html`
+
+### Server-Side CDN Fallback
+- **Ngày**: 2026-08-24
+- **Chi tiết**: Với blob public nhưng CDN không hỗ trợ CORS, dùng backend làm proxy đọc server-side. Cách này giữ direct-read cho storage có CORS, đồng thời bảo đảm dữ liệu legacy vẫn đọc được mà không cần đưa credential storage vào browser.
+- **Files liên quan**: `app/infrastructure/storage/legacy_storage.py`, `app/modules/library/legacy_service.py`

@@ -10,7 +10,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request, status
 
-from app.core import storage_repo
+from app.infrastructure.storage.facade import storage_repo
 from app.api.dependencies import require_write_access
 from app.llm import create_llm_client
 from app.schemas.character_profile import (

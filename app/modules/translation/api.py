@@ -9,13 +9,14 @@ from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Uploa
 from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
-from app.core import storage_repo
+from app.infrastructure.storage.facade import storage_repo
 from app.llm import create_llm_client
 from app.schemas.book_bible import BookBible
 from app.schemas.translation import InputType, JobStatusEnum, TranslationJob
-from app.services import TranslationPipelineService, BookBibleService
-from app.services.address_rule_resolver import AddressRuleResolver
-from app.services.translation_cache import DirectTranslationCache
+from app.modules.book_bible.application.facade import BookBibleService
+from app.modules.book_bible.domain.address_resolver import AddressRuleResolver
+from app.modules.translation.application.facade import TranslationPipelineService
+from app.infrastructure.cache.direct_translation import DirectTranslationCache
 from app.config import settings
 from app.api.dependencies import require_write_access
 from app.api.uploads import read_upload_limited

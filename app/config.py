@@ -49,6 +49,15 @@ class Settings(BaseModel):
     max_text_input_chars: int = Field(
         default_factory=lambda: int(os.getenv("MAX_TEXT_INPUT_CHARS", str(2 * 1024 * 1024)))
     )
+    max_epub_entries: int = Field(
+        default_factory=lambda: int(os.getenv("MAX_EPUB_ENTRIES", "10000"))
+    )
+    max_epub_uncompressed_bytes: int = Field(
+        default_factory=lambda: int(os.getenv("MAX_EPUB_UNCOMPRESSED_BYTES", str(250 * 1024 * 1024)))
+    )
+    max_epub_entry_bytes: int = Field(
+        default_factory=lambda: int(os.getenv("MAX_EPUB_ENTRY_BYTES", str(100 * 1024 * 1024)))
+    )
     
     # Chunking settings
     txt_chunk_min_words: int = 1500

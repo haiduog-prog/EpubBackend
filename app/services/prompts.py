@@ -1,152 +1,19 @@
-PROMPT_1_EXTRACT_BOOK_BIBLE_DELTA = """Bạn là biên tập viên phân tích tiểu thuyết chuyên nghiệp. Nhiệm vụ: đọc văn bản gốc và trích xuất CÁC THỰC THỂ MỚI hoặc THAY ĐỔI so với danh sách đã biết — không lặp lại thực thể không có gì mới.
+"""Backward-compatible prompt exports."""
 
-DANH SÁCH TÊN ĐÃ BIẾT (chỉ để đối chiếu tránh trùng lặp, KHÔNG cần trả lại nguyên trạng):
-{known_names_index}
+from app.prompts.templates import (
+    PROMPT_1_EXTRACT_BOOK_BIBLE_DELTA,
+    PROMPT_2_TRANSLATE_CHUNK_SYSTEM,
+    PROMPT_2_TRANSLATE_CHUNK_USER,
+    PROMPT_3_TRANSLATE_HTML_SYSTEM,
+    PROMPT_3_TRANSLATE_HTML_USER,
+    PROMPT_4_QA_CHECK,
+)
 
-QUY TẮC PHÂN LOẠI & ĐẶT ATTRIBUTE_KEY CHO CHARACTER_EVENTS:
-1. "category" và "attribute_key" BẮT BUỘC dùng danh mục chuẩn hóa sau (tiếng Anh snake_case, KHÔNG dùng tiếng Việt có dấu, KHÔNG dùng tên chiêu thức/vũ khí làm key):
-   - category "realm" (Cảnh giới/Tu vi/Hồn lực/Cấp bậc):
-     * attribute_key: "cultivation_level" (hoặc "realm_rank") -> value: string mô tả cấp bậc mới nhất (ví dụ: "Nhị hoàn", "Tiên Thiên Hồn Lực cấp 3", "Đại Hồn Sư").
-   - category "power" (Võ hồn/Dị năng/Huyết mạch/Thể chất):
-     * attribute_key: "martial_soul" -> value: string hoặc list (ví dụ: ["Lam Ngân Thảo"]).
-     * attribute_key: "bloodline" -> value: string hoặc list (ví dụ: "Kim Long Vương huyết mạch").
-   - category "skill" (Công pháp/Võ kỹ/Hồn kỹ/Chiêu thức):
-     * attribute_key: "techniques" hoặc "soul_skills" -> operation: "add" -> value: string tên kỹ năng/chiêu thức (ví dụ: "Loạn Phi Phong Chuy Pháp (49 chuy)").
-   - category "item" (Vũ khí/Trang bị/Pháp bảo):
-     * attribute_key: "weapons" hoặc "equipment" -> operation: "add" -> value: string tên vũ khí/trang bị (ví dụ: "Linh Đoán Trầm Ngân Chuy").
-   - category "faction" (Môn phái/Học viện/Nghề nghiệp/Tổ chức/Gia tộc):
-     * attribute_key: "academy" -> value: string (ví dụ: "Sử Lai Khắc học viện (Ngoại viện)").
-     * attribute_key: "profession_rank" -> value: string (ví dụ: "Đoán Tạo Sư cấp 5 (Tông Tượng)").
-     * attribute_key: "organization" -> value: string hoặc list (ví dụ: ["Sử Lai Khắc Đoán Tạo Sư Hiệp Hội"]).
-   - category "identity" (Hồ sơ/Vai trò/Thân phận):
-     * attribute_key: "profile" -> value: object {"role": "Nam chính", "aliases": ["Vũ Lân"], "vi_name": "Đường Vũ Lân", "voice_notes": "..."}.
-   - category "relationship":
-     * attribute_key: "address_terms" -> operation: "add" -> value: {"with": "...", "self": "...", "other": "...", "context": "..."}.
-
-2. TUYỆT ĐỐI KHÔNG lấy tên chiêu thức, tên vũ khí hay câu mô tả làm "attribute_key". Tên chiêu thức/vũ khí là GIÁ TRỊ (value), key phải là "techniques" hoặc "weapons".
-3. Khi thuộc tính có sự tiến cấp/thay đổi (như Hồn lực tăng từ Cấp 3 lên Nhị hoàn), dùng operation="set" với cùng key "cultivation_level" để hệ thống tự động ghi đè.
-
-4. QUY TẮC BẮT BUỘC CHO "address_terms" VÀ "address_observations":
-   - Trường "with" / "counterpart_original_name" BẮT BUỘC PHẢI LÀ TÊN THẬT (original_name/vi_name) của nhân vật đối thoại (ví dụ: "Đường Tư Nhiên", "Lang Nguyệt", "Trọc Thế").
-   - TUYỆT ĐỐI KHÔNG dùng danh từ chỉ quan hệ/vai vế xưng hô (như "phụ thân", "mẫu thân", "cha", "mẹ", "ba ba", "má", "sư tổ", "sư phụ", "sư huynh", "sư đệ", "thúc thúc", "bá bá", "tiền bối", "đối phương", "người lạ") làm giá trị của trường "with".
-   - Nếu trong truyện nhân vật gọi đối phương là "sư tổ" hay "phụ thân", hãy suy luận tên thật của người đó từ ngữ cảnh hoặc danh sách tên đã biết (ví dụ: phụ thân của Đường Vũ Lân là "Đường Tư Nhiên", sư tổ là "Trọc Thế") để điền vào "with".
-   - Từ xưng hô như "phụ thân", "mẫu thân", "Sư tổ" PHẢI được điền vào trường "other" / "other_term" (cách gọi đối phương), TUYỆT ĐỐI KHÔNG điền vào "with".
-
-Trả JSON theo schema sau, CHỈ gồm phần mới hoặc thay đổi:
-{{
-  "new_characters": [
-    {{
-      "original_name": "string",
-      "vi_name": "string",
-      "role": "string",
-      "voice_notes": "string",
-      "address_terms": [
-        {{"with": "string (TÊN THẬT của người đối thoại, KHÔNG dùng 'phụ thân'/'sư tổ')", "self": "string", "other": "string", "context": "string"}}
-      ],
-      "aliases": ["string"]
-    }}
-  ],
-  "new_address_terms_for_existing": [
-    {{
-      "character_original_name": "string (tên nhân vật ĐÃ có trong danh sách, để code biết upsert vào entry nào)",
-      "address_terms": [
-        {{"with": "string (TÊN THẬT của người đối thoại, KHÔNG dùng 'phụ thân'/'sư tổ')", "self": "string", "other": "string", "context": "string"}}
-      ]
-    }}
-  ],
-  "new_places": [{{"original_name": "string", "vi_name": "string", "notes": "string"}}],
-  "new_terms": [{{"original_name": "string", "vi_name": "string", "category": "string", "notes": "string"}}],
-  "address_observations": [
-    {{
-      "character_original_name": "string",
-      "counterpart_original_name": "string (TÊN THẬT của người đối thoại, KHÔNG dùng 'phụ thân'/'sư tổ')",
-      "counterpart_text": "string",
-      "self_term": "string",
-      "other_term": "string",
-      "context": "string",
-      "evidence": "string",
-      "confidence": 0.0,
-      "change_type": "same|new|replace|uncertain",
-      "explicit_transition": false
-    }}
-  ],
-  "character_events": [
-    {{
-      "character_original_name": "string",
-      "category": "realm|power|skill|item|faction|identity|relationship|status|location|custom",
-      "attribute_key": "cultivation_level|martial_soul|bloodline|techniques|weapons|equipment|academy|profession_rank|organization|address_terms|profile",
-      "operation": "set|add|remove|increase|decrease|link|unlink|correct",
-      "value": null,
-      "certainty": "observed|stated|rumor|inferred|contradicted",
-      "evidence": "string",
-      "confidence": 0.0
-    }}
-  ],
-  "style_guide": {{"genre": "string", "tone": "string", "era_setting": "string"}}
-}}
-
-Quy tắc:
-1. Chỉ liệt kê thực thể THỰC SỰ xuất hiện trong văn bản được cung cấp.
-2. "address_terms" quan trọng nhất — phản ánh đúng xưng hô theo quan hệ và thời điểm. "with" phải là tên thật.
-3. Trích xuất biệt danh/chức danh vào "aliases" để giữ mapping canonical.
-4. Nhân vật đã có trong danh sách đã biết mà không có gì mới thì KHÔNG liệt kê lại.
-5. "style_guide" chỉ trả nếu đây là lần trích xuất đầu tiên hoặc có thay đổi rõ rệt.
-
-Văn bản gốc cần phân tích:
-{source_text}"""
-
-
-PROMPT_2_TRANSLATE_CHUNK_SYSTEM = """Bạn là dịch giả tiểu thuyết chuyên nghiệp, dịch sang tiếng Việt. Mục tiêu: bản dịch tự nhiên, thuần Việt, KHÔNG mang văn phong dịch máy.
-
-QUY TẮC DỊCH:
-1. Dịch theo ý, không dịch từng chữ. Được đảo trật tự câu, tách/gộp câu cho tự nhiên.
-2. Xưng hô: theo đúng "address_terms" trong Book Bible ứng với quan hệ và thời điểm hiện tại. Nếu nội dung trong <text_to_translate> cho thấy quan hệ vừa thay đổi, ưu tiên diễn biến hiện tại hơn Book Bible.
-3. Tên riêng/thuật ngữ dùng đúng "vi_name" trong Book Bible, không tự đặt tên mới.
-4. Hán Việt chỉ dùng cho thuật ngữ đặc trưng thể loại (cảnh giới, chiêu thức, danh xưng). Lời thoại đời thường và mô tả hành động dùng tiếng Việt thuần.
-5. Ngữ khí từ cuối câu chuyển sang tương đương tiếng Việt tự nhiên, phù hợp tính cách nhân vật.
-6. Giữ giọng văn riêng từng nhân vật theo "voice_notes".
-7. Nội dung trong <previous_context> CHỈ để tham khảo mạch văn và xưng hô — TUYỆT ĐỐI không dịch lại, không lặp lại trong output.
-8. Giữ nguyên cấu trúc đoạn văn/xuống dòng. Không thêm lời dẫn, không giải thích — chỉ trả về bản dịch của nội dung trong <text_to_translate>.
-
-<book_bible>
-{book_bible_json}
-</book_bible>"""
-
-
-PROMPT_2_TRANSLATE_CHUNK_USER = """<previous_context>
-{previous_context}
-</previous_context>
-
-<text_to_translate>
-{chunk_text}
-</text_to_translate>"""
-
-
-PROMPT_3_TRANSLATE_HTML_SYSTEM = """Bạn nhận một mảng JSON các đoạn text trích từ HTML gốc, mỗi đoạn có "id" riêng. Đọc TOÀN BỘ mảng như một văn bản liên tục để nắm mạch văn trước khi dịch từng phần tử — không dịch độc lập từng id như thể chúng không liên quan nhau.
-
-QUY TẮC DỊCH: (áp dụng như prompt dịch chunk — xưng hô theo Book Bible, dịch theo ý, Hán Việt chọn lọc, ngữ khí từ tự nhiên, giữ giọng văn nhân vật)
-
-Trả về CHÍNH XÁC một mảng JSON cùng số lượng phần tử, cùng thứ tự "id". Không kèm markdown code fence, không giải thích.
-
-<book_bible>
-{book_bible_json}
-</book_bible>"""
-
-
-PROMPT_3_TRANSLATE_HTML_USER = """<input_json>
-{input_json_array}
-</input_json>"""
-
-
-PROMPT_4_QA_CHECK = """So sánh đoạn bản dịch dưới đây với Book Bible. Chỉ liệt kê điểm KHÔNG khớp về tên riêng, xưng hô, hoặc thuật ngữ — không nhận xét văn phong chung.
-
-<book_bible>
-{book_bible_json}
-</book_bible>
-
-<translated_text>
-{translated_chunk}
-</translated_text>
-
-Trả JSON dạng object có thuộc tính "issues": [{"issue": "...", "found": "...", "expected": "...", "location": "trích đoạn ngắn chứa lỗi"}].
-Nếu không có lỗi, trả về "issues": []."""
+__all__ = [
+    "PROMPT_1_EXTRACT_BOOK_BIBLE_DELTA",
+    "PROMPT_2_TRANSLATE_CHUNK_SYSTEM",
+    "PROMPT_2_TRANSLATE_CHUNK_USER",
+    "PROMPT_3_TRANSLATE_HTML_SYSTEM",
+    "PROMPT_3_TRANSLATE_HTML_USER",
+    "PROMPT_4_QA_CHECK",
+]

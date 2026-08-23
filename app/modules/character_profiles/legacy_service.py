@@ -1820,6 +1820,15 @@ class CharacterProfileService:
 
             return sorted(res, key=lambda b: b["title"])
 
+    def list_book_records_for_maintenance(self) -> List[Tuple[str, Dict[str, Any]]]:
+        """Return raw records for operational cleanup without exposing storage internals."""
+        with self._lock:
+            self._hydrate_all_from_storage()
+            return [
+                (book_id, deepcopy(book))
+                for book_id, book in self.books.items()
+            ]
+
 
 
     def list_events(

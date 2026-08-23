@@ -1,4 +1,40 @@
-from typing import Any, Dict, List, Optional, Protocol
+from typing import Any, List, Optional, Protocol
+
+from app.schemas.book_bible import BookBible, BookBibleDelta
+from app.schemas.translation import HTMLInputItem, HTMLTranslationItem, QAReport
+
+
+class LLMClient(Protocol):
+    """Application-facing LLM port; concrete SDK adapters stay outside modules."""
+
+    async def extract_book_bible_delta(
+        self,
+        source_text: str,
+        known_names_index: str,
+        model: Optional[str] = None,
+    ) -> BookBibleDelta: ...
+
+    async def translate_prose_chunk(
+        self,
+        chunk_text: str,
+        book_bible: BookBible,
+        previous_context: str = "",
+        model: Optional[str] = None,
+    ) -> str: ...
+
+    async def translate_html_json(
+        self,
+        input_items: List[HTMLInputItem],
+        book_bible: BookBible,
+        model: Optional[str] = None,
+    ) -> List[HTMLTranslationItem]: ...
+
+    async def qa_check_chunk(
+        self,
+        translated_chunk: str,
+        book_bible: BookBible,
+        model: Optional[str] = None,
+    ) -> QAReport: ...
 
 
 class BlobStore(Protocol):

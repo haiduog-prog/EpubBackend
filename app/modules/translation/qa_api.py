@@ -3,8 +3,8 @@ from fastapi import APIRouter, Depends, Header
 from app.schemas.book_bible import BookBible
 from app.schemas.translation import QAReport
 from app.llm import create_llm_client
-from app.services import QAService
-from app.core import storage_repo
+from app.modules.translation.application.qa_service import QAService
+from app.infrastructure.storage.facade import storage_repo
 from app.api.dependencies import require_write_access
 
 router = APIRouter(prefix="/qa", tags=["Quality Assurance"])

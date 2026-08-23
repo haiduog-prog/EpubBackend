@@ -1,4 +1,4 @@
-from app.repositories.library_repository import LibraryRepository
+from app.modules.library.persistence.legacy_repository import LibraryRepository
 
 
 class TranslationJobRepository(LibraryRepository):

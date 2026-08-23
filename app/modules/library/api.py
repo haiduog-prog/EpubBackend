@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query
 from fastapi.responses import FileResponse, RedirectResponse
 
 from app.config import settings
-from app.core.storage import storage_repo
+from app.infrastructure.storage.facade import storage_repo
 
 from app.schemas.book_bible import BookBible
 from app.schemas.library import (
@@ -22,7 +22,7 @@ from app.schemas.library import (
 )
 from app.api.dependencies import require_write_access
 from app.api.uploads import read_upload_limited
-from app.services.library_service import library_service
+from app.modules.library.application.facade import library_service
 
 logger = logging.getLogger("EpubBackend.LibraryAPI")
 

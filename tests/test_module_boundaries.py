@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from app.modules.book_bible.application.facade import BookBibleService as ModularBookBibleService
 from app.modules.book_bible.domain.merge_service import BookBibleMergeService
 from app.modules.character_profiles.application.facade import CharacterProfileApplication
@@ -10,7 +12,15 @@ from app.modules.translation.application.direct_translation_service import Direc
 from app.modules.translation.application.epub_translation_service import EpubTranslationService
 from app.modules.translation.application.facade import TranslationPipelineService
 from app.modules.translation.application.txt_translation_service import TxtTranslationService
+from app.infrastructure.storage.facade import StorageRepository, storage_repo
+from app.infrastructure.storage.job_store import JobStore
+from app.infrastructure.storage.bible_store import BibleStore
+from app.infrastructure.cache.direct_translation import DirectTranslationCache
+from app.modules.shared.ports import LLMClient
+from app.modules.translation.application.qa_service import QAService as ModularQAService
 from app.services.book_bible_service import BookBibleService as LegacyBookBibleService
+from app.services.qa_service import QAService as LegacyQAService
+from app.services.translation_cache import DirectTranslationCache as LegacyCache
 from app.services.library_service import LibraryService as LegacyLibraryService
 from app.services.pipeline_service import TranslationPipelineService as LegacyPipelineService
 from app.schemas.book_bible import BookBible
@@ -46,6 +56,25 @@ def test_book_bible_merge_boundary_preserves_timeline_contract():
     result = BookBibleMergeService.ensure_timeline(bible)
 
     assert result.novel_id == "boundary-test"
+
+
+def test_storage_adapters_are_importable_from_source_tree():
+    assert StorageRepository is not None
+    assert storage_repo is not None
+    assert isinstance(JobStore(storage_repo), JobStore)
+    assert isinstance(BibleStore(storage_repo), BibleStore)
+
+
+def test_translation_support_has_modular_owners_and_compatibility_shims():
+    assert LegacyQAService is ModularQAService
+    assert LegacyCache is DirectTranslationCache
+    assert LLMClient is not None
+
+
+def test_static_ui_does_not_persist_api_key_and_has_html_escape_helper():
+    html = (Path(__file__).parents[1] / "app" / "static" / "index.html").read_text(encoding="utf-8")
+    assert "localStorage.setItem('epub_api_key'" not in html
+    assert "function escapeHtml(value)" in html
 
 
 def test_api_contract_is_stable_after_router_move():

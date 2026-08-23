@@ -2,7 +2,7 @@ from fastapi import APIRouter
 from app.api.v1.translate import router as translate_router
 from app.api.v1.book_bible import router as book_bible_router
 from app.api.v1.qa import router as qa_router
-from app.api.v1.admin import router as admin_router
+from app.platform.admin.api import router as admin_router
 from app.api.v1.character_profiles import router as character_profiles_router
 from app.api.v1.library import router as library_router
 

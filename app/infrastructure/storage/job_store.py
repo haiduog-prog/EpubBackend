@@ -1,11 +1,11 @@
 from typing import List, Optional
 
-from app.infrastructure.storage.facade import StorageRepository, storage_repo
+from app.infrastructure.storage.legacy_storage import StorageRepository, storage_repo
 from app.schemas.translation import TranslationJob
 
 
-class TranslationJobService:
-    """Persistence boundary for translation job state."""
+class JobStore:
+    """Structured persistence boundary for translation jobs."""
 
     def __init__(self, repository: Optional[StorageRepository] = None):
         self._repository = repository or storage_repo

@@ -4,7 +4,7 @@ import os
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from app.llm.base import BaseLLMClient
+from app.modules.shared.ports import LLMClient
 from app.parsers.epub_parser import EPUBParser
 from app.parsers.txt_chunker import TXTChunker
 from app.schemas.book_bible import BookBible
@@ -12,7 +12,7 @@ from app.schemas.translation import HTMLInputItem, HTMLTranslationItem
 from app.modules.book_bible.domain.address_resolver import AddressRuleResolver
 from app.modules.book_bible.application.facade import BookBibleService
 from app.modules.book_bible.domain.review_policy import HybridPolicyEngine
-from app.services.qa_service import QAService
+from app.modules.translation.application.qa_service import QAService
 
 logger = logging.getLogger("EpubBackend.PipelineService")
 
@@ -24,7 +24,7 @@ def _elapsed_ms(started: float) -> float:
 class LegacyTranslationPipelineService:
     """Extract theo cua so, ghi observation truoc khi dich cua so do."""
 
-    def __init__(self, llm_client: BaseLLMClient):
+    def __init__(self, llm_client: LLMClient):
         self.llm_client = llm_client
         self.qa_service = QAService(llm_client)
         self.policy = HybridPolicyEngine()

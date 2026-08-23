@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app.core import storage_repo
+from app.infrastructure.storage.facade import storage_repo
 from app.api.dependencies import require_write_access
 from app.schemas.book_bible import BookBible, PendingBibleChange
 

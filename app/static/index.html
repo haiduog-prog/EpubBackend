@@ -1233,6 +1233,16 @@
             return base ? `${base}${path}` : path;
         }
 
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, char => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            }[char]));
+        }
+
         function saveBackendUrl(val) {
             localStorage.setItem('epub_backend_url', (val || '').trim());
             if (typeof loadLibraryNovels === 'function') loadLibraryNovels();
@@ -1241,7 +1251,7 @@
 
         window.addEventListener('DOMContentLoaded', () => {
             const savedProvider = localStorage.getItem('epub_provider') || 'gemini';
-            const savedKey = localStorage.getItem('epub_api_key') || '';
+            const savedKey = '';
             const savedModel = localStorage.getItem('epub_model');
             const savedBackend = localStorage.getItem('epub_backend_url') || (window.location.hostname !== '127.0.0.1' && window.location.hostname !== 'localhost' ? 'https://epubbackend.onrender.com' : '');
 
@@ -1277,7 +1287,6 @@
             const provider = document.getElementById('api-provider').value;
             const model = document.getElementById('api-model').value;
 
-            localStorage.setItem('epub_api_key', key);
             localStorage.setItem('epub_provider', provider);
             localStorage.setItem('epub_model', model);
         }
@@ -1369,19 +1378,19 @@
             const termBox = document.getElementById('bible-terms');
 
             if (bible.characters && bible.characters.length > 0) {
-                charBox.innerHTML = bible.characters.map(c => `<span class="tag">${c.original_name} → ${c.vi_name}</span>`).join('');
+                charBox.innerHTML = bible.characters.map(c => `<span class="tag">${escapeHtml(c.original_name)} → ${escapeHtml(c.vi_name)}</span>`).join('');
             } else {
                 charBox.innerHTML = '<span style="color:var(--text-sub); font-size:0.85rem;">Không phát hiện</span>';
             }
 
             if (bible.places && bible.places.length > 0) {
-                placeBox.innerHTML = bible.places.map(p => `<span class="tag">${p.original_name} → ${p.vi_name}</span>`).join('');
+                placeBox.innerHTML = bible.places.map(p => `<span class="tag">${escapeHtml(p.original_name)} → ${escapeHtml(p.vi_name)}</span>`).join('');
             } else {
                 placeBox.innerHTML = '<span style="color:var(--text-sub); font-size:0.85rem;">Không phát hiện</span>';
             }
 
             if (bible.terms && bible.terms.length > 0) {
-                termBox.innerHTML = bible.terms.map(t => `<span class="tag">${t.original_name} → ${t.vi_name}</span>`).join('');
+                termBox.innerHTML = bible.terms.map(t => `<span class="tag">${escapeHtml(t.original_name)} → ${escapeHtml(t.vi_name)}</span>`).join('');
             } else {
                 termBox.innerHTML = '<span style="color:var(--text-sub); font-size:0.85rem;">Không phát hiện</span>';
             }
@@ -1457,7 +1466,7 @@
 
                     fill.style.width = `${job.progress_percentage}%`;
                     pctText.innerText = `${job.progress_percentage}%`;
-                    stepText.innerHTML = `<i class="fa-solid fa-spinner spinner"></i> ${job.current_step || 'Đang xử lý...'}`;
+                    stepText.innerHTML = `<i class="fa-solid fa-spinner spinner"></i> ${escapeHtml(job.current_step || 'Đang xử lý...')}`;
 
                     if (job.status === 'completed') {
                         clearInterval(activePollInterval);
@@ -1466,7 +1475,7 @@
                         document.getElementById('btn-download-link').href = apiUrl(`/api/v1/translate/download/${jobId}`);
                     } else if (job.status === 'failed') {
                         clearInterval(activePollInterval);
-                        stepText.innerHTML = `<i class="fa-solid fa-circle-xmark" style="color:#ef4444;"></i> Thất bại: ${job.error_message}`;
+                        stepText.innerHTML = `<i class="fa-solid fa-circle-xmark" style="color:#ef4444;"></i> Thất bại: ${escapeHtml(job.error_message)}`;
                     }
                 } catch (e) {
                     console.error("Poll error", e);
@@ -1505,9 +1514,9 @@
 
                         return `<tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
                             <td style="padding:0.6rem; font-family:monospace; color:#c7d2fe;">${j.job_id.substring(0,8)}...</td>
-                            <td style="padding:0.6rem; font-weight:600;">${j.filename}</td>
-                            <td style="padding:0.6rem; text-transform:uppercase;">${j.input_type}</td>
-                            <td style="padding:0.6rem; color:${statusColor}; font-weight:600;">${j.status}</td>
+                            <td style="padding:0.6rem; font-weight:600;">${escapeHtml(j.filename)}</td>
+                            <td style="padding:0.6rem; text-transform:uppercase;">${escapeHtml(j.input_type)}</td>
+                            <td style="padding:0.6rem; color:${statusColor}; font-weight:600;">${escapeHtml(j.status)}</td>
                             <td style="padding:0.6rem;">${j.progress_percentage}%</td>
                             <td style="padding:0.6rem;">${downloadBtn}</td>
                         </tr>`;
@@ -1525,11 +1534,11 @@
                         const places = b.places || [];
                         const terms = b.terms || [];
 
-                        const charTags = chars.slice(0, 10).map(c => `<span class="tag">${c.original_name} → ${c.vi_name}</span>`).join('');
+                        const charTags = chars.slice(0, 10).map(c => `<span class="tag">${escapeHtml(c.original_name)} → ${escapeHtml(c.vi_name)}</span>`).join('');
                         const extraChars = chars.length > 10 ? `<span style="font-size:0.75rem; color:var(--text-sub); margin-left:0.5rem;">+${chars.length - 10} nhân vật khác</span>` : '';
 
                         return `<div class="bible-card">
-                            <div class="bible-card-title"><i class="fa-solid fa-book"></i> Novel / Job ID: ${k.substring(0,16)}...</div>
+                            <div class="bible-card-title"><i class="fa-solid fa-book"></i> Novel / Job ID: ${escapeHtml(k.substring(0,16))}...</div>
                             <div style="font-size:0.8rem; color:var(--text-sub); margin-bottom:0.5rem;">
                                 <span>👥 ${chars.length} Nhân vật</span> | <span>🏛️ ${places.length} Địa danh</span> | <span>📜 ${terms.length} Thuật ngữ</span>
                             </div>
@@ -1635,7 +1644,7 @@
                     if (!res.ok) return;
 
                     const job = await res.json();
-                    document.getElementById('import-progress-step').innerHTML = `<i class="fa-solid fa-spinner spinner"></i> ${job.current_step || 'Đang xử lý...'}`;
+                    document.getElementById('import-progress-step').innerHTML = `<i class="fa-solid fa-spinner spinner"></i> ${escapeHtml(job.current_step || 'Đang xử lý...')}`;
                     document.getElementById('import-progress-pct').innerText = `${job.progress_percentage}%`;
                     document.getElementById('import-progress-fill').style.width = `${job.progress_percentage}%`;
                     document.getElementById('import-progress-ch-curr').innerText = job.current_chapter || 0;
@@ -1653,7 +1662,7 @@
                         }, 800);
                     } else if (job.status === 'failed') {
                         clearInterval(activeImportPoll);
-                        document.getElementById('import-progress-step').innerHTML = `<i class="fa-solid fa-circle-xmark" style="color:#ef4444;"></i> Lỗi: ${job.error_message}`;
+                        document.getElementById('import-progress-step').innerHTML = `<i class="fa-solid fa-circle-xmark" style="color:#ef4444;"></i> Lỗi: ${escapeHtml(job.error_message)}`;
                         document.getElementById('btn-submit-import-epub').disabled = false;
                     }
                 } catch (e) {
@@ -1723,16 +1732,16 @@
                 grid.innerHTML = novels.map(n => {
                     const pct = n.total_chapters > 0 ? Math.round((n.translated_chapters / n.total_chapters) * 100) : 0;
                     const coverHtml = n.cover_url
-                        ? `<img src="${n.cover_url}" class="novel-cover" alt="${n.title}" onerror="this.outerHTML='<div class=\\'novel-cover\\'><i class=\\'fa-solid fa-book\\'></i></div>'">`
+                        ? `<img src="${escapeHtml(n.cover_url)}" class="novel-cover" alt="${escapeHtml(n.title)}" onerror="this.outerHTML='<div class=\\'novel-cover\\'><i class=\\'fa-solid fa-book\\'></i></div>'">`
                         : `<div class="novel-cover"><i class="fa-solid fa-book"></i></div>`;
 
-                    const genresHtml = (n.genre || []).slice(0, 3).map(g => `<span class="tag" style="font-size:0.75rem;">${g}</span>`).join('');
+                    const genresHtml = (n.genre || []).slice(0, 3).map(g => `<span class="tag" style="font-size:0.75rem;">${escapeHtml(g)}</span>`).join('');
 
                     return `<div class="novel-card">
                         ${coverHtml}
                         <div class="novel-body">
-                            <div class="novel-title">${n.title}</div>
-                            <div class="novel-author">${n.author || 'Chưa rõ tác giả'} ${n.original_title ? '(' + n.original_title + ')' : ''}</div>
+                            <div class="novel-title">${escapeHtml(n.title)}</div>
+                            <div class="novel-author">${escapeHtml(n.author || 'Chưa rõ tác giả')} ${n.original_title ? '(' + escapeHtml(n.original_title) + ')' : ''}</div>
                             <div>${genresHtml}</div>
                             <div style="margin-top:auto;">
                                 <div style="display:flex; justify-content:space-between; font-size:0.8rem; color:var(--text-sub);">
@@ -1782,13 +1791,13 @@
                 // Cover
                 const coverBox = document.getElementById('detail-cover-box');
                 if (novel.cover_url) {
-                    coverBox.innerHTML = `<img src="${novel.cover_url}" style="width:100%; height:100%; object-fit:cover;">`;
+                    coverBox.innerHTML = `<img src="${escapeHtml(novel.cover_url)}" style="width:100%; height:100%; object-fit:cover;">`;
                 } else {
                     coverBox.innerHTML = '<i class="fa-solid fa-book" style="font-size:2.5rem; color:#818cf8;"></i>';
                 }
 
                 // Genres
-                document.getElementById('detail-novel-genres').innerHTML = (novel.genre || []).map(g => `<span class="tag" style="font-size:0.75rem;">${g}</span>`).join('');
+                document.getElementById('detail-novel-genres').innerHTML = (novel.genre || []).map(g => `<span class="tag" style="font-size:0.75rem;">${escapeHtml(g)}</span>`).join('');
 
                 // Export EPUB button handler
                 document.getElementById('btn-export-epub').onclick = () => exportNovelEpub(novelId);
@@ -1939,28 +1948,28 @@
 
                 container.innerHTML = chars.map(c => {
                     const itemsHtml = (c.items && c.items.length > 0)
-                        ? c.items.map(i => `<span class="tag" style="background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.3); color:#fca5a5;">🎒 ${i}</span>`).join(' ')
+                        ? c.items.map(i => `<span class="tag" style="background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.3); color:#fca5a5;">🎒 ${escapeHtml(i)}</span>`).join(' ')
                         : '<span style="color:var(--text-sub); font-size:0.8rem;">Chưa ghi nhận</span>';
 
                     const skillsHtml = (c.skills && c.skills.length > 0)
-                        ? c.skills.map(s => `<span class="tag" style="background:rgba(245,158,11,0.15); border:1px solid rgba(245,158,11,0.3); color:#fde68a;">📜 ${s}</span>`).join(' ')
+                        ? c.skills.map(s => `<span class="tag" style="background:rgba(245,158,11,0.15); border:1px solid rgba(245,158,11,0.3); color:#fde68a;">📜 ${escapeHtml(s)}</span>`).join(' ')
                         : '<span style="color:var(--text-sub); font-size:0.8rem;">Chưa ghi nhận</span>';
 
                     const addressHtml = (c.address_terms && c.address_terms.length > 0)
-                        ? c.address_terms.map(a => `<span class="tag" style="font-size:0.75rem;">${a}</span>`).join(' ')
+                        ? c.address_terms.map(a => `<span class="tag" style="font-size:0.75rem;">${escapeHtml(a)}</span>`).join(' ')
                         : '<span style="color:var(--text-sub); font-size:0.8rem;">Chưa có</span>';
 
                     return `<div style="background:rgba(30,41,59,0.7); border:1px solid var(--card-border); border-radius:12px; padding:1.2rem; display:flex; flex-direction:column; gap:0.6rem;">
                         <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.06); padding-bottom:0.5rem;">
                             <div style="font-size:1.1rem; font-weight:700; color:#fff;">
-                                👤 ${c.vi_name} <span style="font-size:0.85rem; color:var(--text-sub); font-weight:normal;">(${c.original_name})</span>
+                                👤 ${escapeHtml(c.vi_name)} <span style="font-size:0.85rem; color:var(--text-sub); font-weight:normal;">(${escapeHtml(c.original_name)})</span>
                             </div>
-                            <span class="badge" style="background:rgba(99,102,241,0.3);">${c.role}</span>
+                            <span class="badge" style="background:rgba(99,102,241,0.3);">${escapeHtml(c.role)}</span>
                         </div>
 
                         <div style="display:grid; grid-template-columns:120px 1fr; gap:0.5rem; font-size:0.88rem; align-items:baseline;">
                             <span style="color:#a5b4fc; font-weight:600;">⚡ Cảnh giới / Tu vi:</span>
-                            <span style="color:#f1f5f9; font-weight:600;">${c.realm}</span>
+                            <span style="color:#f1f5f9; font-weight:600;">${escapeHtml(c.realm)}</span>
                         </div>
 
                         <div style="display:grid; grid-template-columns:120px 1fr; gap:0.5rem; font-size:0.88rem; align-items:baseline;">
@@ -1981,7 +1990,7 @@
                 }).join('');
 
             } catch (err) {
-                container.innerHTML = `<div style="color:#ef4444; text-align:center; padding:1.5rem;">Lỗi: ${err.message}</div>`;
+                container.innerHTML = `<div style="color:#ef4444; text-align:center; padding:1.5rem;">Lỗi: ${escapeHtml(err.message)}</div>`;
             }
         }
 
@@ -2342,7 +2351,7 @@
 
 
             const book = cpBooksCache.find(b => b.book_id === cpCurrentBookId);
-            document.getElementById('cp-badge-book-id').innerHTML = `<i class="fa-solid fa-book"></i> ${book ? book.title : cpCurrentBookId}`;
+            document.getElementById('cp-badge-book-id').innerHTML = `<i class="fa-solid fa-book"></i> ${escapeHtml(book ? book.title : cpCurrentBookId)}`;
             document.getElementById('cp-badge-revision').innerHTML = `<i class="fa-solid fa-clock-rotate-left"></i> Rev ${book ? book.revision : 0}`;
 
             // Ensure an edition exists for this book
@@ -2366,7 +2375,7 @@
                 if (res.ok) {
                     const edition = await res.json();
                     cpCurrentEditionId = edition.edition_id;
-                    document.getElementById('cp-badge-edition').innerHTML = `<i class="fa-solid fa-code-branch"></i> ${edition.edition_id.substring(0, 14)}...`;
+                    document.getElementById('cp-badge-edition').innerHTML = `<i class="fa-solid fa-code-branch"></i> ${escapeHtml(edition.edition_id.substring(0, 14))}...`;
                 }
             } catch (err) {
                 console.error("Failed to ensure edition:", err);
@@ -2561,16 +2570,17 @@
                 'faction': '🏛️ Môn phái / Phe phái',
                 'power': '🔥 Sức mạnh'
             };
-            const label = labels[cat] || `🏷️ ${category}`;
-            return `<span class="cat-badge cat-${cat}">${label}</span>`;
+            const safeCat = /^[a-z0-9_-]+$/.test(cat) ? cat : 'other';
+            const label = labels[cat] || `🏷️ ${escapeHtml(category)}`;
+            return `<span class="cat-badge cat-${safeCat}">${label}</span>`;
         }
 
         function formatEventValue(value) {
             if (value === null || value === undefined) return '<em style="color:var(--text-sub)">null</em>';
             if (typeof value === 'object') {
-                return `<code style="background:rgba(0,0,0,0.3); padding:0.2rem 0.4rem; border-radius:4px; font-size:0.8rem; color:#cbd5e1;">${JSON.stringify(value, null, 1)}</code>`;
+                return `<code style="background:rgba(0,0,0,0.3); padding:0.2rem 0.4rem; border-radius:4px; font-size:0.8rem; color:#cbd5e1;">${escapeHtml(JSON.stringify(value, null, 1))}</code>`;
             }
-            return `<strong style="color:#f8fafc;">${value}</strong>`;
+            return `<strong style="color:#f8fafc;">${escapeHtml(value)}</strong>`;
         }
 
         function renderEventsList(events) {
@@ -2615,10 +2625,10 @@
                     <div class="event-card">
                         <div class="event-header">
                             <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
-                                <span style="font-weight:700; font-size:0.95rem; color:#818cf8;"><i class="fa-solid fa-user"></i> ${ev.character_original_name}</span>
+                                <span style="font-weight:700; font-size:0.95rem; color:#818cf8;"><i class="fa-solid fa-user"></i> ${escapeHtml(ev.character_original_name)}</span>
                                 <span class="badge" style="font-size:0.72rem;">Chương ${ev.canonical_chapter}</span>
                                 ${getCategoryBadge(ev.category)}
-                                <span style="font-size:0.75rem; color:var(--text-sub);">(${ev.operation})</span>
+                                <span style="font-size:0.75rem; color:var(--text-sub);">(${escapeHtml(ev.operation)})</span>
                             </div>
                             <div style="display:flex; align-items:center; gap:0.5rem;">
                                 ${statusBadge}
@@ -2627,12 +2637,12 @@
                         </div>
 
                         <div style="font-size:0.85rem; padding:0.4rem 0.6rem; background:rgba(0,0,0,0.25); border-radius:6px;">
-                            <span style="color:var(--text-sub);">${ev.attribute_key}:</span> ${formatEventValue(ev.value)}
+                            <span style="color:var(--text-sub);">${escapeHtml(ev.attribute_key)}:</span> ${formatEventValue(ev.value)}
                         </div>
 
                         ${ev.evidence ? `
                             <div style="font-size:0.78rem; color:var(--text-sub); border-left:2px solid var(--accent); padding-left:0.5rem; font-style:italic;">
-                                "${ev.evidence}"
+                                "${escapeHtml(ev.evidence)}"
                             </div>
                         ` : ''}
 
@@ -2804,7 +2814,7 @@
 
                 renderSnapshotCharacters(data.characters, chapterIndex);
             } catch (err) {
-                container.innerHTML = `<div style="text-align:center; padding:1.5rem; color:#ef4444;">Lỗi: ${err.message}</div>`;
+                container.innerHTML = `<div style="text-align:center; padding:1.5rem; color:#ef4444;">Lỗi: ${escapeHtml(err.message)}</div>`;
             }
         }
 
@@ -2822,7 +2832,7 @@
                 for (const [key, val] of Object.entries(attrs)) {
                     attrRows += `
                         <div style="display:flex; justify-content:space-between; font-size:0.82rem; padding:0.25rem 0; border-bottom:1px solid rgba(255,255,255,0.05);">
-                            <span style="color:var(--text-sub);">${key}:</span>
+                            <span style="color:var(--text-sub);">${escapeHtml(key)}:</span>
                             <span style="color:#f1f5f9; text-align:right; max-width:65%; word-break:break-word;">${formatEventValue(val)}</span>
                         </div>
                     `;
@@ -2832,7 +2842,7 @@
                     <div class="character-card">
                         <div style="display:flex; justify-content:space-between; align-items:center;">
                             <div>
-                                <h4 style="color:#fff; font-size:1rem; font-weight:700;"><i class="fa-solid fa-user-tag" style="color:var(--accent);"></i> ${c.original_name}</h4>
+                                <h4 style="color:#fff; font-size:1rem; font-weight:700;"><i class="fa-solid fa-user-tag" style="color:var(--accent);"></i> ${escapeHtml(c.original_name)}</h4>
                                 <span style="font-size:0.75rem; color:var(--text-sub);">Cập nhật gần nhất: Chương ${c.last_changed_chapter || chapter}</span>
                             </div>
                             <button class="btn btn-secondary" onclick="viewCharacterTimeline('${c.character_id}', '${c.original_name}')" style="padding:0.35rem 0.7rem; font-size:0.78rem;">
@@ -2854,7 +2864,7 @@
             const modalTitle = document.getElementById('cp-timeline-modal-title');
             const content = document.getElementById('cp-timeline-content');
 
-            modalTitle.innerHTML = `<i class="fa-solid fa-timeline" style="color:var(--accent);"></i> Timeline: ${characterName} (đến Chương ${chapterIndex})`;
+            modalTitle.innerHTML = `<i class="fa-solid fa-timeline" style="color:var(--accent);"></i> Timeline: ${escapeHtml(characterName)} (đến Chương ${chapterIndex})`;
             content.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-sub);"><i class="fa-solid fa-spinner spinner"></i> Đang tải timeline...</div>';
             openModal('modal-cp-character-timeline');
 
@@ -2873,19 +2883,19 @@
                                 <div style="display:flex; gap:0.4rem; align-items:center;">
                                     <span class="badge" style="font-size:0.75rem;">Chương ${e.canonical_chapter}</span>
                                     ${getCategoryBadge(e.category)}
-                                    <span style="font-size:0.8rem; color:var(--text-sub);">${e.attribute_key} (${e.operation})</span>
+                                    <span style="font-size:0.8rem; color:var(--text-sub);">${escapeHtml(e.attribute_key)} (${escapeHtml(e.operation)})</span>
                                 </div>
                                 <span style="font-size:0.72rem; color:var(--text-sub);">${new Date(e.created_at).toLocaleDateString('vi-VN')}</span>
                             </div>
                             <div style="font-size:0.85rem; color:#fff;">
                                 <strong>Giá trị:</strong> ${formatEventValue(e.value)}
                             </div>
-                            ${e.evidence ? `<div style="font-size:0.78rem; color:var(--text-sub); font-style:italic;">"${e.evidence}"</div>` : ''}
+                            ${e.evidence ? `<div style="font-size:0.78rem; color:var(--text-sub); font-style:italic;">"${escapeHtml(e.evidence)}"</div>` : ''}
                         </div>
                     `).join('');
                 }
             } catch (err) {
-                content.innerHTML = `<div style="color:#ef4444;">Lỗi tải timeline: ${err.message}</div>`;
+                content.innerHTML = `<div style="color:#ef4444;">Lỗi tải timeline: ${escapeHtml(err.message)}</div>`;
             }
         }
 

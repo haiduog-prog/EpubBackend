@@ -19,9 +19,9 @@ QUY TẮC PHÂN LOẠI & ĐẶT ATTRIBUTE_KEY CHO CHARACTER_EVENTS:
      * attribute_key: "profession_rank" -> value: string (ví dụ: "Đoán Tạo Sư cấp 5 (Tông Tượng)").
      * attribute_key: "organization" -> value: string hoặc list (ví dụ: ["Sử Lai Khắc Đoán Tạo Sư Hiệp Hội"]).
    - category "identity" (Hồ sơ/Vai trò/Thân phận):
-     * attribute_key: "profile" -> value: object {"role": "Nam chính", "aliases": ["Vũ Lân"], "vi_name": "Đường Vũ Lân", "voice_notes": "..."}.
+     * attribute_key: "profile" -> value: object {{"role": "Nam chính", "aliases": ["Vũ Lân"], "vi_name": "Đường Vũ Lân", "voice_notes": "..."}}.
    - category "relationship":
-     * attribute_key: "address_terms" -> operation: "add" -> value: {"with": "...", "self": "...", "other": "...", "context": "..."}.
+     * attribute_key: "address_terms" -> operation: "add" -> value: {{"with": "...", "self": "...", "other": "...", "context": "..."}}.
 
 2. TUYỆT ĐỐI KHÔNG lấy tên chiêu thức, tên vũ khí hay câu mô tả làm "attribute_key". Tên chiêu thức/vũ khí là GIÁ TRỊ (value), key phải là "techniques" hoặc "weapons".
 3. Khi thuộc tính có sự tiến cấp/thay đổi (như Hồn lực tăng từ Cấp 3 lên Nhị hoàn), dùng operation="set" với cùng key "cultivation_level" để hệ thống tự động ghi đè.
@@ -150,5 +150,5 @@ PROMPT_4_QA_CHECK = """So sánh đoạn bản dịch dưới đây với Book Bi
 {translated_chunk}
 </translated_text>
 
-Trả JSON dạng object có thuộc tính "issues": [{"issue": "...", "found": "...", "expected": "...", "location": "trích đoạn ngắn chứa lỗi"}].
+Trả JSON dạng object có thuộc tính "issues": [{{"issue": "...", "found": "...", "expected": "...", "location": "trích đoạn ngắn chứa lỗi"}}].
 Nếu không có lỗi, trả về "issues": []."""

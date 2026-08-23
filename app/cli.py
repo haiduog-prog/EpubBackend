@@ -6,7 +6,7 @@ import sys
 import asyncio
 import argparse
 from app.llm import create_llm_client
-from app.services import TranslationPipelineService
+from app.modules.translation.application.facade import TranslationPipelineService
 from app.schemas.translation import InputType
 
 

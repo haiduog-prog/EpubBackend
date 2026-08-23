@@ -44,7 +44,7 @@ class AnthropicProvider(BaseLLMClient):
             known_names_index=known_names_index,
             source_text=source_text
         )
-        target_model = model or settings.default_anthropic_model
+        target_model = model or self.default_model
         return await self._call_structured(
             model=target_model,
             system="Bạn là biên tập viên trích xuất Book Bible dạng JSON hợp lệ.",

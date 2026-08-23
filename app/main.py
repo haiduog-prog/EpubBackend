@@ -7,8 +7,8 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.api import api_v1_router
-from app.api.v1.translate import recover_pending_translation_jobs
-from app.services.library_service import library_service
+from app.modules.translation.api import recover_pending_translation_jobs
+from app.modules.library.application.facade import library_service
 
 
 @asynccontextmanager

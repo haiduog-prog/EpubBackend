@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from typing import List, Optional, Dict, Any, Set
@@ -48,7 +49,7 @@ class GeminiProvider(BaseLLMClient):
         self.working_model: Optional[str] = None
         self.failed_models: Set[str] = set()
 
-    def _call_with_fallback(
+    async def _call_with_fallback(
         self,
         contents: Any,
         config: types.GenerateContentConfig,
@@ -82,10 +83,11 @@ class GeminiProvider(BaseLLMClient):
 
         for candidate_model in candidates:
             try:
-                response = self.client.models.generate_content(
+                response = await asyncio.to_thread(
+                    self.client.models.generate_content,
                     model=candidate_model,
                     contents=contents,
-                    config=config
+                    config=config,
                 )
                 self.working_model = candidate_model
                 return response
@@ -119,7 +121,7 @@ class GeminiProvider(BaseLLMClient):
             source_text=source_text
         )
 
-        response = self._call_with_fallback(
+        response = await self._call_with_fallback(
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction="Bạn là biên tập viên phân tích tiểu thuyết. Hãy trích xuất Book Bible JSON hợp lệ theo đúng cấu trúc yêu cầu.",
@@ -146,7 +148,7 @@ class GeminiProvider(BaseLLMClient):
             chunk_text=chunk_text
         )
 
-        response = self._call_with_fallback(
+        response = await self._call_with_fallback(
             contents=user_content,
             config=types.GenerateContentConfig(
                 system_instruction=system_content
@@ -170,7 +172,7 @@ class GeminiProvider(BaseLLMClient):
             input_json_array=input_json_str
         )
 
-        response = self._call_with_fallback(
+        response = await self._call_with_fallback(
             contents=user_content,
             config=types.GenerateContentConfig(
                 system_instruction=system_content,
@@ -206,7 +208,7 @@ class GeminiProvider(BaseLLMClient):
             translated_chunk=translated_chunk
         )
 
-        response = self._call_with_fallback(
+        response = await self._call_with_fallback(
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction="Bạn là trợ lý QA kiểm tra nhất quán bản dịch.",

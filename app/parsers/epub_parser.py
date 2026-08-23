@@ -11,6 +11,7 @@ import ebooklib
 from ebooklib import epub
 from ebooklib.epub import EpubException, parse_string
 
+from app.config import settings
 from app.parsers.html_merger import HTMLMerger
 from app.schemas.translation import HTMLInputItem, HTMLTranslationItem
 
@@ -153,8 +154,33 @@ class ResilientEpubReader(epub.EpubReader):
                 logger.debug("Lỗi khi parse EPUB nav (không ảnh hưởng nội dung chương): %s", nav_err)
 
 
+def _validate_epub_archive(name: str) -> None:
+    """Reject path traversal and zip bombs before ebooklib reads the archive."""
+    with zipfile.ZipFile(name, "r") as archive:
+        entries = archive.infolist()
+        if len(entries) > settings.max_epub_entries:
+            raise EpubException(-1, "EPUB archive contains too many entries.")
+
+        total_size = 0
+        for entry in entries:
+            normalized = entry.filename.replace("\\", "/")
+            if normalized.startswith("/") or any(part == ".." for part in normalized.split("/")):
+                raise EpubException(-1, "EPUB archive contains an unsafe path.")
+            if entry.file_size > settings.max_epub_entry_bytes:
+                raise EpubException(-1, "EPUB archive contains an oversized entry.")
+            total_size += entry.file_size
+            if total_size > settings.max_epub_uncompressed_bytes:
+                raise EpubException(-1, "EPUB archive is too large after decompression.")
+
+
 def read_epub_safe(name: str, options: Optional[dict] = None) -> epub.EpubBook:
-    """Đọc file EPUB với trình đọc chống lỗi chống sập khi thiếu file tài nguyên."""
+    """Read EPUB with malformed-resource tolerance and archive safety limits."""
+    try:
+        _validate_epub_archive(name)
+    except EpubException:
+        raise
+    except (OSError, zipfile.BadZipFile) as exc:
+        raise EpubException(-1, f"Invalid EPUB archive: {exc}") from exc
     reader = ResilientEpubReader(name, options)
     book = reader.load()
     reader.process()

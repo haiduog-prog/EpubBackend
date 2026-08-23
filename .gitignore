@@ -11,7 +11,7 @@ venv/
 ENV/
 
 # Temporary storage & uploaded files
-storage/
+/storage/
 data/
 serviceAccountKey.json
 *.epub
@@ -21,6 +21,7 @@ serviceAccountKey.json
 
 # Pytest cache
 .pytest_cache/
+.pytest-tmp/
 
 # Executables & Tools
 tools/

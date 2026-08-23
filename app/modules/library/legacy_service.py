@@ -14,7 +14,7 @@ import ebooklib
 from ebooklib import epub
 
 from app.config import settings
-from app.core.storage import storage_repo
+from app.infrastructure.storage.facade import storage_repo
 from app.db.session import db_session
 from app.parsers.epub_parser import extract_cover_from_epub, read_epub_safe
 from app.modules.library.persistence.repository import LibraryRepository

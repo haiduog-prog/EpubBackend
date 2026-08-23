@@ -864,10 +864,18 @@ class StorageRepository:
         return url
 
     def get_bytes(self, object_name: str, raise_on_error: bool = False) -> Optional[bytes]:
-        data = self.active_provider.get_bytes(object_name, raise_on_error=raise_on_error)
+        active_provider = self.active_provider
+        data = active_provider.get_bytes(object_name, raise_on_error=raise_on_error)
         if data is not None:
             return data
-        if self.active_provider != self.local_provider:
+
+        # Keep legacy R2 chapter files readable while Supabase is the primary provider.
+        if active_provider != self.r2_provider and self.r2_provider.is_active:
+            data = self.r2_provider.get_bytes(object_name, raise_on_error=raise_on_error)
+            if data is not None:
+                return data
+
+        if active_provider != self.local_provider:
             return self.local_provider.get_bytes(object_name, raise_on_error=raise_on_error)
         return None
 

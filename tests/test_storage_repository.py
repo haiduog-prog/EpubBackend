@@ -110,6 +110,30 @@ def test_local_fallback_still_works_without_firestore():
     assert repository.get_job("job-local") == job
 
 
+def test_blob_reads_fallback_to_legacy_r2_when_supabase_misses(monkeypatch):
+    from app.config import settings
+
+    class StubProvider:
+        def __init__(self, name, objects):
+            self.provider_name = name
+            self.objects = objects
+
+        @property
+        def is_active(self):
+            return True
+
+        def get_bytes(self, object_name, raise_on_error=False):
+            return self.objects.get(object_name)
+
+    monkeypatch.setattr(settings, "storage_provider", "supabase")
+    repository = StorageRepository()
+    repository.supabase_provider = StubProvider("supabase", {})
+    repository.r2_provider = StubProvider("r2", {"novels/legacy/ch_0001.txt": b"legacy chapter"})
+    repository.local_provider = StubProvider("local", {})
+
+    assert repository.get_bytes("novels/legacy/ch_0001.txt") == b"legacy chapter"
+
+
 class FakeR2Client:
     def __init__(self):
         self.objects = {}

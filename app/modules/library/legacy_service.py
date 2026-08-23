@@ -9,6 +9,7 @@ import unicodedata
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 
 import ebooklib
 from ebooklib import epub
@@ -388,6 +389,45 @@ class LegacyLibraryService:
                 return data_bytes.decode("latin1", errors="ignore")
 
         return None
+
+    def get_chapter_content_url(
+        self,
+        novel_id: str,
+        chapter_index: int,
+        version: str = "translated",
+    ) -> Optional[str]:
+        if version.lower() != "translated":
+            return None
+
+        metadata = self.get_novel(novel_id)
+        if not metadata:
+            return None
+        chapter = next((item for item in metadata.chapters if item.chapter_index == chapter_index), None)
+        if not chapter:
+            return None
+        return self.get_chapter_content_url_for_item(chapter, version)
+
+    def get_chapter_content_url_for_item(
+        self,
+        chapter: ChapterItem,
+        version: str = "translated",
+    ) -> Optional[str]:
+        if version.lower() != "translated" or chapter.status != ChapterStatus.COMPLETED:
+            return None
+
+        stored_url = (chapter.r2_translated_url or "").strip()
+        if stored_url:
+            parsed = urlparse(stored_url)
+            if parsed.scheme in {"http", "https"} and parsed.netloc:
+                return stored_url
+
+        key = (chapter.r2_translated_key or "").strip()
+        if not key or storage_repo.active_provider_name not in {"supabase", "r2"}:
+            return None
+
+        candidate = storage_repo.get_public_url(key)
+        parsed = urlparse(candidate)
+        return candidate if parsed.scheme in {"http", "https"} and parsed.netloc else None
 
     async def translate_chapter(
         self,

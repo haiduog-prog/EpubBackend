@@ -46,3 +46,13 @@ def read_root_ui():
     return "<h1>EpubBackend Online</h1>"
 
 
+@app.get("/reader", response_class=HTMLResponse)
+def read_reader_ui():
+    """Serve the standalone public reading experience."""
+    reader_path = os.path.join(os.path.dirname(__file__), "static", "reader.html")
+    if os.path.exists(reader_path):
+        with open(reader_path, "r", encoding="utf-8") as f:
+            return f.read()
+    return "<h1>Reader UI unavailable</h1>"
+
+

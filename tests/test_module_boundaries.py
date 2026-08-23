@@ -8,6 +8,7 @@ from app.modules.library.application.epub_export_service import EpubExportServic
 from app.modules.library.application.epub_import_service import EpubImportService
 from app.modules.library.application.facade import LibraryService
 from app.modules.library.application.novel_service import NovelService
+from app.modules.reader.service import ReaderService
 from app.modules.translation.application.direct_translation_service import DirectTranslationService
 from app.modules.translation.application.epub_translation_service import EpubTranslationService
 from app.modules.translation.application.facade import TranslationPipelineService
@@ -71,6 +72,15 @@ def test_translation_support_has_modular_owners_and_compatibility_shims():
     assert LLMClient is not None
 
 
+def test_reader_depends_on_library_application_not_persistence():
+    reader_source = Path(ReaderService.__module__.replace(".", "/") + ".py")
+    source = reader_source.read_text(encoding="utf-8")
+
+    assert "app.modules.library.application.facade" in source
+    assert "storage_repo" not in source
+    assert "db_session" not in source
+
+
 def test_static_ui_does_not_persist_api_key_and_has_html_escape_helper():
     html = (Path(__file__).parents[1] / "app" / "static" / "index.html").read_text(encoding="utf-8")
     assert "localStorage.setItem('epub_api_key'" not in html
@@ -80,8 +90,10 @@ def test_static_ui_does_not_persist_api_key_and_has_html_escape_helper():
 def test_api_contract_is_stable_after_router_move():
     paths = app.openapi()["paths"]
 
-    assert len(paths) == 41
+    assert len(paths) == 45
     assert "/api/v1/translate/text" in paths
     assert "/api/v1/translate/file" in paths
     assert "/api/v1/library/novels" in paths
     assert "/api/v1/book-bible/editions/{edition_id}/chapters/{local_chapter}/snapshot" in paths
+    assert "/api/v1/reader/books" in paths
+    assert "/reader" in paths

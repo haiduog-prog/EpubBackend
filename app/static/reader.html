@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="day">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light dark">
+    <title>Thư viện đọc</title>
+    <style>
+        :root {
+            --bg: #f4f1ea;
+            --surface: #fbfaf7;
+            --surface-strong: #ffffff;
+            --ink: #26231f;
+            --muted: #756f67;
+            --line: #ded8cd;
+            --accent: #9b3f32;
+            --accent-strong: #7c2d25;
+            --accent-soft: #f1d9d2;
+            --shadow: 0 16px 50px rgba(56, 41, 27, 0.11);
+            --reader-width: 760px;
+            --reader-font-size: 19px;
+            --reader-line-height: 1.9;
+            --sans: "Avenir Next", "Segoe UI", sans-serif;
+            --serif: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+        }
+
+        :root[data-theme="sepia"] {
+            --bg: #e9ddc6;
+            --surface: #f5ebd8;
+            --surface-strong: #fbf1df;
+            --ink: #3f3021;
+            --muted: #7b6349;
+            --line: #d5c3a5;
+            --accent: #9a4d2f;
+            --accent-strong: #743520;
+            --accent-soft: #e9c9ac;
+            --shadow: 0 16px 50px rgba(77, 51, 25, 0.12);
+        }
+
+        :root[data-theme="night"] {
+            --bg: #17191b;
+            --surface: #1e2225;
+            --surface-strong: #252a2e;
+            --ink: #e7e1d8;
+            --muted: #9c9d99;
+            --line: #3a3f42;
+            --accent: #e28a70;
+            --accent-strong: #f0ab94;
+            --accent-soft: #46302c;
+            --shadow: 0 16px 50px rgba(0, 0, 0, 0.3);
+        }
+
+        * { box-sizing: border-box; }
+
+        html { min-height: 100%; scroll-behavior: smooth; }
+
+        body {
+            margin: 0;
+            min-width: 320px;
+            min-height: 100vh;
+            background: var(--bg);
+            color: var(--ink);
+            font-family: var(--sans);
+            transition: background-color 180ms ease, color 180ms ease;
+        }
+
+        button, input { font: inherit; }
+        button { color: inherit; }
+        button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+
+        .app-shell { min-height: 100vh; }
+
+        .topbar {
+            align-items: center;
+            display: flex;
+            justify-content: space-between;
+            margin: 0 auto;
+            max-width: 1320px;
+            padding: 26px 34px;
+        }
+
+        .brand {
+            align-items: center;
+            display: flex;
+            gap: 12px;
+            text-decoration: none;
+        }
+
+        .brand-mark {
+            align-items: center;
+            background: var(--accent);
+            border-radius: 8px 3px 3px 8px;
+            color: #fff8ef;
+            display: inline-flex;
+            font-family: var(--serif);
+            font-size: 1.1rem;
+            height: 38px;
+            justify-content: center;
+            transform: rotate(-3deg);
+            width: 34px;
+        }
+
+        .brand-copy { line-height: 1.05; }
+        .brand-name { color: var(--ink); font-family: var(--serif); font-size: 1.12rem; font-weight: 700; }
+        .brand-kicker { color: var(--muted); font-size: 0.62rem; letter-spacing: 0.14em; margin-top: 4px; text-transform: uppercase; }
+
+        .icon-button, .text-button {
+            align-items: center;
+            background: transparent;
+            border: 1px solid transparent;
+            border-radius: 6px;
+            cursor: pointer;
+            display: inline-flex;
+            justify-content: center;
+            transition: background 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease;
+        }
+
+        .icon-button { font-size: 1.15rem; height: 42px; width: 42px; }
+        .text-button { color: var(--muted); gap: 8px; padding: 9px 12px; }
+        .icon-button:hover, .text-button:hover { background: var(--accent-soft); border-color: var(--line); color: var(--accent-strong); }
+        .icon-button:active, .text-button:active { transform: translateY(1px); }
+
+        .library-view { margin: 0 auto; max-width: 1320px; padding: 30px 34px 90px; }
+
+        .library-intro {
+            align-items: end;
+            border-bottom: 1px solid var(--line);
+            display: flex;
+            gap: 42px;
+            justify-content: space-between;
+            margin-bottom: 34px;
+            padding: 28px 0 35px;
+        }
+
+        .eyebrow { color: var(--accent); font-size: 0.72rem; font-weight: 800; letter-spacing: 0.16em; margin: 0 0 13px; text-transform: uppercase; }
+        h1, h2, h3, p { margin-top: 0; }
+        .library-intro h1 { font-family: var(--serif); font-size: clamp(2.4rem, 5vw, 4.9rem); font-weight: 500; letter-spacing: 0; line-height: 0.98; margin-bottom: 18px; max-width: 690px; }
+        .intro-copy { color: var(--muted); font-size: 1rem; line-height: 1.7; margin: 0; max-width: 600px; }
+        .library-note { color: var(--muted); font-size: 0.84rem; line-height: 1.6; max-width: 230px; }
+        .library-note strong { color: var(--ink); display: block; font-family: var(--serif); font-size: 1.5rem; font-weight: 600; }
+
+        .status-line { color: var(--muted); font-size: 0.88rem; min-height: 23px; }
+        .status-line[data-tone="error"] { color: var(--accent-strong); }
+
+        .book-grid {
+            display: grid;
+            gap: 28px 22px;
+            grid-template-columns: repeat(auto-fill, minmax(208px, 1fr));
+        }
+
+        .book-card {
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            box-shadow: 0 7px 22px rgba(50, 39, 28, 0.04);
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            overflow: hidden;
+            transition: box-shadow 180ms ease, border-color 180ms ease, transform 180ms ease;
+        }
+
+        .book-card:hover { border-color: var(--accent); box-shadow: var(--shadow); transform: translateY(-3px); }
+        .book-cover { aspect-ratio: 2 / 3; background: var(--accent-soft); color: var(--accent-strong); display: block; object-fit: cover; width: 100%; }
+        .cover-fallback { align-items: center; background: var(--accent-soft); display: flex; flex-direction: column; gap: 9px; justify-content: center; min-height: 220px; padding: 22px; text-align: center; }
+        .cover-fallback-mark { font-family: var(--serif); font-size: 2.5rem; }
+        .cover-fallback-title { font-family: var(--serif); font-size: 1rem; line-height: 1.35; }
+        .book-body { display: flex; flex: 1; flex-direction: column; gap: 10px; padding: 17px 16px 16px; }
+        .book-title { font-family: var(--serif); font-size: 1.2rem; line-height: 1.2; overflow-wrap: anywhere; }
+        .book-author { color: var(--muted); font-size: 0.8rem; min-height: 19px; overflow-wrap: anywhere; }
+        .book-meta { color: var(--muted); display: flex; font-size: 0.75rem; justify-content: space-between; margin-top: auto; padding-top: 10px; }
+        .book-progress { background: var(--line); height: 3px; overflow: hidden; }
+        .book-progress > span { background: var(--accent); display: block; height: 100%; }
+        .book-open { align-items: center; background: var(--ink); border: 0; border-radius: 5px; color: var(--surface-strong); cursor: pointer; display: flex; gap: 7px; justify-content: center; margin-top: 4px; padding: 10px 12px; transition: background 160ms ease; width: 100%; }
+        .book-open:hover { background: var(--accent); }
+
+        .empty-state { border: 1px dashed var(--line); color: var(--muted); padding: 60px 25px; text-align: center; }
+        .empty-state h2 { color: var(--ink); font-family: var(--serif); font-size: 1.6rem; font-weight: 500; }
+        .skeleton { animation: pulse 1.25s ease-in-out infinite alternate; background: var(--line); border-radius: 6px; min-height: 320px; }
+        @keyframes pulse { from { opacity: 0.42; } to { opacity: 0.8; } }
+
+        .reader-view { display: none; min-height: 100vh; }
+        body.reader-mode .reader-view { display: block; }
+        body.reader-mode .library-view { display: none; }
+
+        .reader-toolbar {
+            align-items: center;
+            background: color-mix(in srgb, var(--surface) 94%, transparent);
+            border-bottom: 1px solid var(--line);
+            display: flex;
+            gap: 12px;
+            justify-content: space-between;
+            min-height: 74px;
+            padding: 12px 24px;
+            position: sticky;
+            top: 0;
+            z-index: 20;
+        }
+
+        .reader-toolbar-left, .reader-toolbar-right { align-items: center; display: flex; gap: 8px; min-width: 0; }
+        .reader-book-label { min-width: 0; }
+        .reader-book-label strong { display: block; font-family: var(--serif); font-size: 1.05rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .reader-book-label span { color: var(--muted); display: block; font-size: 0.71rem; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .toolbar-divider { background: var(--line); height: 26px; margin: 0 5px; width: 1px; }
+        .settings-wrap { position: relative; }
+        .settings-panel { background: var(--surface-strong); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow); display: none; padding: 18px; position: absolute; right: 0; top: calc(100% + 10px); width: 280px; z-index: 40; }
+        .settings-panel.is-open { display: block; }
+        .settings-panel h2 { font-family: var(--serif); font-size: 1.15rem; font-weight: 500; margin-bottom: 17px; }
+        .setting-group { border-top: 1px solid var(--line); padding: 14px 0 0; }
+        .setting-group + .setting-group { margin-top: 15px; }
+        .setting-label { color: var(--muted); display: flex; font-size: 0.76rem; justify-content: space-between; margin-bottom: 9px; }
+        input[type="range"] { accent-color: var(--accent); width: 100%; }
+        .theme-options { display: grid; gap: 7px; grid-template-columns: repeat(3, 1fr); }
+        .theme-option { background: var(--bg); border: 1px solid var(--line); border-radius: 5px; color: var(--muted); cursor: pointer; padding: 8px 4px; }
+        .theme-option[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 -2px 0 var(--accent); color: var(--accent-strong); }
+
+        .reader-progress { background: var(--line); height: 3px; left: 0; position: fixed; right: 0; top: 0; z-index: 50; }
+        .reader-progress > span { background: var(--accent); display: block; height: 100%; transform-origin: left center; width: 0; }
+        .reader-layout { display: grid; grid-template-columns: 282px minmax(0, 1fr); min-height: calc(100vh - 74px); }
+        .toc-panel { background: var(--surface); border-right: 1px solid var(--line); padding: 26px 16px; position: sticky; top: 74px; height: calc(100vh - 74px); overflow: auto; }
+        .toc-heading { align-items: baseline; display: flex; justify-content: space-between; padding: 0 10px 13px; }
+        .toc-heading h2 { font-family: var(--serif); font-size: 1.25rem; font-weight: 500; margin: 0; }
+        .toc-count { color: var(--muted); font-size: 0.7rem; }
+        .toc-list { display: flex; flex-direction: column; gap: 3px; }
+        .toc-item { background: transparent; border: 0; border-left: 2px solid transparent; border-radius: 0 5px 5px 0; color: var(--muted); cursor: pointer; display: block; padding: 9px 10px; text-align: left; width: 100%; }
+        .toc-item:hover { background: var(--accent-soft); color: var(--ink); }
+        .toc-item.is-active { background: var(--accent-soft); border-left-color: var(--accent); color: var(--accent-strong); }
+        .toc-number { display: inline-block; font-size: 0.68rem; margin-right: 8px; min-width: 28px; opacity: 0.75; }
+        .toc-title { font-family: var(--serif); font-size: 0.92rem; line-height: 1.3; }
+
+        .reader-main { min-width: 0; padding: 76px 28px 120px; }
+        .reader-column { margin: 0 auto; max-width: var(--reader-width); }
+        .chapter-heading { border-bottom: 1px solid var(--line); margin-bottom: 40px; padding-bottom: 28px; }
+        .chapter-heading .eyebrow { margin-bottom: 12px; }
+        .chapter-heading h1 { font-family: var(--serif); font-size: clamp(2rem, 4vw, 3.8rem); font-weight: 500; line-height: 1.05; margin-bottom: 14px; overflow-wrap: anywhere; }
+        .chapter-meta { color: var(--muted); font-size: 0.78rem; }
+        .chapter-copy { color: var(--ink); font-family: var(--serif); font-size: var(--reader-font-size); line-height: var(--reader-line-height); }
+        .chapter-copy p { margin-bottom: 1.55em; overflow-wrap: anywhere; white-space: pre-wrap; }
+        .chapter-copy p:last-child { margin-bottom: 0; }
+        .chapter-loading { color: var(--muted); font-family: var(--serif); font-size: 1.15rem; min-height: 260px; padding-top: 30px; }
+        .chapter-error { background: var(--accent-soft); border-left: 3px solid var(--accent); color: var(--accent-strong); padding: 18px 20px; }
+        .reader-bottom-nav { align-items: stretch; border-top: 1px solid var(--line); display: flex; gap: 12px; justify-content: space-between; margin-top: 62px; padding-top: 18px; }
+        .chapter-nav { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; display: flex; flex: 1; flex-direction: column; gap: 5px; max-width: 48%; padding: 12px 14px; text-align: left; transition: border-color 160ms ease, background 160ms ease; }
+        .chapter-nav.next { text-align: right; }
+        .chapter-nav:hover:not(:disabled) { background: var(--accent-soft); border-color: var(--accent); }
+        .chapter-nav:disabled { cursor: default; opacity: 0.38; }
+        .chapter-nav-label { color: var(--muted); font-size: 0.67rem; letter-spacing: 0.1em; text-transform: uppercase; }
+        .chapter-nav-title { font-family: var(--serif); font-size: 0.98rem; line-height: 1.3; overflow-wrap: anywhere; }
+
+        .mobile-backdrop { background: rgba(18, 17, 15, 0.42); display: none; inset: 0; position: fixed; z-index: 25; }
+        body.toc-open .mobile-backdrop { display: block; }
+        body.toc-open .toc-panel { transform: translateX(0); }
+        .sr-only { clip: rect(0, 0, 0, 0); clip-path: inset(50%); height: 1px; overflow: hidden; position: absolute; white-space: nowrap; width: 1px; }
+
+        @media (max-width: 900px) {
+            .library-intro { align-items: start; flex-direction: column; gap: 15px; }
+            .library-note { max-width: 460px; }
+            .reader-layout { display: block; }
+            .toc-panel { bottom: 0; box-shadow: var(--shadow); left: 0; position: fixed; top: 0; transform: translateX(-105%); transition: transform 200ms ease; width: min(320px, 88vw); z-index: 30; }
+            .reader-main { padding-top: 50px; }
+        }
+
+        @media (max-width: 620px) {
+            .topbar { padding: 18px 18px; }
+            .library-view { padding: 18px 18px 70px; }
+            .library-intro { margin-bottom: 25px; padding: 26px 0 27px; }
+            .library-intro h1 { font-size: 2.65rem; }
+            .book-grid { gap: 18px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .book-body { padding: 13px 12px 12px; }
+            .book-title { font-size: 1.02rem; }
+            .book-author { font-size: 0.72rem; }
+            .book-meta { flex-direction: column; gap: 3px; }
+            .reader-toolbar { min-height: 68px; padding: 10px 12px; }
+            .reader-toolbar-right .toolbar-divider { display: none; }
+            .reader-book-label strong { font-size: 0.92rem; }
+            .reader-book-label span { font-size: 0.65rem; }
+            .reader-main { padding: 40px 18px 100px; }
+            .chapter-heading { margin-bottom: 30px; padding-bottom: 22px; }
+            .chapter-heading h1 { font-size: 2.1rem; }
+            .chapter-copy { font-size: var(--reader-font-size); }
+            .reader-bottom-nav { gap: 8px; margin-top: 42px; }
+            .chapter-nav { padding: 10px; }
+            .chapter-nav-title { font-size: 0.86rem; }
+            .settings-panel { position: fixed; right: 12px; top: 72px; width: min(280px, calc(100vw - 24px)); }
+        }
+
+        @media (max-width: 390px) {
+            .book-grid { grid-template-columns: 1fr; }
+            .book-cover { aspect-ratio: 16 / 9; }
+            .cover-fallback { min-height: 160px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-shell">
+        <header class="topbar" id="library-topbar">
+            <a class="brand" href="/reader" aria-label="Về thư viện đọc">
+                <span class="brand-mark" aria-hidden="true">M</span>
+                <span class="brand-copy">
+                    <span class="brand-name">Mực &amp; Trang</span>
+                    <span class="brand-kicker">Thư viện đọc cá nhân</span>
+                </span>
+            </a>
+            <a class="text-button" id="admin-link" href="/" title="Mở khu vực quản trị">Quản trị <span aria-hidden="true">↗</span></a>
+        </header>
+
+        <main class="library-view" id="library-view">
+            <section class="library-intro" aria-labelledby="library-title">
+                <div>
+                    <p class="eyebrow">Những chương đã sẵn sàng</p>
+                    <h1 id="library-title">Kho truyện của bạn.</h1>
+                    <p class="intro-copy">Một góc đọc yên tĩnh cho những bản dịch đã hoàn thành. Chọn một truyện, tìm lại trang cũ, rồi đọc tiếp từ đúng chỗ bạn đã dừng.</p>
+                </div>
+                <p class="library-note"><strong id="book-count">0</strong> bộ truyện có chương tiếng Việt để đọc</p>
+            </section>
+            <p class="status-line" id="library-status" role="status" aria-live="polite">Đang mở thư viện...</p>
+            <section class="book-grid" id="book-grid" aria-label="Danh sách truyện"></section>
+        </main>
+
+        <main class="reader-view" id="reader-view">
+            <div class="reader-progress" aria-hidden="true"><span id="scroll-progress"></span></div>
+            <header class="reader-toolbar">
+                <div class="reader-toolbar-left">
+                    <button class="icon-button" id="back-to-library" type="button" aria-label="Về thư viện" title="Về thư viện">←</button>
+                    <button class="icon-button" id="toc-toggle" type="button" aria-label="Mở mục lục" title="Mở mục lục">☰</button>
+                    <div class="reader-book-label">
+                        <strong id="reader-book-title">Đang tải...</strong>
+                        <span id="reader-book-subtitle">Mục lục</span>
+                    </div>
+                </div>
+                <div class="reader-toolbar-right">
+                    <span class="toolbar-divider" aria-hidden="true"></span>
+                    <button class="icon-button" id="settings-toggle" type="button" aria-label="Tùy chỉnh đọc" title="Tùy chỉnh đọc">Aa</button>
+                    <div class="settings-wrap">
+                        <section class="settings-panel" id="settings-panel" aria-label="Tùy chỉnh đọc">
+                            <h2>Tùy chỉnh trang đọc</h2>
+                            <div class="setting-group">
+                                <div class="setting-label"><span>Cỡ chữ</span><output id="font-size-value">19px</output></div>
+                                <input id="font-size-control" type="range" min="16" max="26" step="1" value="19" aria-label="Cỡ chữ">
+                            </div>
+                            <div class="setting-group">
+                                <div class="setting-label"><span>Giãn dòng</span><output id="line-height-value">1.9</output></div>
+                                <input id="line-height-control" type="range" min="1.5" max="2.3" step="0.1" value="1.9" aria-label="Giãn dòng">
+                            </div>
+                            <div class="setting-group">
+                                <div class="setting-label"><span>Độ rộng trang</span><output id="reading-width-value">760px</output></div>
+                                <input id="reading-width-control" type="range" min="600" max="900" step="20" value="760" aria-label="Độ rộng trang">
+                            </div>
+                            <div class="setting-group">
+                                <div class="setting-label"><span>Nền đọc</span></div>
+                                <div class="theme-options" role="group" aria-label="Chọn nền đọc">
+                                    <button class="theme-option" type="button" data-theme-choice="day" aria-pressed="true">Sáng</button>
+                                    <button class="theme-option" type="button" data-theme-choice="sepia" aria-pressed="false">Giấy</button>
+                                    <button class="theme-option" type="button" data-theme-choice="night" aria-pressed="false">Tối</button>
+                                </div>
+                            </div>
+                            <button class="text-button" id="reset-preferences" type="button" style="margin-left:-12px;margin-top:12px;">Khôi phục mặc định</button>
+                        </section>
+                    </div>
+                </div>
+            </header>
+
+            <div class="mobile-backdrop" id="mobile-backdrop" aria-hidden="true"></div>
+            <div class="reader-layout">
+                <aside class="toc-panel" id="toc-panel" aria-label="Mục lục">
+                    <div class="toc-heading">
+                        <h2>Mục lục</h2>
+                        <span class="toc-count" id="toc-count">0 chương</span>
+                    </div>
+                    <nav class="toc-list" id="toc-list"></nav>
+                </aside>
+                <section class="reader-main" aria-live="polite">
+                    <article class="reader-column" id="reader-column">
+                        <header class="chapter-heading" id="chapter-heading">
+                            <p class="eyebrow">Chương đang đọc</p>
+                            <h1 id="chapter-title">Đang tải...</h1>
+                            <p class="chapter-meta" id="chapter-meta"></p>
+                        </header>
+                        <div class="chapter-copy" id="chapter-copy"></div>
+                        <div class="reader-bottom-nav">
+                            <button class="chapter-nav previous" id="previous-chapter" type="button">
+                                <span class="chapter-nav-label">Chương trước</span>
+                                <span class="chapter-nav-title">—</span>
+                            </button>
+                            <button class="chapter-nav next" id="next-chapter" type="button">
+                                <span class="chapter-nav-label">Chương tiếp</span>
+                                <span class="chapter-nav-title">—</span>
+                            </button>
+                        </div>
+                    </article>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        (() => {
+            'use strict';
+
+            const DEFAULT_PREFERENCES = {
+                theme: 'day',
+                fontSize: 19,
+                lineHeight: 1.9,
+                readingWidth: 760
+            };
+
+            const state = {
+                books: [],
+                book: null,
+                chapter: null,
+                activeController: null,
+                chapterCache: new Map(),
+                preferences: readPreferences(),
+                progressTimer: null,
+                initialChapter: null
+            };
+
+            const $ = (id) => document.getElementById(id);
+
+            function readPreferences() {
+                try {
+                    const saved = JSON.parse(localStorage.getItem('reader.preferences') || '{}');
+                    return { ...DEFAULT_PREFERENCES, ...saved };
+                } catch (_) {
+                    return { ...DEFAULT_PREFERENCES };
+                }
+            }
+
+            function writePreferences() {
+                try {
+                    localStorage.setItem('reader.preferences', JSON.stringify(state.preferences));
+                } catch (_) { /* Storage can be unavailable in private browsing. */ }
+            }
+
+            function progressKey(novelId) {
+                return `reader.progress.${novelId}`;
+            }
+
+            function readProgress(novelId) {
+                try {
+                    const saved = JSON.parse(localStorage.getItem(progressKey(novelId)) || 'null');
+                    return saved && Number.isInteger(saved.chapterIndex) ? saved : null;
+                } catch (_) {
+                    return null;
+                }
+            }
+
+            function writeProgress() {
+                if (!state.book || !state.chapter) return;
+                try {
+                    localStorage.setItem(progressKey(state.book.novel_id), JSON.stringify({
+                        chapterIndex: state.chapter.chapter.chapter_index,
+                        scrollTop: Math.max(0, window.scrollY || 0),
+                        updatedAt: new Date().toISOString()
+                    }));
+                } catch (_) { /* Storage can be unavailable in private browsing. */ }
+            }
+
+            function safeMediaUrl(value) {
+                const raw = String(value || '').trim();
+                if (!raw) return '';
+                try {
+                    const url = new URL(raw, window.location.origin);
+                    return ['http:', 'https:'].includes(url.protocol) ? url.href : '';
+                } catch (_) {
+                    return '';
+                }
+            }
+
+            function getApiBaseUrl() {
+                const defaultBackendUrl = 'https://epubbackend.onrender.com';
+                const params = new URLSearchParams(window.location.search);
+                let stored = '';
+                try { stored = localStorage.getItem('epub_backend_url') || ''; } catch (_) { /* Storage can be unavailable. */ }
+                const configured = (params.get('backend') || stored || defaultBackendUrl).trim();
+                return configured ? configured.replace(/\/+$/, '') : '';
+            }
+
+            function apiUrl(path) {
+                const base = getApiBaseUrl();
+                return base ? `${base}${path}` : path;
+            }
+
+            function applyBackendLinks() {
+                const base = getApiBaseUrl();
+                const brandLink = document.querySelector('.brand');
+                const adminLink = $('admin-link');
+                if (base) brandLink.href = `/reader?backend=${encodeURIComponent(base)}`;
+                if (base) adminLink.href = `${base}/`;
+            }
+
+            function setStatus(message, tone = '') {
+                const status = $('library-status');
+                status.textContent = message;
+                status.dataset.tone = tone;
+            }
+
+            function setTheme(theme) {
+                const selected = ['day', 'sepia', 'night'].includes(theme) ? theme : 'day';
+                document.documentElement.dataset.theme = selected;
+                state.preferences.theme = selected;
+                document.querySelectorAll('[data-theme-choice]').forEach(button => {
+                    button.setAttribute('aria-pressed', String(button.dataset.themeChoice === selected));
+                });
+                writePreferences();
+            }
+
+            function applyPreferences() {
+                document.documentElement.style.setProperty('--reader-font-size', `${state.preferences.fontSize}px`);
+                document.documentElement.style.setProperty('--reader-line-height', String(state.preferences.lineHeight));
+                document.documentElement.style.setProperty('--reader-width', `${state.preferences.readingWidth}px`);
+                $('font-size-control').value = state.preferences.fontSize;
+                $('line-height-control').value = state.preferences.lineHeight;
+                $('reading-width-control').value = state.preferences.readingWidth;
+                $('font-size-value').textContent = `${state.preferences.fontSize}px`;
+                $('line-height-value').textContent = Number(state.preferences.lineHeight).toFixed(1);
+                $('reading-width-value').textContent = `${state.preferences.readingWidth}px`;
+                setTheme(state.preferences.theme);
+            }
+
+            function setLibraryVisible(visible) {
+                document.body.classList.toggle('reader-mode', !visible);
+                if (visible) {
+                    window.scrollTo(0, 0);
+                    closeToc();
+                }
+            }
+
+            function makeElement(tag, className, text) {
+                const element = document.createElement(tag);
+                if (className) element.className = className;
+                if (text !== undefined) element.textContent = text;
+                return element;
+            }
+
+            function renderCover(book, compact = false) {
+                const coverUrl = safeMediaUrl(book.cover_url);
+                if (coverUrl) {
+                    const image = document.createElement('img');
+                    image.className = 'book-cover';
+                    image.alt = `Ảnh bìa ${book.title}`;
+                    image.loading = compact ? 'lazy' : 'eager';
+                    image.src = coverUrl;
+                    image.addEventListener('error', () => {
+                        const fallback = makeElement('div', 'cover-fallback');
+                        fallback.append(makeElement('span', 'cover-fallback-mark', 'M'), makeElement('span', 'cover-fallback-title', book.title));
+                        image.replaceWith(fallback);
+                    }, { once: true });
+                    return image;
+                }
+                const fallback = makeElement('div', 'cover-fallback');
+                fallback.append(makeElement('span', 'cover-fallback-mark', 'M'), makeElement('span', 'cover-fallback-title', book.title));
+                return fallback;
+            }
+
+            function renderBooks() {
+                const grid = $('book-grid');
+                grid.replaceChildren();
+                $('book-count').textContent = String(state.books.length);
+
+                if (!state.books.length) {
+                    const empty = makeElement('div', 'empty-state');
+                    empty.append(
+                        makeElement('h2', '', 'Chưa có chương đã dịch'),
+                        makeElement('p', '', 'Khi một bản dịch hoàn tất, truyện sẽ xuất hiện ở đây để bạn đọc tiếp.')
+                    );
+                    grid.append(empty);
+                    return;
+                }
+
+                state.books.forEach(book => {
+                    const card = makeElement('article', 'book-card');
+                    card.append(renderCover(book, true));
+                    const body = makeElement('div', 'book-body');
+                    const title = makeElement('h2', 'book-title', book.title);
+                    const author = makeElement('p', 'book-author', book.author || 'Chưa rõ tác giả');
+                    const meta = makeElement('div', 'book-meta');
+                    meta.append(
+                        makeElement('span', '', `${book.translated_chapters} chương đã dịch`),
+                        makeElement('span', '', book.status === 'completed' ? 'Đã hoàn thành' : 'Đang viết')
+                    );
+                    const progress = readProgress(book.novel_id);
+                    const progressBar = makeElement('div', 'book-progress');
+                    const progressFill = document.createElement('span');
+                    progressFill.style.width = progress && book.translated_chapters ? `${Math.min(100, Math.max(4, (progress.chapterIndex / Math.max(1, book.translated_chapters)) * 100))}%` : '0%';
+                    progressBar.append(progressFill);
+                    const button = makeElement('button', 'book-open', 'Mở truyện');
+                    button.type = 'button';
+                    button.addEventListener('click', () => openBook(book.novel_id));
+                    body.append(title, author, meta, progressBar, button);
+                    card.append(body);
+                    grid.append(card);
+                });
+            }
+
+            async function fetchJson(path, signal) {
+                const response = await fetch(apiUrl(path), { signal, headers: { Accept: 'application/json' } });
+                let data = null;
+                try { data = await response.json(); } catch (_) { /* Response may not contain JSON. */ }
+                if (!response.ok) {
+                    const error = new Error((data && (data.detail || data.message)) || `Request failed (${response.status})`);
+                    error.status = response.status;
+                    throw error;
+                }
+                return data;
+            }
+
+            async function loadBooks() {
+                setStatus(`Đang mở thư viện từ ${getApiBaseUrl() || 'backend hiện tại'}...`);
+                $('book-grid').replaceChildren(makeElement('div', 'skeleton'), makeElement('div', 'skeleton'), makeElement('div', 'skeleton'));
+                try {
+                    state.books = await fetchJson('/api/v1/reader/books');
+                    renderBooks();
+                    setStatus(state.books.length ? 'Chọn truyện để đọc tiếp.' : '');
+                    const params = new URLSearchParams(window.location.search);
+                    const bookId = params.get('book');
+                    if (bookId && state.books.some(book => book.novel_id === bookId)) {
+                        await openBook(bookId, Number(params.get('chapter')) || undefined);
+                    }
+                } catch (error) {
+                    $('book-grid').replaceChildren();
+                    const retry = makeElement('button', 'book-open', 'Thử tải lại');
+                    retry.type = 'button';
+                    retry.style.maxWidth = '220px';
+                    retry.addEventListener('click', loadBooks);
+                    const empty = makeElement('div', 'empty-state');
+                    empty.append(makeElement('h2', '', 'Không mở được thư viện'), makeElement('p', '', error.message), retry);
+                    $('book-grid').append(empty);
+                    setStatus('Backend chưa phản hồi.', 'error');
+                }
+            }
+
+            function updateUrl(chapterIndex) {
+                if (!state.book) return;
+                const url = new URL(window.location.href);
+                url.searchParams.set('book', state.book.novel_id);
+                if (chapterIndex) url.searchParams.set('chapter', String(chapterIndex));
+                window.history.replaceState({}, '', url);
+            }
+
+            function renderToc() {
+                const list = $('toc-list');
+                list.replaceChildren();
+                const chapters = state.book ? state.book.chapters : [];
+                $('toc-count').textContent = `${chapters.length} chương`;
+                chapters.forEach(chapter => {
+                    const button = makeElement('button', 'toc-item');
+                    button.type = 'button';
+                    button.dataset.chapterIndex = String(chapter.chapter_index);
+                    button.append(
+                        makeElement('span', 'toc-number', String(chapter.chapter_index).padStart(3, '0')),
+                        makeElement('span', 'toc-title', chapter.chapter_title)
+                    );
+                    button.addEventListener('click', () => {
+                        closeToc();
+                        loadChapter(chapter.chapter_index);
+                    });
+                    list.append(button);
+                });
+                updateActiveToc();
+            }
+
+            function updateActiveToc() {
+                const activeIndex = state.chapter && state.chapter.chapter.chapter_index;
+                document.querySelectorAll('.toc-item').forEach(button => {
+                    button.classList.toggle('is-active', Number(button.dataset.chapterIndex) === activeIndex);
+                });
+            }
+
+            function renderNavigation() {
+                const previous = $('previous-chapter');
+                const next = $('next-chapter');
+                const previousChapter = state.chapter && state.chapter.previous_chapter;
+                const nextChapter = state.chapter && state.chapter.next_chapter;
+                previous.disabled = !previousChapter;
+                next.disabled = !nextChapter;
+                previous.querySelector('.chapter-nav-title').textContent = previousChapter ? previousChapter.chapter_title : 'Đầu truyện';
+                next.querySelector('.chapter-nav-title').textContent = nextChapter ? nextChapter.chapter_title : 'Hết truyện';
+                previous.onclick = previousChapter ? () => loadChapter(previousChapter.chapter_index) : null;
+                next.onclick = nextChapter ? () => loadChapter(nextChapter.chapter_index) : null;
+            }
+
+            function renderChapter(data, restoreScroll = true) {
+                state.chapter = data;
+                $('chapter-title').textContent = data.chapter.chapter_title;
+                $('chapter-meta').textContent = `${data.chapter.word_count.toLocaleString('vi-VN')} từ · Chương ${data.chapter.chapter_index}`;
+                const copy = $('chapter-copy');
+                copy.replaceChildren();
+                const normalized = String(data.content || '').replace(/\r\n?/g, '\n').trim();
+                const paragraphs = normalized ? normalized.split(/\n\s*\n/) : [''];
+                paragraphs.forEach(value => copy.append(makeElement('p', '', value.trim())));
+                renderNavigation();
+                updateActiveToc();
+                updateUrl(data.chapter.chapter_index);
+                window.requestAnimationFrame(() => {
+                    const saved = restoreScroll ? readProgress(state.book.novel_id) : null;
+                    const savedChapter = saved && saved.chapterIndex === data.chapter.chapter_index ? saved.scrollTop : 0;
+                    window.scrollTo(0, Math.max(0, Number(savedChapter) || 0));
+                    updateScrollProgress();
+                });
+            }
+
+            function renderLoading() {
+                $('chapter-title').textContent = 'Đang mở chương...';
+                $('chapter-meta').textContent = '';
+                $('chapter-copy').replaceChildren(makeElement('div', 'chapter-loading', 'Đang lấy bản dịch từ kho lưu trữ...'));
+            }
+
+            function removeUnavailableChapter(chapterIndex) {
+                if (!state.book) return;
+                state.book.chapters = state.book.chapters.filter(chapter => chapter.chapter_index !== chapterIndex);
+                renderToc();
+            }
+
+            async function fetchChapter(chapterIndex, signal) {
+                const cacheKey = `${state.book.novel_id}:${chapterIndex}`;
+                if (state.chapterCache.has(cacheKey)) return state.chapterCache.get(cacheKey);
+                const summary = state.book.chapters.find(chapter => chapter.chapter_index === chapterIndex);
+                const directUrl = summary && safeMediaUrl(summary.content_url);
+                if (directUrl) {
+                    try {
+                        const response = await fetch(directUrl, {
+                            signal,
+                            headers: { Accept: 'text/plain, text/*;q=0.9, */*;q=0.8' }
+                        });
+                        if (response.ok) {
+                            const content = await response.text();
+                            if (content.trim()) {
+                                const position = state.book.chapters.findIndex(chapter => chapter.chapter_index === chapterIndex);
+                                const data = {
+                                    novel_id: state.book.novel_id,
+                                    chapter: summary,
+                                    content,
+                                    previous_chapter: position > 0 ? state.book.chapters[position - 1] : null,
+                                    next_chapter: position < state.book.chapters.length - 1 ? state.book.chapters[position + 1] : null
+                                };
+                                state.chapterCache.set(cacheKey, data);
+                                while (state.chapterCache.size > 3) state.chapterCache.delete(state.chapterCache.keys().next().value);
+                                return data;
+                            }
+                        }
+                    } catch (error) {
+                        if (error.name === 'AbortError') throw error;
+                        /* Private buckets and CORS failures fall back to Render. */
+                    }
+                }
+                const data = await fetchJson(`/api/v1/reader/books/${encodeURIComponent(state.book.novel_id)}/chapters/${chapterIndex}`, signal);
+                state.chapterCache.set(cacheKey, data);
+                while (state.chapterCache.size > 3) state.chapterCache.delete(state.chapterCache.keys().next().value);
+                return data;
+            }
+
+            async function prefetchChapter(chapterIndex) {
+                if (!state.book || !chapterIndex) return;
+                try { await fetchChapter(chapterIndex); } catch (_) { /* The visible navigation handles failures. */ }
+            }
+
+            async function loadChapter(chapterIndex, options = {}) {
+                if (!state.book || !chapterIndex) return false;
+                if (state.activeController) state.activeController.abort();
+                const controller = new AbortController();
+                state.activeController = controller;
+                const hadChapter = Boolean(state.chapter);
+                if (!hadChapter) renderLoading();
+                try {
+                    const data = await fetchChapter(chapterIndex, controller.signal);
+                    if (controller.signal.aborted) return false;
+                    renderChapter(data, !options.skipRestore);
+                    prefetchChapter(data.next_chapter && data.next_chapter.chapter_index);
+                    return true;
+                } catch (error) {
+                    if (error.name === 'AbortError') return false;
+                    if (error.status === 404) removeUnavailableChapter(chapterIndex);
+                    if (!hadChapter) {
+                        $('chapter-title').textContent = 'Chương chưa sẵn sàng';
+                        $('chapter-meta').textContent = '';
+                        const errorBox = makeElement('div', 'chapter-error', error.message || 'Không thể mở chương này.');
+                        $('chapter-copy').replaceChildren(errorBox);
+                    } else {
+                        setStatus(error.message || 'Không thể mở chương mới.', 'error');
+                    }
+                    return false;
+                } finally {
+                    if (state.activeController === controller) state.activeController = null;
+                }
+            }
+
+            async function openBook(novelId, requestedChapter) {
+                setLibraryVisible(false);
+                $('reader-book-title').textContent = 'Đang mở truyện...';
+                $('reader-book-subtitle').textContent = '';
+                $('toc-list').replaceChildren();
+                state.chapter = null;
+                state.chapterCache.clear();
+                try {
+                    const book = await fetchJson(`/api/v1/reader/books/${encodeURIComponent(novelId)}`);
+                    state.book = book;
+                    $('reader-book-title').textContent = book.title;
+                    $('reader-book-subtitle').textContent = `${book.author || 'Tác giả chưa rõ'} · ${book.chapters.length} chương`;
+                    renderToc();
+                    const progress = readProgress(novelId);
+                    const available = new Set(book.chapters.map(chapter => chapter.chapter_index));
+                    const preferred = Number(requestedChapter) || (progress && progress.chapterIndex) || book.chapters[0].chapter_index;
+                    const first = available.has(preferred) ? preferred : book.chapters[0].chapter_index;
+                    const loaded = await loadChapter(first);
+                    if (!loaded && book.chapters.length) {
+                        const fallback = book.chapters.find(chapter => chapter.chapter_index !== first);
+                        if (fallback) await loadChapter(fallback.chapter_index);
+                    }
+                } catch (error) {
+                    $('reader-book-title').textContent = 'Không mở được truyện';
+                    $('reader-book-subtitle').textContent = '';
+                    $('chapter-title').textContent = 'Có lỗi xảy ra';
+                    $('chapter-copy').replaceChildren(makeElement('div', 'chapter-error', error.message || 'Không thể tải bộ truyện này.'));
+                }
+            }
+
+            function showLibrary() {
+                if (state.activeController) state.activeController.abort();
+                const url = new URL(window.location.href);
+                url.searchParams.delete('book');
+                url.searchParams.delete('chapter');
+                window.history.replaceState({}, '', url);
+                state.book = null;
+                state.chapter = null;
+                setLibraryVisible(true);
+                setStatus(state.books.length ? 'Chọn truyện để đọc tiếp.' : '');
+            }
+
+            function updateScrollProgress() {
+                const scrollable = document.documentElement.scrollHeight - window.innerHeight;
+                const progress = scrollable > 0 ? Math.min(1, Math.max(0, window.scrollY / scrollable)) : 0;
+                $('scroll-progress').style.transform = `scaleX(${progress})`;
+            }
+
+            function scheduleProgressSave() {
+                updateScrollProgress();
+                window.clearTimeout(state.progressTimer);
+                state.progressTimer = window.setTimeout(writeProgress, 260);
+            }
+
+            function closeToc() { document.body.classList.remove('toc-open'); }
+
+            function bindControls() {
+                $('back-to-library').addEventListener('click', showLibrary);
+                $('toc-toggle').addEventListener('click', () => document.body.classList.toggle('toc-open'));
+                $('mobile-backdrop').addEventListener('click', closeToc);
+                $('settings-toggle').addEventListener('click', () => $('settings-panel').classList.toggle('is-open'));
+                $('font-size-control').addEventListener('input', event => {
+                    state.preferences.fontSize = Number(event.target.value);
+                    applyPreferences();
+                    writePreferences();
+                });
+                $('line-height-control').addEventListener('input', event => {
+                    state.preferences.lineHeight = Number(event.target.value);
+                    applyPreferences();
+                    writePreferences();
+                });
+                $('reading-width-control').addEventListener('input', event => {
+                    state.preferences.readingWidth = Number(event.target.value);
+                    applyPreferences();
+                    writePreferences();
+                });
+                document.querySelectorAll('[data-theme-choice]').forEach(button => {
+                    button.addEventListener('click', () => setTheme(button.dataset.themeChoice));
+                });
+                $('reset-preferences').addEventListener('click', () => {
+                    state.preferences = { ...DEFAULT_PREFERENCES };
+                    applyPreferences();
+                    writePreferences();
+                });
+                window.addEventListener('scroll', scheduleProgressSave, { passive: true });
+                document.addEventListener('keydown', event => {
+                    if (['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(document.activeElement.tagName)) return;
+                    if (event.key === 'Escape') {
+                        $('settings-panel').classList.remove('is-open');
+                        closeToc();
+                    }
+                    if (!state.chapter) return;
+                    if (event.key === 'ArrowLeft' && state.chapter.previous_chapter) loadChapter(state.chapter.previous_chapter.chapter_index);
+                    if (event.key === 'ArrowRight' && state.chapter.next_chapter) loadChapter(state.chapter.next_chapter.chapter_index);
+                });
+                document.addEventListener('click', event => {
+                    const panel = $('settings-panel');
+                    if (panel.classList.contains('is-open') && !event.target.closest('.settings-wrap')) panel.classList.remove('is-open');
+                });
+            }
+
+            applyPreferences();
+            applyBackendLinks();
+            bindControls();
+            loadBooks();
+        })();
+    </script>
+</body>
+</html>

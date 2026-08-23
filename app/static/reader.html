@@ -812,10 +812,16 @@
                     const available = new Set(book.chapters.map(chapter => chapter.chapter_index));
                     const preferred = Number(requestedChapter) || (progress && progress.chapterIndex) || book.chapters[0].chapter_index;
                     const first = available.has(preferred) ? preferred : book.chapters[0].chapter_index;
-                    const loaded = await loadChapter(first);
-                    if (!loaded && book.chapters.length) {
-                        const fallback = book.chapters.find(chapter => chapter.chapter_index !== first);
-                        if (fallback) await loadChapter(fallback.chapter_index);
+                    const startupCandidates = [
+                        first,
+                        ...book.chapters
+                            .map(chapter => chapter.chapter_index)
+                            .filter(chapterIndex => chapterIndex !== first)
+                    ].slice(0, 12);
+                    let loaded = false;
+                    for (const chapterIndex of startupCandidates) {
+                        loaded = await loadChapter(chapterIndex);
+                        if (loaded) break;
                     }
                 } catch (error) {
                     $('reader-book-title').textContent = 'Không mở được truyện';

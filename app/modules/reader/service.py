@@ -104,7 +104,8 @@ class ReaderService:
             (
                 chapter
                 for chapter in chapters
-                if chapter.status == ChapterStatus.COMPLETED
+                if chapter.chapter_index >= 1
+                and chapter.status == ChapterStatus.COMPLETED
                 and (
                     chapter.r2_translated_key
                     or chapter.r2_translated_url

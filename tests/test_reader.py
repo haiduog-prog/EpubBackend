@@ -77,6 +77,21 @@ def test_get_book_filters_untranslated_and_missing_marker_chapters(reader_servic
     assert [chapter.chapter_index for chapter in result.chapters] == [1, 5, 8]
 
 
+def test_get_book_excludes_metadata_chapter_zero(reader_service):
+    metadata = _metadata([_chapter(0), _chapter(1)])
+
+    class FakeLibrary:
+        def list_novels(self):
+            return [NovelSummary(novel_id=metadata.novel_id, title=metadata.title)]
+
+        def get_novel(self, novel_id):
+            return metadata if novel_id == metadata.novel_id else None
+
+    result = ReaderService(FakeLibrary()).get_book("reader-book")
+
+    assert [chapter.chapter_index for chapter in result.chapters] == [1]
+
+
 def test_get_chapter_returns_previous_and_next_readable_chapters(reader_service):
     result = reader_service.get_chapter("reader-book", 5)
 

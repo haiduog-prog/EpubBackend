@@ -216,8 +216,8 @@
 
         .reader-progress { background: var(--line); height: 3px; left: 0; position: fixed; right: 0; top: 0; z-index: 50; }
         .reader-progress > span { background: var(--accent); display: block; height: 100%; transform-origin: left center; width: 0; }
-        .reader-layout { display: grid; grid-template-columns: 282px minmax(0, 1fr); min-height: calc(100vh - 74px); }
-        .toc-panel { background: var(--surface); border-right: 1px solid var(--line); padding: 26px 16px; position: sticky; top: 74px; height: calc(100vh - 74px); overflow: auto; }
+        .reader-layout { display: block; min-height: calc(100vh - 74px); }
+        .toc-panel { background: var(--surface); border-right: 1px solid var(--line); bottom: 0; box-shadow: var(--shadow); left: 0; overflow: auto; padding: 26px 16px; position: fixed; top: 74px; transform: translateX(-105%); transition: transform 200ms ease; width: min(360px, 88vw); z-index: 30; }
         .toc-heading { align-items: baseline; display: flex; justify-content: space-between; padding: 0 10px 13px; }
         .toc-heading h2 { font-family: var(--serif); font-size: 1.25rem; font-weight: 500; margin: 0; }
         .toc-count { color: var(--muted); font-size: 0.7rem; }
@@ -322,7 +322,7 @@
             <header class="reader-toolbar">
                 <div class="reader-toolbar-left">
                     <button class="icon-button" id="back-to-library" type="button" aria-label="Về thư viện" title="Về thư viện">←</button>
-                    <button class="icon-button" id="toc-toggle" type="button" aria-label="Mở mục lục" title="Mở mục lục">☰</button>
+                    <button class="icon-button" id="toc-toggle" type="button" aria-label="Mở mục lục" aria-expanded="false" title="Mở mục lục">☰</button>
                     <div class="reader-book-label">
                         <strong id="reader-book-title">Đang tải...</strong>
                         <span id="reader-book-subtitle">Mục lục</span>
@@ -594,7 +594,13 @@
             }
 
             async function fetchJson(path, signal) {
-                const response = await fetch(apiUrl(path), { signal, headers: { Accept: 'application/json' } });
+                let response;
+                try {
+                    response = await fetch(apiUrl(path), { signal, headers: { Accept: 'application/json' } });
+                } catch (error) {
+                    if (error.name === 'AbortError') throw error;
+                    throw new Error('Không kết nối được backend. Kiểm tra URL backend hoặc cấu hình CORS.');
+                }
                 let data = null;
                 try { data = await response.json(); } catch (_) { /* Response may not contain JSON. */ }
                 if (!response.ok) {
@@ -786,6 +792,7 @@
             }
 
             async function openBook(novelId, requestedChapter) {
+                closeToc();
                 setLibraryVisible(false);
                 $('reader-book-title').textContent = 'Đang mở truyện...';
                 $('reader-book-subtitle').textContent = '';
@@ -839,11 +846,19 @@
                 state.progressTimer = window.setTimeout(writeProgress, 260);
             }
 
-            function closeToc() { document.body.classList.remove('toc-open'); }
+            function setTocOpen(isOpen) {
+                document.body.classList.toggle('toc-open', isOpen);
+                const button = $('toc-toggle');
+                button.setAttribute('aria-expanded', String(isOpen));
+                button.setAttribute('aria-label', isOpen ? 'Đóng mục lục' : 'Mở mục lục');
+                button.title = isOpen ? 'Đóng mục lục' : 'Mở mục lục';
+            }
+
+            function closeToc() { setTocOpen(false); }
 
             function bindControls() {
                 $('back-to-library').addEventListener('click', showLibrary);
-                $('toc-toggle').addEventListener('click', () => document.body.classList.toggle('toc-open'));
+                $('toc-toggle').addEventListener('click', () => setTocOpen(!document.body.classList.contains('toc-open')));
                 $('mobile-backdrop').addEventListener('click', closeToc);
                 $('settings-toggle').addEventListener('click', () => $('settings-panel').classList.toggle('is-open'));
                 $('font-size-control').addEventListener('input', event => {

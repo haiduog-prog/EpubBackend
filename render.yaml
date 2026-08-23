@@ -7,6 +7,10 @@ services:
     envVars:
       - key: DATABASE_URL
         sync: false
+      - key: APP_ENV
+        value: production
+      - key: BOOK_BIBLE_WRITE_TOKEN
+        sync: false
       - key: STRUCTURED_STORAGE_BACKEND
         value: postgres
       - key: STRUCTURED_STORAGE_READ_SOURCE

@@ -1,0 +1,1 @@
+"""Book Bible persistence adapters."""

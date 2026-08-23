@@ -29,7 +29,7 @@ class AnthropicProvider(BaseLLMClient):
 
     def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
         self.api_key = api_key or settings.anthropic_api_key
-        self.default_model = model or settings.default_translation_model
+        self.default_model = model or settings.default_anthropic_model
         if not self.api_key:
             raise ValueError("Chưa cấu hình Anthropic API Key (sk-ant-...).")
         self.client = anthropic.AsyncAnthropic(api_key=self.api_key)
@@ -44,7 +44,7 @@ class AnthropicProvider(BaseLLMClient):
             known_names_index=known_names_index,
             source_text=source_text
         )
-        target_model = model or settings.default_extraction_model
+        target_model = model or settings.default_anthropic_model
         return await self._call_structured(
             model=target_model,
             system="Bạn là biên tập viên trích xuất Book Bible dạng JSON hợp lệ.",
@@ -151,7 +151,7 @@ class AnthropicProvider(BaseLLMClient):
             translated_chunk=translated_chunk
         )
 
-        target_model = model or settings.default_qa_model
+        target_model = model or self.default_model
         return await self._call_structured(
             model=target_model,
             system="Bạn là trợ lý QA kiểm tra nhất quán bản dịch.",

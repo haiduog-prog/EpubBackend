@@ -1,0 +1,1 @@
+"""Library persistence adapters."""

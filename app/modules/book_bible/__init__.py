@@ -1,0 +1,1 @@
+"""Book Bible bounded context."""

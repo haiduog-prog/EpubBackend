@@ -1,0 +1,1 @@
+"""Character profile persistence adapters."""

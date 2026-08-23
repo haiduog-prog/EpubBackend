@@ -13,17 +13,10 @@ def create_llm_client(
     """
     Factory function để khởi tạo instance của LLM Provider (Mặc định: Google Gemini).
     """
-    prov = (provider or "").lower()
-    
-    # Auto-detect or default to Gemini
-    if not prov:
-        if api_key and not api_key.startswith("AIzaSy") and settings.anthropic_api_key:
-            prov = "anthropic"
-        else:
-            prov = "gemini"
+    prov = (provider or settings.default_provider or "gemini").strip().lower()
 
-    if prov == "anthropic" and settings.anthropic_api_key:
+    if prov == "anthropic":
         return AnthropicProvider(api_key=api_key, model=model)
-    else:
-        # Default all LLM calls to Gemini
+    if prov == "gemini":
         return GeminiProvider(api_key=api_key, model=model)
+    raise ValueError(f"Unsupported LLM provider: {provider}")

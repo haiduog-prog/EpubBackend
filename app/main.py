@@ -1,22 +1,33 @@
 ﻿import os
 import logging
+from contextlib import asynccontextmanager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.api import api_v1_router
+from app.api.v1.translate import recover_pending_translation_jobs
+from app.services.library_service import library_service
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    recover_pending_translation_jobs()
+    library_service.recover_import_jobs()
+    yield
 
 app = FastAPI(
     title="EpubBackend API",
     version="2.0.0",
-    description="Backend dá»‹ch truyá»‡n thuáº§n Viá»‡t (v2) há»— trá»£ EPUB, HTML vÃ  TXT vá»›i Claude API & Gemini API Structured Outputs."
+    description="Backend dá»‹ch truyá»‡n thuáº§n Viá»‡t (v2) há»— trá»£ EPUB, HTML vÃ  TXT vá»›i Claude API & Gemini API Structured Outputs.",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

@@ -1,9 +1,10 @@
 from typing import Dict, List
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from app.schemas.translation import TranslationJob
 from app.schemas.book_bible import BookBible
 from app.core import storage_repo
+from app.api.dependencies import require_write_access
 
 router = APIRouter(prefix="/admin", tags=["Admin & Database Inspector"])
 
@@ -24,7 +25,7 @@ def get_storage_summary():
 
 
 @router.post("/clean-test-data")
-def clean_test_data():
+def clean_test_data(_: None = Depends(require_write_access)):
     """
     Quét và xóa tất cả các file test, dữ liệu thử nghiệm trong Cloudflare R2 bucket.
     """
@@ -97,7 +98,7 @@ def clean_test_data():
 
 
 @router.post("/purge-legacy-data-folders")
-def purge_legacy_data_folders():
+def purge_legacy_data_folders(_: None = Depends(require_write_access)):
     """
     Xóa toàn bộ các file rời rạc cũ trong prefix data/ (data/profile_submissions/, data/profile_events/, data/profile_books/, data/profile_editions/, data/bibles/)
     để chuyển sang 100% cấu trúc mới gom theo thư mục tên truyện: novels/{novel_id}/.

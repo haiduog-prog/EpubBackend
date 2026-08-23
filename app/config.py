@@ -7,6 +7,7 @@ load_dotenv()
 
 
 class Settings(BaseModel):
+    app_env: str = Field(default_factory=lambda: os.getenv("APP_ENV", "development"))
     anthropic_api_key: str = Field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY", ""))
     gemini_api_key: str = Field(default_factory=lambda: os.getenv("GEMINI_API_KEY", ""))
     
@@ -32,12 +33,22 @@ class Settings(BaseModel):
     cloudflare_r2_bucket_name: str = Field(default_factory=lambda: os.getenv("CLOUDFLARE_R2_BUCKET_NAME", ""))
     cloudflare_r2_public_url: str = Field(default_factory=lambda: os.getenv("CLOUDFLARE_R2_PUBLIC_URL", ""))
 
-    # Model defaults (Google Gemini Only)
+    # Model defaults
     default_provider: str = Field(default="gemini")
     default_translation_model: str = Field(default="gemini-2.5-flash")
     default_extraction_model: str = Field(default="gemini-2.5-flash")
     default_qa_model: str = Field(default="gemini-2.5-flash")
     default_gemini_model: str = Field(default="gemini-2.5-flash")
+    default_anthropic_model: str = Field(
+        default_factory=lambda: os.getenv("ANTHROPIC_MODEL", "claude-3-5-haiku-latest")
+    )
+
+    max_upload_bytes: int = Field(
+        default_factory=lambda: int(os.getenv("MAX_UPLOAD_BYTES", str(50 * 1024 * 1024)))
+    )
+    max_text_input_chars: int = Field(
+        default_factory=lambda: int(os.getenv("MAX_TEXT_INPUT_CHARS", str(2 * 1024 * 1024)))
+    )
     
     # Chunking settings
     txt_chunk_min_words: int = 1500

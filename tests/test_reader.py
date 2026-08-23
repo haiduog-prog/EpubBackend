@@ -113,12 +113,19 @@ def test_reader_exposes_public_storage_url_for_direct_reads():
         def get_chapter_content_url(self, chapter, version="translated"):
             return "https://project.supabase.co/storage/v1/object/public/novels/novels/reader-book/chapters/1.translated.txt"
 
+        def get_chapter_content_urls(self, chapter, version="translated"):
+            return [
+                "https://project.supabase.co/storage/v1/object/public/novels/novels/reader-book/chapters/1.translated.txt",
+                "https://cdn.example.com/reader-book/1.txt",
+            ]
+
     result = ReaderService(FakeLibrary()).get_book("reader-book")
 
     assert result.chapters[0].content_url == (
         "https://project.supabase.co/storage/v1/object/public/novels/"
         "novels/reader-book/chapters/1.translated.txt"
     )
+    assert result.chapters[0].content_urls[1] == "https://cdn.example.com/reader-book/1.txt"
 
 
 def test_get_chapter_fails_closed_when_storage_content_is_missing(reader_service):

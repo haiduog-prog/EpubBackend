@@ -116,20 +116,27 @@ class ReaderService:
         )
 
     def _to_chapter_summary(self, novel_id: str, chapter: ChapterItem) -> ReaderChapterSummary:
+        content_urls = self._content_urls(chapter)
         return ReaderChapterSummary(
             chapter_index=chapter.chapter_index,
             chapter_id=chapter.chapter_id,
             chapter_title=chapter.chapter_title,
             word_count=chapter.word_count,
             updated_at=chapter.updated_at,
-            content_url=self._content_url(chapter),
+            content_url=content_urls[0] if content_urls else None,
+            content_urls=content_urls,
         )
 
-    def _content_url(self, chapter: ChapterItem) -> Optional[str]:
+    def _content_urls(self, chapter: ChapterItem) -> List[str]:
+        resolver = getattr(self._library, "get_chapter_content_urls", None)
+        if callable(resolver):
+            return list(resolver(chapter, version="translated") or [])
+
         resolver = getattr(self._library, "get_chapter_content_url", None)
         if not callable(resolver):
-            return None
-        return resolver(chapter, version="translated")
+            return []
+        content_url = resolver(chapter, version="translated")
+        return [content_url] if content_url else []
 
     @staticmethod
     def _to_book_summary(metadata: NovelMetadata, translated_count: int) -> ReaderBookSummary:

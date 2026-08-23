@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from app.modules.library.legacy_service import LegacyLibraryService
 from app.schemas.book_bible import BookBible
@@ -19,6 +19,9 @@ class ChapterService:
 
     def content_url(self, chapter: ChapterItem, version: str = "translated") -> Optional[str]:
         return self._legacy.get_chapter_content_url_for_item(chapter, version)
+
+    def content_urls(self, chapter: ChapterItem, version: str = "translated") -> List[str]:
+        return self._legacy.get_chapter_content_urls_for_item(chapter, version)
 
     async def translate(self, novel_id: str, chapter_index: int, **kwargs) -> ChapterItem:
         return await self._legacy.translate_chapter(novel_id, chapter_index, **kwargs)

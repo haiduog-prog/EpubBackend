@@ -46,6 +46,9 @@ class LibraryService:
     def get_chapter_content_url(self, chapter, version="translated"):
         return self.chapters.content_url(chapter, version)
 
+    def get_chapter_content_urls(self, chapter, version="translated"):
+        return self.chapters.content_urls(chapter, version)
+
     async def translate_chapter(self, novel_id, chapter_index, **kwargs):
         return await self.chapters.translate(novel_id, chapter_index, **kwargs)
 

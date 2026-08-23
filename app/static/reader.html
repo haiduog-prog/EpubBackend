@@ -722,8 +722,11 @@
                 const cacheKey = `${state.book.novel_id}:${chapterIndex}`;
                 if (state.chapterCache.has(cacheKey)) return state.chapterCache.get(cacheKey);
                 const summary = state.book.chapters.find(chapter => chapter.chapter_index === chapterIndex);
-                const directUrl = summary && safeMediaUrl(summary.content_url);
-                if (directUrl) {
+                const directUrls = summary ? [
+                    ...(Array.isArray(summary.content_urls) ? summary.content_urls : []),
+                    summary.content_url
+                ].filter(Boolean).map(safeMediaUrl).filter(Boolean).filter((url, index, urls) => urls.indexOf(url) === index) : [];
+                for (const directUrl of directUrls) {
                     try {
                         const response = await fetch(directUrl, {
                             signal,
@@ -747,7 +750,7 @@
                         }
                     } catch (error) {
                         if (error.name === 'AbortError') throw error;
-                        /* Private buckets and CORS failures fall back to Render. */
+                        /* Try the next public storage URL, then fall back to Render. */
                     }
                 }
                 const data = await fetchJson(`/api/v1/reader/books/${encodeURIComponent(state.book.novel_id)}/chapters/${chapterIndex}`, signal);

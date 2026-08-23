@@ -412,22 +412,37 @@ class LegacyLibraryService:
         chapter: ChapterItem,
         version: str = "translated",
     ) -> Optional[str]:
+        urls = self.get_chapter_content_urls_for_item(chapter, version)
+        return urls[0] if urls else None
+
+    def get_chapter_content_urls_for_item(
+        self,
+        chapter: ChapterItem,
+        version: str = "translated",
+    ) -> List[str]:
         if version.lower() != "translated" or chapter.status != ChapterStatus.COMPLETED:
-            return None
+            return []
+
+        urls: List[str] = []
+
+        def add_url(candidate: Optional[str]) -> None:
+            if not candidate:
+                return
+            parsed = urlparse(candidate)
+            if parsed.scheme in {"http", "https"} and parsed.netloc and candidate not in urls:
+                urls.append(candidate)
 
         stored_url = (chapter.r2_translated_url or "").strip()
-        if stored_url:
-            parsed = urlparse(stored_url)
-            if parsed.scheme in {"http", "https"} and parsed.netloc:
-                return stored_url
+        add_url(stored_url)
 
         key = (chapter.r2_translated_key or "").strip()
         if not key or storage_repo.active_provider_name not in {"supabase", "r2"}:
-            return None
+            return urls
 
-        candidate = storage_repo.get_public_url(key)
-        parsed = urlparse(candidate)
-        return candidate if parsed.scheme in {"http", "https"} and parsed.netloc else None
+        add_url(storage_repo.get_public_url(key))
+        if settings.cloudflare_r2_public_url:
+            add_url(storage_repo.r2_provider.get_public_url(key))
+        return urls
 
     async def translate_chapter(
         self,

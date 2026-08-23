@@ -134,6 +134,53 @@ def test_blob_reads_fallback_to_legacy_r2_when_supabase_misses(monkeypatch):
     assert repository.get_bytes("novels/legacy/ch_0001.txt") == b"legacy chapter"
 
 
+def test_blob_reads_fallback_to_public_r2_cdn_without_credentials(monkeypatch):
+    from app.config import settings
+
+    class StubProvider:
+        def __init__(self, name, active=False):
+            self.provider_name = name
+            self._active = active
+
+        @property
+        def is_active(self):
+            return self._active
+
+        def get_bytes(self, object_name, raise_on_error=False):
+            return None
+
+        def get_public_url(self, object_name):
+            return f"https://cdn.example/{object_name}"
+
+    class FakeResponse:
+        status_code = 200
+        content = b"public legacy chapter"
+
+        def raise_for_status(self):
+            raise AssertionError("unexpected HTTP error")
+
+    class FakeClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def get(self, url):
+            assert url == "https://cdn.example/novels/legacy/ch_0001.txt"
+            return FakeResponse()
+
+    monkeypatch.setattr(settings, "storage_provider", "supabase")
+    monkeypatch.setattr(settings, "cloudflare_r2_public_url", "https://cdn.example")
+    monkeypatch.setattr("app.infrastructure.storage.legacy_storage.httpx.Client", lambda **_kwargs: FakeClient())
+    repository = StorageRepository()
+    repository.supabase_provider = StubProvider("supabase", active=True)
+    repository.r2_provider = StubProvider("r2", active=False)
+    repository.local_provider = StubProvider("local", active=True)
+
+    assert repository.get_bytes("novels/legacy/ch_0001.txt") == b"public legacy chapter"
+
+
 class FakeR2Client:
     def __init__(self):
         self.objects = {}

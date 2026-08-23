@@ -875,6 +875,21 @@ class StorageRepository:
             if data is not None:
                 return data
 
+        # Public R2 CDN remains readable for legacy objects even without S3 credentials.
+        if settings.cloudflare_r2_public_url:
+            public_url = self.r2_provider.get_public_url(object_name)
+            try:
+                with httpx.Client(timeout=60.0) as client:
+                    response = client.get(public_url)
+                    if response.status_code == 200:
+                        return response.content
+                    if response.status_code != 404 and raise_on_error:
+                        response.raise_for_status()
+            except Exception as exc:
+                if raise_on_error:
+                    raise exc
+                logger.debug("Public R2 fallback miss (%s): %s", object_name, exc)
+
         if active_provider != self.local_provider:
             return self.local_provider.get_bytes(object_name, raise_on_error=raise_on_error)
         return None

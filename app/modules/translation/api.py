@@ -20,6 +20,7 @@ from app.infrastructure.cache.direct_translation import DirectTranslationCache
 from app.config import settings
 from app.api.dependencies import require_write_access
 from app.api.uploads import read_upload_limited
+from app.infrastructure.jobs import limited_background_work
 
 router = APIRouter(prefix="/translate", tags=["Translation"])
 direct_translation_cache = DirectTranslationCache()
@@ -57,6 +58,7 @@ class DirectTextResponse(BaseModel):
     address_resolution: AddressResolutionResponse
 
 
+@limited_background_work
 async def run_translation_background_job(
     job_id: str,
     input_file_path: str,
@@ -193,7 +195,7 @@ async def translate_text_direct_endpoint(
 ):
     if not req.text.strip():
         raise HTTPException(status_code=400, detail="Van ban goc khong duoc rong.")
-    if len(req.text.encode("utf-8")) > settings.max_text_input_chars:
+    if len(req.text) > settings.max_text_input_chars:
         raise HTTPException(status_code=413, detail="Van ban vuot qua gioi han cho phep.")
 
     key = req.api_key or x_api_key

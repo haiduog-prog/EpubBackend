@@ -117,7 +117,10 @@ class LegacyLibraryService:
         cover_filename: Optional[str] = None,
         overwrite: bool = True,
     ) -> NovelMetadata:
-        novel_id = (req.novel_id or slugify(req.title)).strip().lower()
+        supplied_novel_id = (req.novel_id or "").strip().lower()
+        if supplied_novel_id and not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,127}", supplied_novel_id):
+            raise ValueError("novel_id chỉ được chứa chữ thường, số, dấu gạch ngang và gạch dưới.")
+        novel_id = supplied_novel_id or slugify(req.title)
         existing = self.get_novel(novel_id)
 
         cover_url = existing.cover_url if existing else None
@@ -184,19 +187,7 @@ class LegacyLibraryService:
 
 
         meta_key = self._novel_meta_key(novel_id)
-        data = None
-        if storage_repo.is_blob_active:
-            data = storage_repo.download_json(meta_key)
-
-        if not data:
-            # Check local file fallback
-            local_meta = os.path.join("storage", "novels", novel_id, "metadata.json")
-            if os.path.exists(local_meta):
-                try:
-                    with open(local_meta, "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                except Exception as exc:
-                    logger.warning("Failed to load local novel meta: %s", exc)
+        data = storage_repo.download_json(meta_key)
 
         if data:
             meta = NovelMetadata.model_validate(data)
@@ -315,15 +306,7 @@ class LegacyLibraryService:
         # Xóa luôn Book Bible liên quan đến bộ truyện
         storage_repo.delete_bible(novel_id)
 
-        # Xóa local metadata file nếu có
-        try:
-            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-            local_meta = os.path.join(project_root, "storage", "novels", novel_id)
-            if os.path.exists(local_meta):
-                import shutil
-                shutil.rmtree(local_meta, ignore_errors=True)
-        except Exception:
-            pass
+        storage_repo.local_provider.delete_file(self._novel_meta_key(novel_id))
 
         self._cache.pop(novel_id, None)
         return True
@@ -403,11 +386,6 @@ class LegacyLibraryService:
                 return data_bytes.decode("utf-8")
             except Exception:
                 return data_bytes.decode("latin1", errors="ignore")
-
-        local_path = os.path.join("storage", key)
-        if os.path.exists(local_path):
-            with open(local_path, "r", encoding="utf-8") as f:
-                return f.read()
 
         return None
 
@@ -602,7 +580,7 @@ class LegacyLibraryService:
 
         if not output_path:
             os.makedirs(os.path.join("storage", "outputs"), exist_ok=True)
-            output_path = os.path.join("storage", "outputs", f"{novel_id}_vi.epub")
+            output_path = os.path.join("storage", "outputs", f"{slugify(novel_id)}_vi.epub")
 
         # Luôn biên dịch sách EPUB hoàn chỉnh từ toàn bộ các chương đã gộp trong kho
         book = epub.EpubBook()
@@ -622,17 +600,6 @@ class LegacyLibraryService:
                 if not cover_key.startswith("novels/"):
                     cover_key = f"novels/{novel_id}/{cover_key}"
         cover_content = storage_repo.get_bytes(cover_key) if cover_key else None
-        if not cover_content:
-            for extension in ("jpg", "jpeg", "png", "webp"):
-                local_cover = os.path.join("storage", "novels", novel_id, f"cover.{extension}")
-                if os.path.exists(local_cover):
-                    try:
-                        with open(local_cover, "rb") as cf:
-                            cover_content = cf.read()
-                        break
-                    except Exception:
-                        pass
-
         if cover_content:
             try:
                 book.set_cover("cover.jpg", cover_content)
@@ -1262,30 +1229,21 @@ class LegacyLibraryService:
             if storage_repo.is_blob_active:
                 storage_repo.upload_json(key, data)
 
-            local_dir = os.path.join("storage", "novels", meta.novel_id)
-            os.makedirs(local_dir, exist_ok=True)
-            with open(os.path.join(local_dir, "metadata.json"), "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
+            storage_repo.local_provider.put_json(key, data)
 
     def _save_raw_file(self, key: str, data: bytes, content_type: str = "application/octet-stream") -> Optional[str]:
         url = storage_repo.put_bytes(key, data, content_type=content_type)
         if url:
             return url
 
-        local_path = os.path.join("storage", key)
-        os.makedirs(os.path.dirname(local_path), exist_ok=True)
-        with open(local_path, "wb") as f:
-            f.write(data)
-        return f"/storage/{key}"
+        local_url = storage_repo.local_provider.put_bytes(key, data, content_type=content_type)
+        if local_url:
+            return local_url
+        raise ValueError("Không thể lưu file vào local storage.")
 
     def _delete_raw_file(self, key: str) -> None:
         storage_repo.delete_file(key)
-        local_path = os.path.join("storage", key)
-        try:
-            if os.path.isfile(local_path):
-                os.unlink(local_path)
-        except OSError as exc:
-            logger.warning("Failed to remove stale local file %s: %s", local_path, exc)
+        storage_repo.local_provider.delete_file(key)
 
 
 legacy_library_service = LegacyLibraryService()

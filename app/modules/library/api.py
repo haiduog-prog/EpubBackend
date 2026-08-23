@@ -55,7 +55,10 @@ async def create_novel_endpoint(
         description=description or "",
         novel_id=novel_id,
     )
-    return library_service.create_novel(req, cover_data=cover_data, cover_filename=cover_filename)
+    try:
+        return library_service.create_novel(req, cover_data=cover_data, cover_filename=cover_filename)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/novels/import-epub", response_model=ImportJobStatus)

@@ -2,9 +2,11 @@ import hashlib
 import json
 import logging
 import threading
+import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from app.config import settings
 from app.schemas.book_bible import BookBible
 
 logger = logging.getLogger("EpubBackend.TranslationCache")
@@ -61,6 +63,22 @@ class DirectTranslationCache:
             except (OSError, ValueError, TypeError) as exc:
                 logger.warning("[CACHE] invalid key=%s error=%s", key[:12], exc)
                 return None
+            cache_timestamp = data.get("created_at")
+            if cache_timestamp is None:
+                try:
+                    cache_timestamp = path.stat().st_mtime
+                except OSError:
+                    return None
+            try:
+                is_expired = (
+                    settings.cache_ttl_seconds > 0
+                    and time.time() - float(cache_timestamp) > settings.cache_ttl_seconds
+                )
+            except (TypeError, ValueError):
+                is_expired = True
+            if is_expired:
+                path.unlink(missing_ok=True)
+                return None
             source_revision = data.get("source_bible_revision")
             result_revision = data.get("result_bible_revision")
             if current_bible_revision not in {source_revision, result_revision}:
@@ -83,6 +101,7 @@ class DirectTranslationCache:
         path = self.cache_dir / f"{key}.json"
         temporary_path = path.with_suffix(".tmp")
         data = {
+            "created_at": time.time(),
             "source_bible_revision": source_bible_revision,
             "result_bible_revision": book_bible.bible_revision,
             "translated_text": translated_text,
@@ -91,6 +110,13 @@ class DirectTranslationCache:
         with self._lock:
             temporary_path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
             temporary_path.replace(path)
+            max_entries = max(1, settings.cache_max_entries)
+            cache_files = sorted(
+                self.cache_dir.glob("*.json"),
+                key=lambda item: item.stat().st_mtime,
+            )
+            for stale_path in cache_files[:-max_entries]:
+                stale_path.unlink(missing_ok=True)
 
 
 __all__ = ["DirectTranslationCache"]

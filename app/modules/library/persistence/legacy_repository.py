@@ -279,6 +279,7 @@ class LibraryRepository:
             model=model.model,
             novel_id=model.novel_id,
             chapter_index=model.chapter_index,
+            chapter_id=model.chapter_id,
             created_at=model.created_at.isoformat() if model.created_at else '',
             completed_at=model.completed_at.isoformat() if model.completed_at else None,
         )
@@ -302,6 +303,7 @@ class LibraryRepository:
         model.model = job.model
         model.novel_id = job.novel_id
         model.chapter_index = job.chapter_index
+        model.chapter_id = job.chapter_id
 
         if job.completed_at:
             try:

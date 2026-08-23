@@ -19,7 +19,7 @@ class StorageSummaryResponse(BaseModel):
 
 
 @router.get("/storage/summary", response_model=StorageSummaryResponse)
-def get_storage_summary():
+def get_storage_summary(_: None = Depends(require_write_access)):
     return StorageSummaryResponse(
         jobs=storage_repo.list_jobs(),
         bibles=storage_repo.list_bibles(),

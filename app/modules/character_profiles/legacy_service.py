@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import threading
 import uuid
 import os
@@ -46,6 +47,14 @@ logger = logging.getLogger("EpubBackend.CharacterProfileService")
 
 def _norm(value: Optional[str]) -> str:
     return " ".join((value or "").casefold().split())
+
+
+def _safe_storage_segment(value: Optional[str]) -> str:
+    """Return a stable filesystem-safe segment for legacy profile mirrors."""
+    candidate = str(value or "").strip()
+    if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", candidate):
+        return candidate
+    return f"unsafe-{_hash(candidate, 24)}"
 
 
 def _is_cjk(text: str) -> bool:
@@ -1584,7 +1593,13 @@ class CharacterProfileService:
             if settings.structured_storage_backend in ("legacy", "dual"):
                 try:
                     root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-                    local_dir = os.path.join(root_dir, "storage", "novels", book_id, "profile")
+                    local_dir = os.path.join(
+                        root_dir,
+                        "storage",
+                        "novels",
+                        _safe_storage_segment(book_id),
+                        "profile",
+                    )
                     if os.path.exists(local_dir):
                         import shutil
                         shutil.rmtree(local_dir, ignore_errors=True)
@@ -2430,6 +2445,8 @@ class CharacterProfileService:
                 novel_folder = payload["book_id"]
 
             novel_folder = self._resolve_novel_folder(novel_folder, payload)
+            safe_novel_folder = _safe_storage_segment(novel_folder)
+            safe_document_id = _safe_storage_segment(document_id)
 
             # 0. Sync to PostgreSQL Database if backend is dual or postgres
             if settings.structured_storage_backend in ("dual", "postgres"):
@@ -2483,7 +2500,7 @@ class CharacterProfileService:
             # 2. Sync to Cloudflare R2 bucket if active (only if legacy or dual)
             if settings.structured_storage_backend in ("legacy", "dual") and self.storage_repo and getattr(self.storage_repo, "is_blob_active", False):
                 try:
-                    r2_key = f"novels/{novel_folder}/profile/{collection}/{document_id}.json"
+                    r2_key = f"novels/{safe_novel_folder}/profile/{collection}/{safe_document_id}.json"
                     self.storage_repo.upload_json(r2_key, payload)
                 except Exception as exc:
                     logger.warning("Book profile R2 mirror failed novel=%s collection=%s doc=%s: %s", novel_folder, collection, document_id, exc)
@@ -2492,9 +2509,16 @@ class CharacterProfileService:
             if settings.structured_storage_backend in ("legacy", "dual"):
                 try:
                     project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-                    base_dir = os.path.join(project_root, "storage", "novels", novel_folder, "profile", collection)
+                    base_dir = os.path.join(
+                        project_root,
+                        "storage",
+                        "novels",
+                        safe_novel_folder,
+                        "profile",
+                        _safe_storage_segment(collection),
+                    )
                     os.makedirs(base_dir, exist_ok=True)
-                    file_path = os.path.join(base_dir, f"{document_id}.json")
+                    file_path = os.path.join(base_dir, f"{safe_document_id}.json")
                     with open(file_path, "w", encoding="utf-8") as f:
                         json.dump(payload, f, ensure_ascii=False, indent=2)
                 except Exception as exc:

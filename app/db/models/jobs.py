@@ -16,6 +16,7 @@ class TranslationJobModel(Base):
     job_id: Mapped[str] = mapped_column(String, primary_key=True)
     novel_id: Mapped[str] = mapped_column(String, nullable=False, default='')
     chapter_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    chapter_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     filename: Mapped[str] = mapped_column(String, nullable=False, default='')
     input_type: Mapped[str] = mapped_column(String, nullable=False, default='txt')
     status: Mapped[str] = mapped_column(String, nullable=False, default='pending')

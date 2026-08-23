@@ -130,6 +130,7 @@ def test_jobs_repository(db_session):
         input_type=InputType.EPUB,
         status=JobStatusEnum.PROCESSING,
         progress_percentage=30.0,
+        chapter_id='edition-chapter-7',
     )
     saved_tjob = LibraryRepository.save_translation_job(db_session, tjob)
     assert saved_tjob.job_id == 'tjob-1'
@@ -138,6 +139,7 @@ def test_jobs_repository(db_session):
     fetch_tjob = LibraryRepository.get_translation_job(db_session, 'tjob-1')
     assert fetch_tjob is not None
     assert fetch_tjob.progress_percentage == 30.0
+    assert fetch_tjob.chapter_id == 'edition-chapter-7'
 
 
 def test_book_bible_repository(db_session):

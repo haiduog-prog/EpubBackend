@@ -3,9 +3,11 @@ import json
 import logging
 import mimetypes
 import os
+import re
 import threading
 import time
 from datetime import datetime, timezone
+from pathlib import Path, PurePosixPath
 from typing import Dict, List, Optional
 
 import boto3
@@ -531,6 +533,48 @@ class LocalStorageProvider(BaseStorageProvider):
     def __init__(self, base_dir: str = "storage"):
         self.base_dir = base_dir
 
+    @staticmethod
+    def _safe_key(object_name: str, allow_empty: bool = False) -> str:
+        normalized = str(object_name or "").replace("\\", "/")
+        if not normalized and allow_empty:
+            return ""
+        if (
+            not normalized
+            or normalized.startswith("/")
+            or re.match(r"^[A-Za-z]:", normalized)
+        ):
+            raise ValueError("Storage object path must be relative.")
+
+        parts = PurePosixPath(normalized).parts
+        if not parts or any(part in {"", ".", ".."} for part in parts):
+            raise ValueError("Storage object path contains an unsafe segment.")
+        return "/".join(parts)
+
+    def _safe_path(self, object_name: str) -> Path:
+        key = self._safe_key(object_name)
+        base = Path(self.base_dir).resolve()
+        path = (base / Path(*key.split("/"))).resolve()
+        try:
+            path.relative_to(base)
+        except ValueError as exc:
+            raise ValueError("Storage object path escapes the storage directory.") from exc
+        return path
+
+    def _candidate_paths(self, object_name: str) -> List[Path]:
+        key = self._safe_key(object_name)
+        paths = [self._safe_path(key)]
+        # Legacy data/ files historically lived beside storage/. Preserve that
+        # compatibility only for the fixed data/ namespace, never arbitrary paths.
+        if key == "data" or key.startswith("data/"):
+            data_root = Path("data").resolve()
+            legacy_path = Path(key).resolve()
+            try:
+                legacy_path.relative_to(data_root)
+            except ValueError as exc:
+                raise ValueError("Legacy storage path escapes the data directory.") from exc
+            paths.append(legacy_path)
+        return paths
+
     @property
     def provider_name(self) -> str:
         return "local"
@@ -540,17 +584,18 @@ class LocalStorageProvider(BaseStorageProvider):
         return True
 
     def get_public_url(self, object_name: str) -> str:
-        return f"/storage/{object_name.lstrip('/')}"
+        return f"/storage/{self._safe_key(object_name)}"
 
     def put_bytes(self, object_name: str, data: bytes, content_type: str = "application/octet-stream") -> Optional[str]:
-        path = os.path.join(self.base_dir, object_name.lstrip("/"))
+        path = None
         try:
-            os.makedirs(os.path.dirname(path), exist_ok=True)
+            path = self._safe_path(object_name)
+            path.parent.mkdir(parents=True, exist_ok=True)
             with open(path, "wb") as f:
                 f.write(data)
             return self.get_public_url(object_name)
         except Exception as exc:
-            logger.warning("Failed to write local file %s: %s", path, exc)
+            logger.warning("Failed to write local file %s: %s", object_name, exc)
             return None
 
     def upload_file(self, file_path: str, object_name: str, content_type: Optional[str] = None) -> Optional[str]:
@@ -565,14 +610,16 @@ class LocalStorageProvider(BaseStorageProvider):
             return None
 
     def get_bytes(self, object_name: str, raise_on_error: bool = False) -> Optional[bytes]:
-        paths = [
-            os.path.join(self.base_dir, object_name.lstrip("/")),
-            object_name,
-        ]
-        for p in paths:
-            if os.path.exists(p) and os.path.isfile(p):
+        try:
+            paths = self._candidate_paths(object_name)
+        except ValueError:
+            if raise_on_error:
+                raise
+            return None
+        for path in paths:
+            if path.exists() and path.is_file():
                 try:
-                    with open(p, "rb") as f:
+                    with open(path, "rb") as f:
                         return f.read()
                 except Exception as exc:
                     if raise_on_error:
@@ -582,14 +629,15 @@ class LocalStorageProvider(BaseStorageProvider):
         return None
 
     def put_json(self, object_name: str, data: dict) -> bool:
-        path = os.path.join(self.base_dir, object_name.lstrip("/"))
+        path = None
         try:
-            os.makedirs(os.path.dirname(path), exist_ok=True)
+            path = self._safe_path(object_name)
+            path.parent.mkdir(parents=True, exist_ok=True)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
             return True
         except Exception as exc:
-            logger.warning("Failed to write local JSON %s: %s", path, exc)
+            logger.warning("Failed to write local JSON %s: %s", object_name, exc)
             return False
 
     def get_json(self, object_name: str, raise_on_error: bool = False) -> Optional[dict]:
@@ -603,19 +651,24 @@ class LocalStorageProvider(BaseStorageProvider):
             return None
 
     def file_exists(self, object_name: str) -> bool:
-        path1 = os.path.join(self.base_dir, object_name.lstrip("/"))
-        return os.path.exists(path1) or os.path.exists(object_name)
+        try:
+            return any(path.exists() for path in self._candidate_paths(object_name))
+        except ValueError:
+            return False
 
     def delete_file(self, object_name: str) -> bool:
         success = False
-        paths = [os.path.join(self.base_dir, object_name.lstrip("/")), object_name]
-        for p in paths:
-            if os.path.exists(p) and os.path.isfile(p):
+        try:
+            paths = self._candidate_paths(object_name)
+        except ValueError:
+            return False
+        for path in paths:
+            if path.exists() and path.is_file():
                 try:
-                    os.remove(p)
+                    path.unlink()
                     success = True
                 except Exception as exc:
-                    logger.warning("Failed to delete local file %s: %s", p, exc)
+                    logger.warning("Failed to delete local file %s: %s", path, exc)
         return success
 
     def delete_files(self, object_names: List[str]) -> int:
@@ -627,7 +680,12 @@ class LocalStorageProvider(BaseStorageProvider):
 
     def list_files(self, prefix: str = "", raise_on_error: bool = False) -> List[str]:
         keys = set()
-        clean_prefix = prefix.strip("/")
+        try:
+            clean_prefix = self._safe_key(prefix, allow_empty=True)
+        except ValueError:
+            if raise_on_error:
+                raise
+            return []
         if os.path.exists(self.base_dir):
             for root, _, files in os.walk(self.base_dir):
                 for f in files:

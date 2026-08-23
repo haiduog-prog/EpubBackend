@@ -67,6 +67,12 @@ class Settings(BaseModel):
     # Cache settings
     enable_prompt_caching: bool = True
     cache_ttl_seconds: int = 300  # Default 5 min TTL
+    cache_max_entries: int = Field(default_factory=lambda: int(os.getenv("CACHE_MAX_ENTRIES", "1000")))
+
+    # In-process background work limits
+    max_concurrent_background_jobs: int = Field(
+        default_factory=lambda: int(os.getenv("MAX_CONCURRENT_BACKGROUND_JOBS", "2"))
+    )
 
     # Database & Structured Storage configuration
     database_url: str = Field(default_factory=lambda: os.getenv("DATABASE_URL", "sqlite:///./storage/local_db.sqlite3"))

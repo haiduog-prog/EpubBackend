@@ -12,6 +12,8 @@ from fastapi import APIRouter, Header, HTTPException, Query, Request, status
 
 from app.infrastructure.storage.facade import storage_repo
 from app.api.dependencies import require_write_access
+from app.config import settings
+from app.infrastructure.jobs import limited_background_work
 from app.llm import create_llm_client
 from app.schemas.character_profile import (
     ApproveAllRequest,
@@ -141,6 +143,7 @@ def put_chapter_mapping(
         raise HTTPException(status_code=404, detail=str(exc).strip("'")) from exc
 
 
+@limited_background_work
 async def _run_raw_extraction(
     submission_id: str,
     content: str,
@@ -181,6 +184,8 @@ async def submit_chapter(
     _require_trusted_client(x_book_bible_client_key)
     if payload.local_chapter_index != local_chapter:
         raise HTTPException(status_code=400, detail="Path and payload chapter indexes differ.")
+    if payload.content and len(payload.content) > settings.max_text_input_chars:
+        raise HTTPException(status_code=413, detail="Nội dung chương vượt quá giới hạn cho phép.")
     
     title = book_title or x_book_title
     author = book_author or x_book_author

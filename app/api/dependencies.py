@@ -19,13 +19,9 @@ def require_write_access(
     """
     expected = os.getenv("BOOK_BIBLE_WRITE_TOKEN", settings.book_bible_write_token).strip()
     app_env = os.getenv("APP_ENV", settings.app_env)
-    protected_environment = app_env.lower() in {
-        "production",
-        "prod",
-        "staging",
-    }
+    local_environment = app_env.lower() in {"development", "dev", "local", "test"}
     if not expected:
-        if protected_environment:
+        if not local_environment:
             raise HTTPException(status_code=503, detail="Write authentication is not configured.")
         return
     if not x_book_bible_client_key:

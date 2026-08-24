@@ -2,7 +2,7 @@
   "version": 1,
   "repository": "https://huggingface.co/doof-ferb/nghitts-copy",
   "revision": "0370fc001c63c28166ecd1df7fb394b6baab048c",
-  "configUrl": "https://huggingface.co/doof-ferb/nghitts-copy/resolve/0370fc001c63c28166ecd1df7fb394b6baab048c/piper-tts/config.json",
+  "configUrl": "/reader-assets/piper-config.json",
   "voices": [
     {"id":"minhquang","displayName":"Minh Quang","source":"r2","modelUrl":"https://pub-698cb88b6743407a8590d8e8d2f5b65b.r2.dev/reader-tts/models/minhquang/0a559df4c4eaab442e0d2007f32888f87567900dfe1a4e9f1632f64070090e17/minhquang.onnx","fallbackUrl":"https://huggingface.co/doof-ferb/nghitts-copy/resolve/0370fc001c63c28166ecd1df7fb394b6baab048c/piper-tts/minhquang.onnx","revision":"0370fc001c63c28166ecd1df7fb394b6baab048c","sizeBytes":63516050,"sha256":"0a559df4c4eaab442e0d2007f32888f87567900dfe1a4e9f1632f64070090e17","isDefault":true},
     {"id":"adam1","displayName":"Adam","source":"huggingface","modelUrl":"https://huggingface.co/doof-ferb/nghitts-copy/resolve/0370fc001c63c28166ecd1df7fb394b6baab048c/piper-tts/adam1.onnx","revision":"0370fc001c63c28166ecd1df7fb394b6baab048c","sizeBytes":63531379,"sha256":"90e73d171447825fa8442fea8bf39c54bcfb206958f05170361e0fa3ba5c48eb","isDefault":false},

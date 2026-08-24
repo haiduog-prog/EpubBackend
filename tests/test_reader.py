@@ -166,6 +166,10 @@ def test_reader_api_is_read_only_and_maps_expected_errors(reader_service, monkey
     assets = client.get("/reader-assets/voices.v1.json")
     assert assets.status_code == 200
     assert len(assets.json()["voices"]) == 25
+    assert assets.json()["configUrl"] == "/reader-assets/piper-config.json"
+    piper_config = client.get("/reader-assets/piper-config.json")
+    assert piper_config.status_code == 200
+    assert piper_config.json()["phoneme_type"] == "espeak"
 
     reader_paths = {
         path: methods

@@ -53,6 +53,13 @@
 - **Fix**: Kiểm tra `/api/auth/config` trước; production đặt đủ env trên backend và không dùng service-role key làm publishable key.
 - **Files liên quan**: `app/api/auth.py`, `app/static/auth.js`, `render.yaml`
 
+### Piper Config CORS Blocked Browser Playback
+- **Ngày**: 2026-08-24
+- **Vấn đề**: Piper `config.json` từ Hugging Face chỉ cho CORS từ `https://huggingface.co`; worker chạy trên Reader origin không đọc được config nên Play dừng trước khi tạo audio.
+- **Root cause**: Manifest trỏ trực tiếp tới config ngoài origin, trong khi model CDN có CORS nhưng config không.
+- **Fix**: Lưu config theo revision vào `/reader-assets/piper-config.json` và trỏ manifest về same-origin; model vẫn tải từ R2 rồi fallback Hugging Face.
+- **Files liên quan**: `app/static/reader-tts/piper-config.json`, `app/static/reader-tts/voices.v1.json`, `tests/test_reader.py`
+
 ## How-To
 
 ### Verify Reader Production

@@ -37,6 +37,9 @@ class LibraryService:
     def delete_novel(self, novel_id):
         return self.novels.delete(novel_id)
 
+    def bulk_delete_novels(self, novel_ids):
+        return self.novels.bulk_delete(novel_ids)
+
     def add_or_update_chapter(self, novel_id, chapter_index, chapter_title, content):
         return self.chapters.save(novel_id, chapter_index, chapter_title, content)
 

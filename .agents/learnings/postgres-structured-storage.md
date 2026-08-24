@@ -1,7 +1,7 @@
 # PostgreSQL Structured Storage & Migration
 
-> Tổng hợp kiến thức về hạ tầng lưu trữ cơ sở dữ liệu có cấu trúc Render PostgreSQL / Supabase, mô hình Repository, quy trình Backfill từ Cloudflare R2 và cơ chế Audit an toàn.
-> Cập nhật lần cuối: 2026-08-20
+> Tổng hợp kiến thức về hạ tầng lưu trữ cơ sở dữ liệu có cấu trúc Render PostgreSQL / Supabase, mô hình Repository, quy trình Backfill từ Cloudflare R2, cơ chế Audit an toàn và Quản lý/Xóa dữ liệu đa tầng.
+> Cập nhật lần cuối: 2026-08-24
 
 ---
 
@@ -22,10 +22,10 @@
 - **Chi tiết**: Mọi thao tác đọc/ghi Database đều đi qua các ClassMethod của tầng Repository (`LibraryRepository`, `BookBibleRepository`, `CharacterProfileRepository`) nhận `session: Session`. Tầng Service điều phối qua context manager `with db_session() as session:`, đảm bảo transaction atomicity, tự động rollback khi exception và giải phóng connection về pool.
 - **Files liên quan**: `app/db/session.py`, `app/repositories/`
 
-### Cascading Foreign Key Integrity
-- **Ngày**: 2026-08-19
-- **Chi tiết**: Các bảng liên kết (Chapters -> Novels, Events/Submissions/Editions -> ProfileBooks, Evidence -> ProfileEvents) cấu hình `ondelete='CASCADE'` trong SQLAlchemy DDL. Khi xóa một đầu sách (`delete_novel`, `delete_book`), database tự động dọn dẹp sạch sẽ toàn bộ bản ghi con trong 1 transaction duy nhất, không để lại orphan records.
-- **Files liên quan**: `app/db/models/library.py`, `app/db/models/character_profile.py`, `alembic/versions/2865c48fe099_initial_schema.py`
+### Cascading Foreign Key Integrity & Multi-Layer Bulk Deletion
+- **Ngày**: 2026-08-24
+- **Chi tiết**: Các bảng liên kết (Chapters -> Novels, Events/Submissions/Editions -> ProfileBooks, Evidence -> ProfileEvents) cấu hình `ondelete='CASCADE'` trong SQLAlchemy DDL. Khi xóa đơn hoặc xóa hàng loạt (`bulk_delete_novels`), database tự động dọn sạch bản ghi con trong 1 transaction, đồng thời service xóa toàn bộ file trong bucket prefix `novels/{novel_id}/` trên Supabase/R2 Storage và xóa Book Bible, Character Profile.
+- **Files liên quan**: `app/db/models/library.py`, `app/modules/library/legacy_service.py`, `app/modules/library/api.py`
 
 ### One-Time Backfill vs Safe Build Commands
 - **Ngày**: 2026-08-19
@@ -35,6 +35,20 @@
 ---
 
 ## Bugs & Solutions
+
+### 502 Bad Gateway / Timeout on Large EPUB Export with Supabase Storage
+- **Ngày**: 2026-08-24
+- **Vấn đề**: Gọi `/api/v1/library/novels/{novel_id}/export/epub` cho truyện lớn (500+ chương) bị HTTP 502 Bad Gateway sau ~69s trên Render.
+- **Root cause**: Quá trình biên dịch EPUB tải tuần tự 500+ file text qua HTTP API của Supabase Storage tạo latency lớn, trong khi endpoint chưa tự động chuyển hướng CDN khi file `full.epub` đã tồn tại trên Supabase Storage mà thiếu biến `SUPABASE_STORAGE_PUBLIC_URL`.
+- **Fix**: Sử dụng `storage_repo.get_public_url(storage_key)` tự động tính toán Supabase Public CDN URL (`/storage/v1/object/public/...`) và trả về `307 Temporary Redirect` ngay lập tức nếu file đã có trên Storage.
+- **Files liên quan**: `app/modules/library/api.py`, `app/infrastructure/storage/legacy_storage.py`
+
+### Security Boundary Violation with Inline Template Literals
+- **Ngày**: 2026-08-24
+- **Vấn đề**: `test_security_boundaries.py` thất bại vì phát hiện cú pháp `onclick="openNovelDetail('${...}')"` trong chuỗi HTML động.
+- **Root cause**: Chèn biến JavaScript trực tiếp vào inline event handler có nguy cơ XSS và vi phạm quy chuẩn bảo mật frontend.
+- **Fix**: Đổi sang dùng HTML5 Data Attributes (`data-novel-id`, `data-novel-title`) và gắn event listener bằng `querySelectorAll().forEach(btn => btn.addEventListener('click', ...))` sau khi render.
+- **Files liên quan**: `app/static/index.html`, `tests/test_security_boundaries.py`
 
 ### Alembic CLI Not Recognized & Python PATH on Windows
 - **Ngày**: 2026-08-20
@@ -96,6 +110,14 @@
 
 ## How-To
 
+### Quy trình Xóa Nhanh & Xóa Hàng Loạt Tiểu Thuyết
+- **Ngày**: 2026-08-24
+- **Bước thực hiện**:
+  1. **API**: Gọi `POST /api/v1/library/novels/bulk-delete` với body `{"novel_ids": ["slug-1", "slug-2"]}`.
+  2. **Web UI**: Vào tab **Database Inspector** ➔ Bảng **Danh Sách Tiểu Thuyết Trong Database** ➔ Tick chọn các truyện ➔ Bấm **Xóa (N) Truyện Đã Chọn** ➔ Xác nhận trên Confirm Modal.
+  3. **Chi tiết từng truyện**: Mở modal Novel Detail ➔ Bấm nút **Xóa Truyện** trên thanh tiêu đề.
+- **Files liên quan**: `app/modules/library/api.py`, `app/static/index.html`, `app/modules/library/legacy_service.py`
+
 ### Quy trình Cấu hình Render Web Service + Supabase Database
 - **Ngày**: 2026-08-20
 - **Bước thực hiện**:
@@ -145,4 +167,19 @@
 - **Chi tiết**: Tầng Blob Storage (ảnh bìa, nội dung TXT chương, file EPUB xuất bản) được thiết kế theo mô hình Strategy/Provider với interface `BaseStorageProvider`. Hỗ trợ `SupabaseStorageProvider` (thông qua REST API/CDN) và `R2StorageProvider` (boto3 S3 API). Cho phép chuyển đổi lưu trữ hoàn toàn sang Supabase hoặc quay lại Cloudflare R2 bằng cách đổi biến môi trường `STORAGE_PROVIDER=supabase` hoặc `STORAGE_PROVIDER=r2`. Các phương thức cũ như `upload_file_to_r2`, `file_exists_in_r2`, `is_r2_active` được giữ nguyên tương thích ngược để không làm gãy mã nguồn hiện hữu.
 - **Files liên quan**: `app/core/storage.py`, `app/config.py`, `render.yaml`, `scripts/migrate_r2_to_supabase_storage.py`
 
+### Dataset Event Listener Binding Pattern (XSS & Security Boundary Compliance)
+- **Ngày**: 2026-08-24
+- **Chi tiết**: Khi render động các bảng danh sách hoặc thẻ có action nút bấm (Mở, Xóa, Sửa), không sử dụng inline `onclick="fn('${var}')"`. Gán các thông tin vào `data-*` attribute và thực hiện query selector để bind event listeners, giúp frontend hoàn toàn tuân thủ CSP và các kiểm thử ranh giới bảo mật.
+- **Ví dụ code**:
+  ```javascript
+  tbody.innerHTML = items.map(item => `
+      <button class="btn btn-danger item-delete-btn" data-id="${escapeHtml(item.id)}" data-title="${escapeHtml(item.title)}">
+          Xóa
+      </button>
+  `).join('');
 
+  tbody.querySelectorAll('.item-delete-btn').forEach(btn => {
+      btn.addEventListener('click', () => confirmDelete(btn.dataset.id, btn.dataset.title));
+  });
+  ```
+- **Files liên quan**: `app/static/index.html`, `tests/test_security_boundaries.py`

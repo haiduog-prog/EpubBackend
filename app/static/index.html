@@ -243,6 +243,55 @@
             background: rgba(255, 255, 255, 0.15);
         }
 
+        .btn-danger {
+            background: #ef4444;
+            color: #ffffff;
+        }
+
+        .btn-danger:hover {
+            background: #dc2626;
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(239, 68, 68, 0.35);
+        }
+
+        /* Toast Notifications */
+        .toast-container {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            z-index: 99999;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            pointer-events: none;
+        }
+
+        .toast-item {
+            pointer-events: auto;
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 0.75rem 1.25rem;
+            color: #fff;
+            font-size: 0.88rem;
+            font-weight: 500;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            animation: toastSlideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: all 0.3s ease;
+        }
+
+        .toast-item.success { border-color: rgba(16, 185, 129, 0.5); color: #6ee7b7; }
+        .toast-item.error { border-color: rgba(239, 68, 68, 0.5); color: #fca5a5; }
+
+        @keyframes toastSlideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
         /* Book Bible Card */
         .bible-section {
             margin-top: 1.5rem;
@@ -739,6 +788,39 @@
                     Kiểm tra trực quan các Job dịch file (.epub/.txt) và các bộ từ điển Book Bible đã được lưu trữ trong Backend.
                 </p>
 
+                <!-- Section: Novels in Database -->
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem; margin-bottom:0.8rem;">
+                    <h4 style="color:#a5b4fc; font-size:0.95rem; margin:0;"><i class="fa-solid fa-book-bookmark"></i> Danh Sách Tiểu Thuyết Trong Database (<span id="db-novels-count">0</span>)</h4>
+                    <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
+                        <div style="position:relative;">
+                            <input type="text" id="db-novels-search" oninput="filterDbNovelsTable()" placeholder="Tìm tên hoặc slug..." style="background:rgba(15,23,42,0.8); border:1px solid var(--card-border); color:#fff; padding:0.35rem 0.7rem 0.35rem 1.8rem; border-radius:8px; font-size:0.82rem; width:190px; outline:none;">
+                            <i class="fa-solid fa-magnifying-glass" style="position:absolute; left:0.6rem; top:50%; transform:translateY(-50%); font-size:0.75rem; color:var(--text-sub);"></i>
+                        </div>
+                        <button class="btn btn-danger" id="btn-db-bulk-delete" onclick="bulkDeleteSelectedNovels()" style="display:none; padding:0.35rem 0.8rem; font-size:0.82rem;" title="Xóa các truyện đã tick chọn">
+                            <i class="fa-solid fa-trash"></i> Xóa (<span id="db-selected-count">0</span>) Truyện Đã Chọn
+                        </button>
+                    </div>
+                </div>
+                <div style="overflow-x:auto; border:1px solid var(--card-border); border-radius:10px; margin-bottom:2rem; background:rgba(15,23,42,0.4);">
+                    <table style="width:100%; border-collapse:collapse; text-align:left; font-size:0.85rem;">
+                        <thead style="background:#0f172a; border-bottom:1px solid var(--card-border); color:var(--text-sub);">
+                            <tr>
+                                <th style="padding:0.6rem 0.8rem; width:36px; text-align:center;">
+                                    <input type="checkbox" id="db-select-all-novels" onchange="toggleSelectAllDbNovels(this)" style="cursor:pointer;" title="Chọn tất cả">
+                                </th>
+                                <th style="padding:0.6rem;">Tên Truyện & Slug</th>
+                                <th style="padding:0.6rem;">Tác Giả</th>
+                                <th style="padding:0.6rem; text-align:center;">Tổng Chương</th>
+                                <th style="padding:0.6rem; text-align:center;">Đã Dịch</th>
+                                <th style="padding:0.6rem; text-align:right;">Thao Tác</th>
+                            </tr>
+                        </thead>
+                        <tbody id="db-novels-list">
+                            <tr><td colspan="6" style="padding:1.5rem; text-align:center; color:var(--text-sub);">Đang tải danh sách truyện...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
                 <!-- Section: Jobs -->
                 <h4 style="color:#a5b4fc; font-size:0.95rem; margin-bottom:0.8rem;"><i class="fa-solid fa-list-check"></i> Các Job Dịch File (.epub / .txt)</h4>
                 <div style="overflow-x:auto;">
@@ -1104,6 +1186,9 @@
                         <button class="btn" id="btn-export-epub" style="padding:0.4rem 0.8rem; font-size:0.8rem; background:#10b981;">
                             <i class="fa-solid fa-file-arrow-down"></i> Xuất EPUB
                         </button>
+                        <button class="btn btn-danger" id="btn-delete-novel-detail" onclick="deleteCurrentOpenNovel()" style="padding:0.4rem 0.8rem; font-size:0.8rem;" title="Xóa toàn bộ bộ truyện này khỏi Database và Storage">
+                            <i class="fa-solid fa-trash"></i> Xóa Truyện
+                        </button>
                         <button onclick="closeModal('modal-novel-detail')" style="background:none; border:none; color:var(--text-sub); font-size:1.4rem; cursor:pointer; margin-left:0.5rem;"><i class="fa-solid fa-xmark"></i></button>
                     </div>
                 </div>
@@ -1205,6 +1290,33 @@
                 </div>
             </div>
         </div>
+
+        <!-- MODAL: CONFIRM DELETE NOVEL -->
+        <div id="modal-confirm-delete" class="modal">
+            <div class="modal-content" style="max-width:480px; border:1px solid rgba(239,68,68,0.4); box-shadow:0 0 35px rgba(239,68,68,0.25);">
+                <div style="text-align:center; padding:0.5rem 0;">
+                    <div style="width:60px; height:60px; border-radius:50%; background:rgba(239,68,68,0.15); color:#ef4444; display:flex; align-items:center; justify-content:center; margin:0 auto 1rem; font-size:1.8rem; border:1px solid rgba(239,68,68,0.3);">
+                        <i class="fa-solid fa-triangle-exclamation"></i>
+                    </div>
+                    <h3 style="font-size:1.2rem; font-weight:700; color:#f8fafc; margin-bottom:0.5rem;" id="confirm-delete-title">Xác Nhận Xóa Truyện</h3>
+                    <p style="font-size:0.88rem; color:#cbd5e1; line-height:1.5;" id="confirm-delete-desc">
+                        Bạn có chắc chắn muốn xóa bộ truyện này khỏi Database và Storage không?
+                    </p>
+                    <div id="confirm-delete-details" style="margin:1rem 0; padding:0.8rem; background:rgba(15,23,42,0.8); border-radius:8px; border:1px solid rgba(255,255,255,0.08); font-size:0.82rem; text-align:left; color:var(--text-sub);">
+                    </div>
+                    <div style="display:flex; gap:0.75rem; justify-content:center; margin-top:1.5rem;">
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('modal-confirm-delete')" style="padding:0.6rem 1.2rem; font-size:0.88rem;">
+                            Hủy Bỏ
+                        </button>
+                        <button type="button" class="btn btn-danger" id="btn-confirm-delete-submit" style="padding:0.6rem 1.4rem; font-size:0.88rem;">
+                            <i class="fa-solid fa-trash"></i> Xóa Vĩnh Viễn
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="toast-container" class="toast-container"></div>
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -1510,18 +1622,244 @@
             }, 1500);
         }
 
+        let dbNovelsCache = [];
+
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            if (!container) return;
+            const toast = document.createElement('div');
+            toast.className = `toast-item ${type}`;
+            const icon = type === 'success' ? '<i class="fa-solid fa-circle-check"></i>' : '<i class="fa-solid fa-circle-xmark"></i>';
+            toast.innerHTML = `${icon} <span>${escapeHtml(message)}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateX(100%)';
+                setTimeout(() => toast.remove(), 300);
+            }, 3500);
+        }
+
+        function renderDbNovelsTable(novels) {
+            dbNovelsCache = novels || [];
+            const tbody = document.getElementById('db-novels-list');
+            const countSpan = document.getElementById('db-novels-count');
+            if (countSpan) countSpan.innerText = dbNovelsCache.length;
+
+            if (!dbNovelsCache || dbNovelsCache.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="padding:1.5rem; text-align:center; color:var(--text-sub);">Chưa có bộ tiểu thuyết nào trong Database</td></tr>';
+                updateDbSelectedCount();
+                return;
+            }
+
+            tbody.innerHTML = dbNovelsCache.map(n => {
+                const coverUrl = safeMediaUrl(n.cover_url);
+                const coverIcon = coverUrl
+                    ? `<img data-private-cover="${escapeHtml(coverUrl)}" style="width:28px; height:38px; object-fit:cover; border-radius:4px; flex-shrink:0;" onerror="this.outerHTML='<i class=\'fa-solid fa-book\' style=\'color:#818cf8; font-size:1.2rem;\'></i>'">`
+                    : `<i class="fa-solid fa-book" style="color:#818cf8; font-size:1.2rem; margin-right:4px;"></i>`;
+
+                return `<tr style="border-bottom:1px solid rgba(255,255,255,0.05);" data-novel-id="${escapeHtml(n.novel_id)}" data-title="${escapeHtml(n.title.toLowerCase())}">
+                    <td style="padding:0.6rem 0.8rem; text-align:center;">
+                        <input type="checkbox" class="db-novel-checkbox" value="${escapeHtml(n.novel_id)}" onchange="updateDbSelectedCount()" style="cursor:pointer;">
+                    </td>
+                    <td style="padding:0.6rem;">
+                        <div style="display:flex; align-items:center; gap:0.6rem;">
+                            ${coverIcon}
+                            <div>
+                                <div style="font-weight:600; color:#f8fafc;">${escapeHtml(n.title)}</div>
+                                <div style="font-size:0.75rem; color:#818cf8; font-family:monospace;">${escapeHtml(n.novel_id)}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td style="padding:0.6rem; color:var(--text-sub);">${escapeHtml(n.author || '-')}</td>
+                    <td style="padding:0.6rem; text-align:center; font-weight:600; color:#c7d2fe;">${n.total_chapters}</td>
+                    <td style="padding:0.6rem; text-align:center; color:#10b981; font-weight:600;">${n.translated_chapters}</td>
+                    <td style="padding:0.6rem; text-align:right;">
+                        <div style="display:flex; justify-content:flex-end; gap:0.4rem;">
+                            <button class="btn btn-secondary db-novel-open-btn" data-novel-id="${escapeHtml(n.novel_id)}" style="padding:0.25rem 0.6rem; font-size:0.75rem;" title="Mở chi tiết & dịch">
+                                <i class="fa-solid fa-folder-open"></i> Mở
+                            </button>
+                            <button class="btn btn-danger db-novel-delete-btn" data-novel-id="${escapeHtml(n.novel_id)}" data-novel-title="${escapeHtml(n.title)}" data-novel-chapters="${n.total_chapters}" style="padding:0.25rem 0.6rem; font-size:0.75rem;" title="Xóa bộ truyện này">
+                                <i class="fa-solid fa-trash"></i> Xóa
+                            </button>
+                        </div>
+                    </td>
+                </tr>`;
+            }).join('');
+
+            tbody.querySelectorAll('[data-private-cover]').forEach(image => loadPrivateCover(image, image.dataset.privateCover));
+            tbody.querySelectorAll('.db-novel-open-btn').forEach(btn => {
+                btn.addEventListener('click', () => openNovelDetail(btn.dataset.novelId || ''));
+            });
+            tbody.querySelectorAll('.db-novel-delete-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const novelId = btn.dataset.novelId || '';
+                    const title = btn.dataset.novelTitle || novelId;
+                    const chapters = parseInt(btn.dataset.novelChapters || '0', 10);
+                    confirmDeleteNovel(novelId, title, chapters);
+                });
+            });
+            updateDbSelectedCount();
+        }
+
+        function filterDbNovelsTable() {
+            const query = (document.getElementById('db-novels-search').value || '').trim().toLowerCase();
+            const rows = document.querySelectorAll('#db-novels-list tr[data-novel-id]');
+            rows.forEach(r => {
+                const id = r.getAttribute('data-novel-id') || '';
+                const title = r.getAttribute('data-title') || '';
+                if (!query || id.toLowerCase().includes(query) || title.includes(query)) {
+                    r.style.display = '';
+                } else {
+                    r.style.display = 'none';
+                }
+            });
+        }
+
+        function toggleSelectAllDbNovels(masterCb) {
+            const checkboxes = document.querySelectorAll('.db-novel-checkbox');
+            checkboxes.forEach(cb => {
+                const row = cb.closest('tr');
+                if (row && row.style.display !== 'none') {
+                    cb.checked = masterCb.checked;
+                }
+            });
+            updateDbSelectedCount();
+        }
+
+        function updateDbSelectedCount() {
+            const checked = document.querySelectorAll('.db-novel-checkbox:checked');
+            const bulkBtn = document.getElementById('btn-db-bulk-delete');
+            const countSpan = document.getElementById('db-selected-count');
+            if (countSpan) countSpan.innerText = checked.length;
+            if (bulkBtn) {
+                bulkBtn.style.display = checked.length > 0 ? 'inline-flex' : 'none';
+            }
+        }
+
+        let pendingDeleteAction = null;
+
+        function confirmDeleteNovel(novelId, title, chapterCount) {
+            const modal = document.getElementById('modal-confirm-delete');
+            const titleElem = document.getElementById('confirm-delete-title');
+            const descElem = document.getElementById('confirm-delete-desc');
+            const detailsElem = document.getElementById('confirm-delete-details');
+            const submitBtn = document.getElementById('btn-confirm-delete-submit');
+
+            titleElem.innerText = `Xóa Bộ Truyện: "${title || novelId}"`;
+            descElem.innerHTML = `Bạn có chắc chắn muốn xóa vĩnh viễn bộ truyện này?<br><span style="color:#ef4444; font-size:0.82rem;">⚠️ Hành động này sẽ xóa sạch dữ liệu trong PostgreSQL, Storage và Book Bible!</span>`;
+            detailsElem.innerHTML = `
+                <div><strong>Slug ID:</strong> <code style="color:#c7d2fe;">${escapeHtml(novelId)}</code></div>
+                <div style="margin-top:0.25rem;"><strong>Tổng số chương:</strong> ${chapterCount || 0} chương</div>
+                <div style="margin-top:0.25rem; color:#94a3b8;"><strong>Dữ liệu liên đới:</strong> Metadata, Chapters Text, EPUB Cache, Character Profile, Timeline Events</div>
+            `;
+
+            pendingDeleteAction = () => executeDeleteNovels([novelId]);
+            submitBtn.onclick = () => {
+                if (pendingDeleteAction) pendingDeleteAction();
+            };
+
+            modal.classList.add('active');
+        }
+
+        function bulkDeleteSelectedNovels() {
+            const checked = Array.from(document.querySelectorAll('.db-novel-checkbox:checked')).map(cb => cb.value);
+            if (checked.length === 0) return;
+
+            const modal = document.getElementById('modal-confirm-delete');
+            const titleElem = document.getElementById('confirm-delete-title');
+            const descElem = document.getElementById('confirm-delete-desc');
+            const detailsElem = document.getElementById('confirm-delete-details');
+            const submitBtn = document.getElementById('btn-confirm-delete-submit');
+
+            titleElem.innerText = `Xóa Hàng Loạt (${checked.length}) Bộ Truyện`;
+            descElem.innerHTML = `Bạn có chắc chắn muốn xóa vĩnh viễn <strong>${checked.length}</strong> bộ truyện đã chọn khỏi Database & Storage?`;
+            detailsElem.innerHTML = `
+                <div><strong>Danh sách Novel ID:</strong></div>
+                <div style="max-height:80px; overflow-y:auto; margin-top:0.3rem; font-family:monospace; color:#c7d2fe;">${checked.map(id => escapeHtml(id)).join(', ')}</div>
+            `;
+
+            pendingDeleteAction = () => executeDeleteNovels(checked);
+            submitBtn.onclick = () => {
+                if (pendingDeleteAction) pendingDeleteAction();
+            };
+
+            modal.classList.add('active');
+        }
+
+        async function executeDeleteNovels(novelIds) {
+            const submitBtn = document.getElementById('btn-confirm-delete-submit');
+            const origHtml = submitBtn.innerHTML;
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fa-solid fa-spinner spinner"></i> Đang xóa...';
+
+            try {
+                if (novelIds.length === 1) {
+                    const novelId = novelIds[0];
+                    const res = await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}`), {
+                        method: 'DELETE'
+                    });
+                    if (!res.ok) {
+                        const errData = await res.json().catch(() => ({}));
+                        throw new Error(errData.detail || "Không thể xóa truyện");
+                    }
+                    showToast(`Đã xóa thành công bộ truyện "${novelId}"!`, "success");
+                } else {
+                    const res = await fetch(apiUrl('/api/v1/library/novels/bulk-delete'), {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ novel_ids: novelIds })
+                    });
+                    if (!res.ok) {
+                        const errData = await res.json().catch(() => ({}));
+                        throw new Error(errData.detail || "Không thể xóa hàng loạt");
+                    }
+                    const data = await res.json();
+                    showToast(data.message || `Đã xóa thành công ${data.deleted_count} bộ truyện!`, "success");
+                }
+
+                closeModal('modal-confirm-delete');
+                closeModal('modal-novel-detail');
+                loadLibraryNovels();
+                loadDatabaseSummary();
+                if (typeof loadCpBooks === 'function') loadCpBooks();
+            } catch (err) {
+                showToast("Lỗi xóa truyện: " + err.message, "error");
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = origHtml;
+            }
+        }
+
+        function deleteCurrentOpenNovel() {
+            if (!currentNovelId) return;
+            const title = document.getElementById('detail-novel-title').innerText || currentNovelId;
+            const chapters = document.getElementById('detail-chapter-count').innerText || '0';
+            confirmDeleteNovel(currentNovelId, title, parseInt(chapters, 10));
+        }
+
         async function loadDatabaseSummary() {
             const jobsBody = document.getElementById('db-jobs-list');
             const biblesBox = document.getElementById('db-bibles-container');
+            const novelsBody = document.getElementById('db-novels-list');
 
             jobsBody.innerHTML = '<tr><td colspan="6" style="padding:1rem; text-align:center; color:var(--text-sub);"><i class="fa-solid fa-spinner spinner"></i> Đang tải...</td></tr>';
             biblesBox.innerHTML = '<span style="color:var(--text-sub); font-size:0.85rem;"><i class="fa-solid fa-spinner spinner"></i> Đang tải...</span>';
+            if (novelsBody) novelsBody.innerHTML = '<tr><td colspan="6" style="padding:1.5rem; text-align:center; color:var(--text-sub);"><i class="fa-solid fa-spinner spinner"></i> Đang tải danh sách truyện...</td></tr>';
 
             try {
-                const res = await fetch(apiUrl('/api/v1/admin/storage/summary'));
-                if (!res.ok) throw new Error("Không thể lấy dữ liệu storage");
+                const [storageRes, novelsRes] = await Promise.all([
+                    fetch(apiUrl('/api/v1/admin/storage/summary')),
+                    fetch(apiUrl('/api/v1/library/novels'))
+                ]);
+
+                if (novelsRes.ok) {
+                    const novels = await novelsRes.json();
+                    renderDbNovelsTable(novels);
+                }
+
+                if (!storageRes.ok) throw new Error("Không thể lấy dữ liệu storage");
                 
-                const data = await res.json();
+                const data = await storageRes.json();
                 const jobs = data.jobs || [];
                 const bibles = data.bibles || {};
 
@@ -2188,19 +2526,10 @@
         }
 
         async function deleteNovel(novelId) {
-            if (!confirm(`Bạn có chắc chắn muốn xóa bộ truyện '${novelId}' và toàn bộ các chương trên Cloudflare R2?`)) {
-                return;
-            }
-
-            try {
-                const res = await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}`), {
-                    method: 'DELETE'
-                });
-                if (!res.ok) throw new Error("Không thể xóa truyện");
-                loadLibraryNovels();
-            } catch (err) {
-                alert("Lỗi: " + err.message);
-            }
+            const novel = (dbNovelsCache || []).find(n => n.novel_id === novelId);
+            const title = novel ? novel.title : novelId;
+            const chapters = novel ? novel.total_chapters : 0;
+            confirmDeleteNovel(novelId, title, chapters);
         }
 
         // ==========================================

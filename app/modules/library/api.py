@@ -10,6 +10,8 @@ from app.infrastructure.storage.facade import storage_repo
 
 from app.schemas.book_bible import BookBible
 from app.schemas.library import (
+    BulkDeleteNovelsRequest,
+    BulkDeleteNovelsResponse,
     ChapterCreateRequest,
     ChapterItem,
     ChapterTranslateRequest,
@@ -165,6 +167,19 @@ def delete_novel_endpoint(novel_id: str, _: None = Depends(require_write_access)
     return {"message": f"Đã xóa thành công bộ truyện '{novel_id}' khỏi kho."}
 
 
+@router.post("/novels/bulk-delete", response_model=BulkDeleteNovelsResponse)
+def bulk_delete_novels_endpoint(req: BulkDeleteNovelsRequest, _: None = Depends(require_write_access)):
+    deleted_count, failed_ids = library_service.bulk_delete_novels(req.novel_ids)
+    message = f"Đã xóa thành công {deleted_count}/{len(req.novel_ids)} bộ truyện."
+    if failed_ids:
+        message += f" Không tìm thấy hoặc lỗi khi xóa: {', '.join(failed_ids)}."
+    return BulkDeleteNovelsResponse(
+        deleted_count=deleted_count,
+        failed_ids=failed_ids,
+        message=message,
+    )
+
+
 @router.get("/novels/{novel_id}/missing-chapters")
 def check_missing_chapters_endpoint(
     novel_id: str,
@@ -213,8 +228,6 @@ def check_missing_chapters_endpoint(
         "missing_translated_indices": missing_trans,
         "chapters_detail": chapters_detail,
     }
-
-
 
 
 @router.post("/novels/{novel_id}/chapters", response_model=ChapterItem)
@@ -299,7 +312,7 @@ async def translate_chapter_endpoint(
 @router.get("/novels/{novel_id}/export/epub")
 def export_novel_epub_endpoint(
     novel_id: str,
-    force_rebuild: bool = Query(default=False, description="Bắt buộc biên dịch lại file EPUB thay vì dùng bản cache trên R2"),
+    force_rebuild: bool = Query(default=False, description="Bắt buộc biên dịch lại file EPUB thay vì dùng bản cache trên R2/Supabase"),
 ):
     try:
         novel = library_service.get_novel(novel_id)
@@ -308,11 +321,10 @@ def export_novel_epub_endpoint(
 
         storage_key = f"novels/{novel_id}/full.epub"
 
-        # 1. If public CDN URL is configured, file exists on storage, and not force rebuilding:
+        # 1. If public CDN URL is configured or available on storage provider:
         if (
             not force_rebuild
             and settings.cloudflare_r2_public_url
-            and storage_repo.active_provider_name in {"r2", "local"}
             and storage_repo.file_exists_in_r2(storage_key)
         ):
             cdn_url = f"{settings.cloudflare_r2_public_url.rstrip('/')}/{storage_key}"
@@ -320,11 +332,11 @@ def export_novel_epub_endpoint(
         elif (
             not force_rebuild
             and storage_repo.active_provider_name == "supabase"
-            and settings.supabase_storage_public_url
             and storage_repo.file_exists(storage_key)
         ):
-            cdn_url = f"{settings.supabase_storage_public_url.rstrip('/')}/{storage_key}"
-            return RedirectResponse(url=cdn_url, status_code=307)
+            cdn_url = storage_repo.get_public_url(storage_key)
+            if cdn_url and not cdn_url.startswith("/storage/"):
+                return RedirectResponse(url=cdn_url, status_code=307)
 
         # 2. File does not exist on storage or force_rebuild requested -> compile full EPUB
         output_path = library_service.export_full_epub(novel_id)

@@ -588,6 +588,34 @@ def test_epub_with_case_mismatched_cover_in_archive():
     service.delete_novel(novel_id)
 
 
+def test_bulk_delete_novels_endpoint():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.services.library_service import library_service
+
+    client = TestClient(app)
+    id1 = f"bulk-del-test-1-{uuid.uuid4().hex[:6]}"
+    id2 = f"bulk-del-test-2-{uuid.uuid4().hex[:6]}"
+
+    epub1 = _create_mock_epub("Truyện Test 1", [("Chương 1", "Nội dung chương 1 dài trên 30 ký tự...")])
+    epub2 = _create_mock_epub("Truyện Test 2", [("Chương 1", "Nội dung chương 1 dài trên 30 ký tự...")])
+
+    library_service.import_epub_novel(epub1, is_translated=True, novel_id=id1)
+    library_service.import_epub_novel(epub2, is_translated=True, novel_id=id2)
+
+    assert library_service.get_novel(id1) is not None
+    assert library_service.get_novel(id2) is not None
+
+    resp = client.post("/api/v1/library/novels/bulk-delete", json={"novel_ids": [id1, id2, "non-existent-id"]})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["deleted_count"] == 2
+    assert "non-existent-id" in data["failed_ids"]
+
+    assert library_service.get_novel(id1) is None
+    assert library_service.get_novel(id2) is None
+
+
 
 
 

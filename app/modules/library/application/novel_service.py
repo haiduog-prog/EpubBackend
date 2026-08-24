@@ -24,3 +24,6 @@ class NovelService:
 
     def delete(self, novel_id: str) -> bool:
         return self._legacy.delete_novel(novel_id)
+
+    def bulk_delete(self, novel_ids: List[str]):
+        return self._legacy.bulk_delete_novels(novel_ids)

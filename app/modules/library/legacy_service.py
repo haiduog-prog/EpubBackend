@@ -326,6 +326,21 @@ class LegacyLibraryService:
         self._summaries_cache = None
         return True
 
+    def bulk_delete_novels(self, novel_ids: List[str]) -> Tuple[int, List[str]]:
+        """Xóa hàng loạt nhiều bộ truyện cùng lúc khỏi DB, Storage và Cache."""
+        deleted_count = 0
+        failed_ids: List[str] = []
+        for nid in novel_ids:
+            try:
+                if self.delete_novel(nid):
+                    deleted_count += 1
+                else:
+                    failed_ids.append(nid)
+            except Exception as exc:
+                logger.warning("Error bulk deleting novel %s: %s", nid, exc)
+                failed_ids.append(nid)
+        return deleted_count, failed_ids
+
 
     # ------------------------------------------------------------------
     # Chapter Management

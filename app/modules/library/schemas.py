@@ -118,3 +118,13 @@ class MissingChaptersResponse(BaseModel):
     chapters_detail: Optional[List[ChapterStatusDetail]] = None
 
 
+class BulkDeleteNovelsRequest(BaseModel):
+    novel_ids: List[str] = Field(..., min_length=1, description="Danh sách novel_id cần xóa")
+
+
+class BulkDeleteNovelsResponse(BaseModel):
+    deleted_count: int = Field(..., description="Số lượng truyện đã xóa thành công")
+    failed_ids: List[str] = Field(default_factory=list, description="Danh sách ID truyện xóa thất bại hoặc không tìm thấy")
+    message: str = Field(default="", description="Thông báo kết quả")
+
+

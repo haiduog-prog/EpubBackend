@@ -243,6 +243,55 @@
             background: rgba(255, 255, 255, 0.15);
         }
 
+        .btn-danger {
+            background: #ef4444;
+            color: #ffffff;
+        }
+
+        .btn-danger:hover {
+            background: #dc2626;
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(239, 68, 68, 0.35);
+        }
+
+        /* Toast Notifications */
+        .toast-container {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            z-index: 99999;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            pointer-events: none;
+        }
+
+        .toast-item {
+            pointer-events: auto;
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 0.75rem 1.25rem;
+            color: #fff;
+            font-size: 0.88rem;
+            font-weight: 500;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            animation: toastSlideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: all 0.3s ease;
+        }
+
+        .toast-item.success { border-color: rgba(16, 185, 129, 0.5); color: #6ee7b7; }
+        .toast-item.error { border-color: rgba(239, 68, 68, 0.5); color: #fca5a5; }
+
+        @keyframes toastSlideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
         /* Book Bible Card */
         .bible-section {
             margin-top: 1.5rem;
@@ -443,6 +492,104 @@
             flex-direction: column;
             gap: 1.25rem;
         }
+
+        /* Character Profile & Review Tab Styles */
+        .toggle-switch-container {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.75rem;
+            cursor: pointer;
+            user-select: none;
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid var(--card-border);
+            padding: 0.5rem 1rem;
+            border-radius: 12px;
+            transition: all 0.2s ease;
+        }
+        .toggle-switch-container:hover {
+            border-color: rgba(99, 102, 241, 0.4);
+        }
+        .toggle-switch-track {
+            position: relative;
+            width: 44px;
+            height: 24px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            transition: background 0.25s ease;
+        }
+        .toggle-switch-track.active {
+            background: var(--success);
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
+        }
+        .toggle-switch-thumb {
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 20px;
+            height: 20px;
+            background: #fff;
+            border-radius: 50%;
+            transition: transform 0.25s ease;
+        }
+        .toggle-switch-track.active .toggle-switch-thumb {
+            transform: translateX(20px);
+        }
+        .review-grid {
+            display: grid;
+            grid-template-columns: 1.15fr 0.85fr;
+            gap: 1.5rem;
+        }
+        @media (max-width: 1024px) {
+            .review-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        .event-card {
+            background: rgba(15, 23, 42, 0.75);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
+            transition: all 0.2s ease;
+        }
+        .event-card:hover {
+            border-color: rgba(99, 102, 241, 0.4);
+            transform: translateY(-2px);
+        }
+        .event-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+        .cat-badge {
+            font-size: 0.72rem;
+            font-weight: 700;
+            padding: 0.2rem 0.6rem;
+            border-radius: 6px;
+            text-transform: uppercase;
+        }
+        .cat-realm { background: rgba(168, 85, 247, 0.2); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.4); }
+        .cat-skill { background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4); }
+        .cat-identity { background: rgba(59, 130, 246, 0.2); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.4); }
+        .cat-relationship { background: rgba(236, 72, 153, 0.2); color: #f472b6; border: 1px solid rgba(236, 72, 153, 0.4); }
+        .cat-item { background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4); }
+        .cat-pet { background: rgba(249, 115, 22, 0.2); color: #fb923c; border: 1px solid rgba(249, 115, 22, 0.4); }
+        .cat-status { background: rgba(148, 163, 184, 0.2); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.4); }
+        .cat-other { background: rgba(99, 102, 241, 0.2); color: #a5b4fc; border: 1px solid rgba(99, 102, 241, 0.4); }
+        .character-card {
+            background: rgba(15, 23, 42, 0.85);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 1.2rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
+            border-left: 4px solid var(--accent);
+        }
     </style>
 </head>
 <body>
@@ -454,7 +601,7 @@
         </div>
 
         <!-- Backend API Server URL Bar -->
-        <div class="api-config-bar" title="Đường link máy chủ Backend (Local hoặc Cloudflare Tunnel)">
+        <div class="api-config-bar" title="Backend dùng cùng origin" style="display:none;">
             <i class="fa-solid fa-server" style="color:#10b981; font-size:0.9rem;"></i>
             <input type="text" id="backend-url-input" placeholder="Backend API (VD: https://...trycloudflare.com)" style="width:230px;" onchange="saveBackendUrl(this.value)">
         </div>
@@ -468,12 +615,18 @@
             </select>
 
             <select id="api-model" onchange="saveApiSettings();">
-                <!-- Populated dynamically -->
+                <!-- Injected via JS -->
             </select>
 
-            <input type="password" id="api-key-input" placeholder="Nhập API Key (AIzaSy... / sk-ant-...)" onchange="saveApiSettings()">
+            <input type="password" id="api-key-input" placeholder="Nhập API Key..." onchange="saveApiSettings()">
         </div>
 
+        <div class="api-config-bar" title="Credential legacy dành cho CLI" style="display:none;">
+            <i class="fa-solid fa-shield-halved" style="color:#fbbf24; font-size:0.9rem;"></i>
+            <input type="password" id="backend-write-token" placeholder="Backend write token (không lưu)" autocomplete="off">
+        </div>
+
+        <button id="logout-button" class="btn" type="button" style="margin-left:auto;">Đăng xuất</button>
         <span class="badge"><i class="fa-solid fa-microchip"></i> Auto Quota Fallback</span>
     </header>
 
@@ -487,6 +640,9 @@
             </button>
             <button class="tab-btn" onclick="switchTab(event, 'library-tab'); loadLibraryNovels();">
                 <i class="fa-solid fa-book-open"></i> Kho Truyện (R2 Library)
+            </button>
+            <button class="tab-btn" onclick="switchTab(event, 'characters-tab'); initCharacterProfileTab();">
+                <i class="fa-solid fa-users-gear"></i> Hồ Sơ & Duyệt Nhân Vật
             </button>
             <button class="tab-btn" onclick="switchTab(event, 'db-tab'); loadDatabaseSummary();">
                 <i class="fa-solid fa-database"></i> Dữ Liệu Đã Lưu
@@ -632,6 +788,39 @@
                     Kiểm tra trực quan các Job dịch file (.epub/.txt) và các bộ từ điển Book Bible đã được lưu trữ trong Backend.
                 </p>
 
+                <!-- Section: Novels in Database -->
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem; margin-bottom:0.8rem;">
+                    <h4 style="color:#a5b4fc; font-size:0.95rem; margin:0;"><i class="fa-solid fa-book-bookmark"></i> Danh Sách Tiểu Thuyết Trong Database (<span id="db-novels-count">0</span>)</h4>
+                    <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
+                        <div style="position:relative;">
+                            <input type="text" id="db-novels-search" oninput="filterDbNovelsTable()" placeholder="Tìm tên hoặc slug..." style="background:rgba(15,23,42,0.8); border:1px solid var(--card-border); color:#fff; padding:0.35rem 0.7rem 0.35rem 1.8rem; border-radius:8px; font-size:0.82rem; width:190px; outline:none;">
+                            <i class="fa-solid fa-magnifying-glass" style="position:absolute; left:0.6rem; top:50%; transform:translateY(-50%); font-size:0.75rem; color:var(--text-sub);"></i>
+                        </div>
+                        <button class="btn btn-danger" id="btn-db-bulk-delete" onclick="bulkDeleteSelectedNovels()" style="display:none; padding:0.35rem 0.8rem; font-size:0.82rem;" title="Xóa các truyện đã tick chọn">
+                            <i class="fa-solid fa-trash"></i> Xóa (<span id="db-selected-count">0</span>) Truyện Đã Chọn
+                        </button>
+                    </div>
+                </div>
+                <div style="overflow-x:auto; border:1px solid var(--card-border); border-radius:10px; margin-bottom:2rem; background:rgba(15,23,42,0.4);">
+                    <table style="width:100%; border-collapse:collapse; text-align:left; font-size:0.85rem;">
+                        <thead style="background:#0f172a; border-bottom:1px solid var(--card-border); color:var(--text-sub);">
+                            <tr>
+                                <th style="padding:0.6rem 0.8rem; width:36px; text-align:center;">
+                                    <input type="checkbox" id="db-select-all-novels" onchange="toggleSelectAllDbNovels(this)" style="cursor:pointer;" title="Chọn tất cả">
+                                </th>
+                                <th style="padding:0.6rem;">Tên Truyện & Slug</th>
+                                <th style="padding:0.6rem;">Tác Giả</th>
+                                <th style="padding:0.6rem; text-align:center;">Tổng Chương</th>
+                                <th style="padding:0.6rem; text-align:center;">Đã Dịch</th>
+                                <th style="padding:0.6rem; text-align:right;">Thao Tác</th>
+                            </tr>
+                        </thead>
+                        <tbody id="db-novels-list">
+                            <tr><td colspan="6" style="padding:1.5rem; text-align:center; color:var(--text-sub);">Đang tải danh sách truyện...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
                 <!-- Section: Jobs -->
                 <h4 style="color:#a5b4fc; font-size:0.95rem; margin-bottom:0.8rem;"><i class="fa-solid fa-list-check"></i> Các Job Dịch File (.epub / .txt)</h4>
                 <div style="overflow-x:auto;">
@@ -656,6 +845,224 @@
                 <h4 style="color:#a5b4fc; font-size:0.95rem; margin-top:2rem; margin-bottom:0.8rem;"><i class="fa-solid fa-book-journal-whills"></i> Danh Sách Book Bibles Đã Trích Xuất</h4>
                 <div id="db-bibles-container" class="bible-grid">
                     <span style="color:var(--text-sub); font-size:0.85rem;">Đang tải dữ liệu...</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 5: CHARACTER PROFILE & REVIEW -->
+        <div id="characters-tab" class="tab-content">
+            <!-- Top Control Bar -->
+            <div class="card" style="margin-bottom: 1.5rem;">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
+                    <div style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
+                        <div class="card-title" style="margin-bottom:0;">
+                            <i class="fa-solid fa-users-gear" style="color:var(--accent);"></i> Quản Lý & Duyệt Tiến Trình Nhân Vật
+                        </div>
+                        <div style="display:flex; align-items:center; gap:0.5rem;">
+                            <select id="cp-book-select" onchange="onCpBookSelected()" style="background:rgba(15,23,42,0.9); border:1px solid var(--card-border); color:#fff; padding:0.45rem 0.8rem; border-radius:8px; font-size:0.88rem; outline:none; min-width:220px;">
+                                <option value="">-- Chọn bộ truyện --</option>
+                            </select>
+                            <button class="btn btn-secondary" onclick="openCpCreateBookModal()" style="padding:0.45rem 0.8rem; font-size:0.82rem;" title="Khởi tạo sách mới">
+
+                                <i class="fa-solid fa-plus"></i> Sách Mới
+                            </button>
+                            <button class="btn btn-secondary" onclick="deleteSelectedCpBook()" style="padding:0.45rem 0.7rem; font-size:0.82rem; color:#ef4444; border-color:rgba(239,68,68,0.3);" title="Xóa bộ truyện đang chọn">
+                                <i class="fa-solid fa-trash"></i> Xóa Sách
+                            </button>
+                            <button class="btn btn-secondary" onclick="cleanAllTestAndGhostData()" style="padding:0.45rem 0.7rem; font-size:0.82rem; color:#f59e0b; border-color:rgba(245,158,11,0.3);" title="Dọn dẹp toàn bộ dữ liệu test / rác">
+                                <i class="fa-solid fa-broom"></i> Dọn Sách Rác
+                            </button>
+                        </div>
+                    </div>
+
+
+                    <!-- Auto Approve Toggle -->
+                    <div style="display:flex; align-items:center; gap:1rem;">
+                        <div class="toggle-switch-container" onclick="toggleAutoApprove()" title="Bấm để Bật/Tắt chế độ tự động duyệt sự kiện từ AI">
+                            <div class="toggle-switch-track" id="cp-auto-toggle-track">
+                                <div class="toggle-switch-thumb"></div>
+                            </div>
+                            <div>
+                                <div style="font-weight: 700; font-size: 0.85rem;" id="cp-auto-title">Tự Động Duyệt: Đang Tắt</div>
+                                <div style="font-size: 0.72rem; color: var(--text-sub);" id="cp-auto-desc">Cần duyệt thủ công để đưa vào Snapshot</div>
+                            </div>
+                        </div>
+
+                        <button class="btn btn-secondary" onclick="refreshCharacterTabData()" style="padding:0.5rem 0.9rem; font-size:0.85rem;" title="Làm mới dữ liệu">
+                            <i class="fa-solid fa-rotate"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Book Info Badges -->
+                <div id="cp-book-info-bar" style="display:flex; gap:0.75rem; flex-wrap:wrap; margin-top:0.75rem; font-size:0.8rem; color:var(--text-sub);">
+                    <span class="badge" id="cp-badge-book-id"><i class="fa-solid fa-book"></i> Chưa chọn sách</span>
+                    <span class="badge" id="cp-badge-edition"><i class="fa-solid fa-code-branch"></i> Edition: N/A</span>
+                    <span class="badge" id="cp-badge-revision"><i class="fa-solid fa-clock-rotate-left"></i> Revision: 0</span>
+                    <span class="badge" id="cp-badge-events-count"><i class="fa-solid fa-bolt"></i> 0 sự kiện</span>
+                </div>
+            </div>
+
+            <!-- Main Workspace Grid -->
+            <div class="review-grid">
+                <!-- Left Column: Submit & Review Queue -->
+                <div style="display:flex; flex-direction:column; gap:1.5rem;">
+                    <!-- Card: Submit Chapter Text -->
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-title"><i class="fa-solid fa-file-lines"></i> Nộp Văn Bản Chương (AI Trích Xuất Nhân Vật)</span>
+                            <span style="font-size:0.75rem; color:var(--text-sub);">Cách 2: chapter_text</span>
+                        </div>
+                        <div style="display:grid; grid-template-columns: 140px 1fr; gap:0.75rem;">
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-sub); display:block; margin-bottom:0.2rem;">Số chương (Index)</label>
+                                <input type="number" id="cp-submit-chapter" value="1" min="0" style="width:100%; background:rgba(15,23,42,0.8); border:1px solid var(--card-border); color:#fff; padding:0.45rem; border-radius:8px; font-size:0.85rem; outline:none;">
+                            </div>
+                            <div>
+                                <label style="font-size:0.75rem; color:var(--text-sub); display:block; margin-bottom:0.2rem;">Ghi chú / Nhãn nguồn (Tùy chọn)</label>
+                                <input type="text" id="cp-submit-label" placeholder="VD: Bản dịch offline app Android..." style="width:100%; background:rgba(15,23,42,0.8); border:1px solid var(--card-border); color:#fff; padding:0.45rem; border-radius:8px; font-size:0.85rem; outline:none;">
+                            </div>
+                        </div>
+                        <textarea id="cp-submit-text" placeholder="Dán nội dung văn bản của chương vào đây để AI trích xuất cảnh giới, kỹ năng, quan hệ, thân phận nhân vật..." style="height:140px; font-size:0.88rem;"></textarea>
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <span id="cp-submit-status" style="font-size:0.82rem; color:var(--text-sub);"></span>
+                            <button class="btn" id="btn-cp-submit" onclick="submitChapterTextForExtraction()">
+                                <i class="fa-solid fa-brain"></i> Gửi Phân Tích AI
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Card: Review Queue -->
+                    <div class="card">
+                        <div class="card-header" style="flex-wrap:wrap; gap:0.5rem;">
+                            <div style="display:flex; align-items:center; gap:0.5rem;">
+                                <span class="card-title"><i class="fa-solid fa-list-check"></i> Hàng Đợi Xét Duyệt Sự Kiện</span>
+                                <span class="badge" id="cp-pending-count" style="background:rgba(245,158,11,0.2); color:#fbbf24; border-color:rgba(245,158,11,0.4);">0 Chờ Duyệt</span>
+                            </div>
+                            <div style="display:flex; gap:0.4rem; align-items:center;">
+                                <select id="cp-filter-status" onchange="loadEventsList()" style="background:rgba(15,23,42,0.8); border:1px solid var(--card-border); color:#fff; padding:0.3rem 0.6rem; border-radius:6px; font-size:0.8rem; outline:none;">
+                                    <option value="pending">Chỉ Chờ Duyệt (Pending)</option>
+                                    <option value="approved">Đã Duyệt (Approved)</option>
+                                    <option value="rejected">Đã Từ Chối (Rejected)</option>
+                                    <option value="">Tất Cả Trạng Thái</option>
+                                </select>
+                                <button class="btn" onclick="approveAllPendingEvents()" style="padding:0.35rem 0.75rem; font-size:0.8rem; background:#10b981; border-color:#10b981;" title="Duyệt tất cả sự kiện đang pending">
+                                    <i class="fa-solid fa-check-double"></i> Duyệt Tất Cả
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Events List Container -->
+                        <div id="cp-events-container" style="display:flex; flex-direction:column; gap:0.85rem; max-height:550px; overflow-y:auto; padding-right:0.3rem;">
+                            <div style="text-align:center; padding:2rem; color:var(--text-sub); font-size:0.88rem;">
+                                Chưa có sự kiện nào. Hãy chọn sách hoặc nộp chương văn bản phía trên.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Column: Live Snapshot Viewer -->
+                <div style="display:flex; flex-direction:column; gap:1.5rem;">
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-title"><i class="fa-solid fa-id-card-clip"></i> Snapshot Hồ Sơ Nhân Vật Theo Chương</span>
+                            <span class="badge" id="cp-snapshot-status" style="background:rgba(16,185,129,0.2); color:#34d399; border-color:rgba(16,185,129,0.4);">Ready</span>
+                        </div>
+                        <p style="font-size:0.82rem; color:var(--text-sub);">
+                            Hồ sơ trạng thái nhân vật (Cảnh giới, kỹ năng, quan hệ...) tính đến chương chỉ định, đảm bảo <strong>hoàn toàn không bị lộ Spoiler</strong> của các chương sau.
+                        </p>
+                        <div style="display:flex; gap:0.5rem; align-items:center;">
+                            <input type="number" id="cp-snapshot-chapter" value="1" min="0" placeholder="Số chương..." style="width:120px; background:rgba(15,23,42,0.8); border:1px solid var(--card-border); color:#fff; padding:0.45rem 0.6rem; border-radius:8px; font-size:0.85rem; outline:none;">
+                            <button class="btn" onclick="loadCharacterSnapshot()" style="padding:0.45rem 0.9rem; font-size:0.85rem;">
+                                <i class="fa-solid fa-eye"></i> Xem Snapshot
+                            </button>
+                        </div>
+
+                        <!-- Snapshot Characters List -->
+                        <div id="cp-snapshot-characters-container" style="display:flex; flex-direction:column; gap:0.85rem; max-height:650px; overflow-y:auto; padding-right:0.3rem; margin-top:0.5rem;">
+                            <div style="text-align:center; padding:2rem; color:var(--text-sub); font-size:0.88rem;">
+                                Hãy chọn chương và bấm "Xem Snapshot" để tải hồ sơ nhân vật.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- MODAL: CP RESOLVE / CREATE BOOK -->
+        <div id="modal-cp-resolve-book" class="modal">
+            <div class="modal-content" style="max-width:500px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <h3 style="font-size:1.15rem; font-weight:700;"><i class="fa-solid fa-book-bookmark" style="color:var(--accent);"></i> Khởi Tạo Bộ Sách Mới (Book Bible)</h3>
+                    <button onclick="closeModal('modal-cp-resolve-book')" style="background:none; border:none; color:var(--text-sub); font-size:1.2rem; cursor:pointer;"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <div id="cp-library-quick-select-container" style="display:none; background:rgba(15,23,42,0.6); border:1px solid var(--card-border); padding:0.75rem; border-radius:8px;">
+                    <span style="font-size:0.78rem; color:var(--text-sub); display:block; margin-bottom:0.4rem;"><i class="fa-solid fa-bolt" style="color:#fbbf24;"></i> Hoặc chọn nhanh từ Kho Truyện R2:</span>
+                    <div id="cp-library-quick-chips" style="display:flex; flex-wrap:wrap; gap:0.4rem;"></div>
+                </div>
+                <form id="form-cp-create-book" onsubmit="submitCpCreateBook(event)" style="display:flex; flex-direction:column; gap:0.85rem;">
+                    <div>
+                        <label style="font-size:0.85rem; color:var(--text-sub); display:block; margin-bottom:0.2rem;">Tên truyện *</label>
+                        <input type="text" id="cp-new-book-title" required placeholder="VD: Đấu Phá Thương Khung" style="width:100%; background:rgba(15,23,42,0.8); border:1px solid var(--card-border); color:#fff; padding:0.5rem; border-radius:8px; font-size:0.85rem; outline:none;">
+                    </div>
+                    <div>
+                        <label style="font-size:0.85rem; color:var(--text-sub); display:block; margin-bottom:0.2rem;">Tác giả</label>
+                        <input type="text" id="cp-new-book-author" placeholder="VD: Thiên Tằm Thổ Đậu" style="width:100%; background:rgba(15,23,42,0.8); border:1px solid var(--card-border); color:#fff; padding:0.5rem; border-radius:8px; font-size:0.85rem; outline:none;">
+                    </div>
+                    <div>
+                        <label style="font-size:0.85rem; color:var(--text-sub); display:block; margin-bottom:0.2rem;">Ngôn ngữ</label>
+                        <input type="text" id="cp-new-book-lang" value="vi" style="width:100%; background:rgba(15,23,42,0.8); border:1px solid var(--card-border); color:#fff; padding:0.5rem; border-radius:8px; font-size:0.85rem; outline:none;">
+                    </div>
+                    <div style="display:flex; justify-content:flex-end; gap:0.5rem; margin-top:0.5rem;">
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('modal-cp-resolve-book')">Hủy</button>
+                        <button type="submit" class="btn"><i class="fa-solid fa-check"></i> Khởi Tạo Sách</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- MODAL: CHARACTER TIMELINE -->
+        <div id="modal-cp-character-timeline" class="modal">
+            <div class="modal-content" style="max-width:650px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <h3 style="font-size:1.15rem; font-weight:700;" id="cp-timeline-modal-title"><i class="fa-solid fa-timeline" style="color:var(--accent);"></i> Timeline Nhân Vật</h3>
+                    <button onclick="closeModal('modal-cp-character-timeline')" style="background:none; border:none; color:var(--text-sub); font-size:1.2rem; cursor:pointer;"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <div id="cp-timeline-content" style="display:flex; flex-direction:column; gap:0.75rem; max-height:500px; overflow-y:auto; padding-right:0.3rem;">
+                    <!-- Timeline events injected here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- MODAL: EDIT / SUPPLEMENT EVENT EVIDENCE -->
+        <div id="modal-cp-edit-event" class="modal">
+            <div class="modal-content" style="max-width:580px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <h3 style="font-size:1.15rem; font-weight:700;"><i class="fa-solid fa-pen-to-square" style="color:var(--accent);"></i> Bổ Sung Dẫn Chứng & Duyệt Sự Kiện</h3>
+                    <button onclick="closeModal('modal-cp-edit-event')" style="background:none; border:none; color:var(--text-sub); font-size:1.2rem; cursor:pointer;"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <input type="hidden" id="cp-edit-event-id">
+                <div style="display:flex; flex-direction:column; gap:0.85rem;">
+                    <div style="display:flex; gap:0.75rem; align-items:center; background:rgba(15,23,42,0.8); padding:0.6rem 0.8rem; border-radius:8px; border:1px solid var(--card-border);">
+                        <div><strong style="color:#818cf8; font-size:0.95rem;" id="cp-edit-event-char">Tiêu Viêm</strong></div>
+                        <span class="badge" id="cp-edit-event-chap">Chương 1</span>
+                        <span id="cp-edit-event-cat-badge"></span>
+                    </div>
+                    <div>
+                        <label style="font-size:0.82rem; color:var(--text-sub); display:block; margin-bottom:0.25rem;">Giá trị / Nội dung thuộc tính (<span id="cp-edit-event-attr">cultivation_realm</span>)</label>
+                        <input type="text" id="cp-edit-event-val" style="width:100%; background:rgba(15,23,42,0.8); border:1px solid var(--card-border); color:#fff; padding:0.5rem; border-radius:8px; font-size:0.85rem; outline:none;">
+                    </div>
+                    <div>
+                        <label style="font-size:0.82rem; color:var(--text-sub); display:block; margin-bottom:0.25rem;">
+                            <i class="fa-solid fa-quote-left" style="color:#a5b4fc;"></i> Dẫn chứng trích đoạn từ văn bản chương (Evidence) *
+                        </label>
+                        <textarea id="cp-edit-event-evidence" placeholder="Nhập trích đoạn văn bản chứng minh sự kiện/cảnh giới này xuất hiện trong chương..." style="width:100%; height:110px; background:rgba(15,23,42,0.8); border:1px solid var(--card-border); color:#fff; padding:0.5rem; border-radius:8px; font-size:0.85rem; outline:none; line-height:1.5;"></textarea>
+                    </div>
+                    <div style="display:flex; justify-content:flex-end; gap:0.5rem; margin-top:0.5rem;">
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('modal-cp-edit-event')">Hủy</button>
+                        <button type="button" class="btn btn-secondary" onclick="submitSaveEventOnly()" style="color:#a5b4fc;"><i class="fa-solid fa-floppy-disk"></i> Chỉ Lưu Dẫn Chứng</button>
+                        <button type="button" class="btn" onclick="submitApproveWithEvidence()" style="background:#10b981; border-color:#10b981;"><i class="fa-solid fa-check"></i> Lưu & Duyệt Ngay</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -779,6 +1186,9 @@
                         <button class="btn" id="btn-export-epub" style="padding:0.4rem 0.8rem; font-size:0.8rem; background:#10b981;">
                             <i class="fa-solid fa-file-arrow-down"></i> Xuất EPUB
                         </button>
+                        <button class="btn btn-danger" id="btn-delete-novel-detail" onclick="deleteCurrentOpenNovel()" style="padding:0.4rem 0.8rem; font-size:0.8rem;" title="Xóa toàn bộ bộ truyện này khỏi Database và Storage">
+                            <i class="fa-solid fa-trash"></i> Xóa Truyện
+                        </button>
                         <button onclick="closeModal('modal-novel-detail')" style="background:none; border:none; color:var(--text-sub); font-size:1.4rem; cursor:pointer; margin-left:0.5rem;"><i class="fa-solid fa-xmark"></i></button>
                     </div>
                 </div>
@@ -880,8 +1290,37 @@
                 </div>
             </div>
         </div>
+
+        <!-- MODAL: CONFIRM DELETE NOVEL -->
+        <div id="modal-confirm-delete" class="modal">
+            <div class="modal-content" style="max-width:480px; border:1px solid rgba(239,68,68,0.4); box-shadow:0 0 35px rgba(239,68,68,0.25);">
+                <div style="text-align:center; padding:0.5rem 0;">
+                    <div style="width:60px; height:60px; border-radius:50%; background:rgba(239,68,68,0.15); color:#ef4444; display:flex; align-items:center; justify-content:center; margin:0 auto 1rem; font-size:1.8rem; border:1px solid rgba(239,68,68,0.3);">
+                        <i class="fa-solid fa-triangle-exclamation"></i>
+                    </div>
+                    <h3 style="font-size:1.2rem; font-weight:700; color:#f8fafc; margin-bottom:0.5rem;" id="confirm-delete-title">Xác Nhận Xóa Truyện</h3>
+                    <p style="font-size:0.88rem; color:#cbd5e1; line-height:1.5;" id="confirm-delete-desc">
+                        Bạn có chắc chắn muốn xóa bộ truyện này khỏi Database và Storage không?
+                    </p>
+                    <div id="confirm-delete-details" style="margin:1rem 0; padding:0.8rem; background:rgba(15,23,42,0.8); border-radius:8px; border:1px solid rgba(255,255,255,0.08); font-size:0.82rem; text-align:left; color:var(--text-sub);">
+                    </div>
+                    <div style="display:flex; gap:0.75rem; justify-content:center; margin-top:1.5rem;">
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('modal-confirm-delete')" style="padding:0.6rem 1.2rem; font-size:0.88rem;">
+                            Hủy Bỏ
+                        </button>
+                        <button type="button" class="btn btn-danger" id="btn-confirm-delete-submit" style="padding:0.6rem 1.4rem; font-size:0.88rem;">
+                            <i class="fa-solid fa-trash"></i> Xóa Vĩnh Viễn
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="toast-container" class="toast-container"></div>
     </main>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="/static/auth.js"></script>
     <script>
         let currentFile = null;
         let activePollInterval = null;
@@ -900,13 +1339,7 @@
         };
 
         function getApiBaseUrl() {
-            const inputEl = document.getElementById('backend-url-input');
-            const custom = (inputEl ? inputEl.value : localStorage.getItem('epub_backend_url') || '').trim();
-            if (custom) return custom.replace(/\/+$/, '');
-            if (window.location.hostname !== '127.0.0.1' && window.location.hostname !== 'localhost') {
-                return 'https://epubbackend.onrender.com';
-            }
-            return '';
+            return "";
         }
 
         function apiUrl(path) {
@@ -914,17 +1347,52 @@
             return base ? `${base}${path}` : path;
         }
 
+        // auth.js attaches the Supabase Bearer token to every /api/v1 request.
+        // X-Book-Bible-Client-Key remains documented only for legacy CLI callers.
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, char => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            }[char]));
+        }
+
+        function safeMediaUrl(value) {
+            const raw = String(value ?? '').trim();
+            if (!raw) return '';
+            try {
+                const url = new URL(raw, window.location.origin);
+                return ['http:', 'https:'].includes(url.protocol) ? url.href : '';
+            } catch (_) {
+                return '';
+            }
+        }
+
+        async function loadPrivateCover(image, url, fallbackHtml) {
+            try {
+                const response = await window.EpubAuth.authFetch(url, { headers: { Accept: 'image/*' } });
+                if (!response.ok) throw new Error('cover');
+                image.src = URL.createObjectURL(await response.blob());
+            } catch (_) {
+                if (image && image.parentNode) image.outerHTML = fallbackHtml || '<div class="novel-cover"><i class="fa-solid fa-book"></i></div>';
+            }
+        }
         function saveBackendUrl(val) {
             localStorage.setItem('epub_backend_url', (val || '').trim());
             if (typeof loadLibraryNovels === 'function') loadLibraryNovels();
             if (typeof loadDatabaseSummary === 'function') loadDatabaseSummary();
         }
 
-        window.addEventListener('DOMContentLoaded', () => {
+        window.addEventListener('DOMContentLoaded', async () => {
+            const session = await window.EpubAuth.guard();
+            if (!session) return;
+            document.getElementById('logout-button')?.addEventListener('click', async () => { await window.EpubAuth.signOut(); window.location.replace('/login'); });
             const savedProvider = localStorage.getItem('epub_provider') || 'gemini';
-            const savedKey = localStorage.getItem('epub_api_key') || '';
+            const savedKey = '';
             const savedModel = localStorage.getItem('epub_model');
-            const savedBackend = localStorage.getItem('epub_backend_url') || (window.location.hostname !== '127.0.0.1' && window.location.hostname !== 'localhost' ? 'https://epubbackend.onrender.com' : '');
+            const savedBackend = '';
 
             document.getElementById('api-provider').value = savedProvider;
             document.getElementById('api-key-input').value = savedKey;
@@ -958,7 +1426,6 @@
             const provider = document.getElementById('api-provider').value;
             const model = document.getElementById('api-model').value;
 
-            localStorage.setItem('epub_api_key', key);
             localStorage.setItem('epub_provider', provider);
             localStorage.setItem('epub_model', model);
         }
@@ -1050,19 +1517,19 @@
             const termBox = document.getElementById('bible-terms');
 
             if (bible.characters && bible.characters.length > 0) {
-                charBox.innerHTML = bible.characters.map(c => `<span class="tag">${c.original_name} → ${c.vi_name}</span>`).join('');
+                charBox.innerHTML = bible.characters.map(c => `<span class="tag">${escapeHtml(c.original_name)} → ${escapeHtml(c.vi_name)}</span>`).join('');
             } else {
                 charBox.innerHTML = '<span style="color:var(--text-sub); font-size:0.85rem;">Không phát hiện</span>';
             }
 
             if (bible.places && bible.places.length > 0) {
-                placeBox.innerHTML = bible.places.map(p => `<span class="tag">${p.original_name} → ${p.vi_name}</span>`).join('');
+                placeBox.innerHTML = bible.places.map(p => `<span class="tag">${escapeHtml(p.original_name)} → ${escapeHtml(p.vi_name)}</span>`).join('');
             } else {
                 placeBox.innerHTML = '<span style="color:var(--text-sub); font-size:0.85rem;">Không phát hiện</span>';
             }
 
             if (bible.terms && bible.terms.length > 0) {
-                termBox.innerHTML = bible.terms.map(t => `<span class="tag">${t.original_name} → ${t.vi_name}</span>`).join('');
+                termBox.innerHTML = bible.terms.map(t => `<span class="tag">${escapeHtml(t.original_name)} → ${escapeHtml(t.vi_name)}</span>`).join('');
             } else {
                 termBox.innerHTML = '<span style="color:var(--text-sub); font-size:0.85rem;">Không phát hiện</span>';
             }
@@ -1138,7 +1605,7 @@
 
                     fill.style.width = `${job.progress_percentage}%`;
                     pctText.innerText = `${job.progress_percentage}%`;
-                    stepText.innerHTML = `<i class="fa-solid fa-spinner spinner"></i> ${job.current_step || 'Đang xử lý...'}`;
+                    stepText.innerHTML = `<i class="fa-solid fa-spinner spinner"></i> ${escapeHtml(job.current_step || 'Đang xử lý...')}`;
 
                     if (job.status === 'completed') {
                         clearInterval(activePollInterval);
@@ -1147,7 +1614,7 @@
                         document.getElementById('btn-download-link').href = apiUrl(`/api/v1/translate/download/${jobId}`);
                     } else if (job.status === 'failed') {
                         clearInterval(activePollInterval);
-                        stepText.innerHTML = `<i class="fa-solid fa-circle-xmark" style="color:#ef4444;"></i> Thất bại: ${job.error_message}`;
+                        stepText.innerHTML = `<i class="fa-solid fa-circle-xmark" style="color:#ef4444;"></i> Thất bại: ${escapeHtml(job.error_message)}`;
                     }
                 } catch (e) {
                     console.error("Poll error", e);
@@ -1155,18 +1622,244 @@
             }, 1500);
         }
 
+        let dbNovelsCache = [];
+
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            if (!container) return;
+            const toast = document.createElement('div');
+            toast.className = `toast-item ${type}`;
+            const icon = type === 'success' ? '<i class="fa-solid fa-circle-check"></i>' : '<i class="fa-solid fa-circle-xmark"></i>';
+            toast.innerHTML = `${icon} <span>${escapeHtml(message)}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateX(100%)';
+                setTimeout(() => toast.remove(), 300);
+            }, 3500);
+        }
+
+        function renderDbNovelsTable(novels) {
+            dbNovelsCache = novels || [];
+            const tbody = document.getElementById('db-novels-list');
+            const countSpan = document.getElementById('db-novels-count');
+            if (countSpan) countSpan.innerText = dbNovelsCache.length;
+
+            if (!dbNovelsCache || dbNovelsCache.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="padding:1.5rem; text-align:center; color:var(--text-sub);">Chưa có bộ tiểu thuyết nào trong Database</td></tr>';
+                updateDbSelectedCount();
+                return;
+            }
+
+            tbody.innerHTML = dbNovelsCache.map(n => {
+                const coverUrl = safeMediaUrl(n.cover_url);
+                const coverIcon = coverUrl
+                    ? `<img data-private-cover="${escapeHtml(coverUrl)}" style="width:28px; height:38px; object-fit:cover; border-radius:4px; flex-shrink:0;" onerror="this.outerHTML='<i class=\'fa-solid fa-book\' style=\'color:#818cf8; font-size:1.2rem;\'></i>'">`
+                    : `<i class="fa-solid fa-book" style="color:#818cf8; font-size:1.2rem; margin-right:4px;"></i>`;
+
+                return `<tr style="border-bottom:1px solid rgba(255,255,255,0.05);" data-novel-id="${escapeHtml(n.novel_id)}" data-title="${escapeHtml(n.title.toLowerCase())}">
+                    <td style="padding:0.6rem 0.8rem; text-align:center;">
+                        <input type="checkbox" class="db-novel-checkbox" value="${escapeHtml(n.novel_id)}" onchange="updateDbSelectedCount()" style="cursor:pointer;">
+                    </td>
+                    <td style="padding:0.6rem;">
+                        <div style="display:flex; align-items:center; gap:0.6rem;">
+                            ${coverIcon}
+                            <div>
+                                <div style="font-weight:600; color:#f8fafc;">${escapeHtml(n.title)}</div>
+                                <div style="font-size:0.75rem; color:#818cf8; font-family:monospace;">${escapeHtml(n.novel_id)}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td style="padding:0.6rem; color:var(--text-sub);">${escapeHtml(n.author || '-')}</td>
+                    <td style="padding:0.6rem; text-align:center; font-weight:600; color:#c7d2fe;">${n.total_chapters}</td>
+                    <td style="padding:0.6rem; text-align:center; color:#10b981; font-weight:600;">${n.translated_chapters}</td>
+                    <td style="padding:0.6rem; text-align:right;">
+                        <div style="display:flex; justify-content:flex-end; gap:0.4rem;">
+                            <button class="btn btn-secondary db-novel-open-btn" data-novel-id="${escapeHtml(n.novel_id)}" style="padding:0.25rem 0.6rem; font-size:0.75rem;" title="Mở chi tiết & dịch">
+                                <i class="fa-solid fa-folder-open"></i> Mở
+                            </button>
+                            <button class="btn btn-danger db-novel-delete-btn" data-novel-id="${escapeHtml(n.novel_id)}" data-novel-title="${escapeHtml(n.title)}" data-novel-chapters="${n.total_chapters}" style="padding:0.25rem 0.6rem; font-size:0.75rem;" title="Xóa bộ truyện này">
+                                <i class="fa-solid fa-trash"></i> Xóa
+                            </button>
+                        </div>
+                    </td>
+                </tr>`;
+            }).join('');
+
+            tbody.querySelectorAll('[data-private-cover]').forEach(image => loadPrivateCover(image, image.dataset.privateCover));
+            tbody.querySelectorAll('.db-novel-open-btn').forEach(btn => {
+                btn.addEventListener('click', () => openNovelDetail(btn.dataset.novelId || ''));
+            });
+            tbody.querySelectorAll('.db-novel-delete-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const novelId = btn.dataset.novelId || '';
+                    const title = btn.dataset.novelTitle || novelId;
+                    const chapters = parseInt(btn.dataset.novelChapters || '0', 10);
+                    confirmDeleteNovel(novelId, title, chapters);
+                });
+            });
+            updateDbSelectedCount();
+        }
+
+        function filterDbNovelsTable() {
+            const query = (document.getElementById('db-novels-search').value || '').trim().toLowerCase();
+            const rows = document.querySelectorAll('#db-novels-list tr[data-novel-id]');
+            rows.forEach(r => {
+                const id = r.getAttribute('data-novel-id') || '';
+                const title = r.getAttribute('data-title') || '';
+                if (!query || id.toLowerCase().includes(query) || title.includes(query)) {
+                    r.style.display = '';
+                } else {
+                    r.style.display = 'none';
+                }
+            });
+        }
+
+        function toggleSelectAllDbNovels(masterCb) {
+            const checkboxes = document.querySelectorAll('.db-novel-checkbox');
+            checkboxes.forEach(cb => {
+                const row = cb.closest('tr');
+                if (row && row.style.display !== 'none') {
+                    cb.checked = masterCb.checked;
+                }
+            });
+            updateDbSelectedCount();
+        }
+
+        function updateDbSelectedCount() {
+            const checked = document.querySelectorAll('.db-novel-checkbox:checked');
+            const bulkBtn = document.getElementById('btn-db-bulk-delete');
+            const countSpan = document.getElementById('db-selected-count');
+            if (countSpan) countSpan.innerText = checked.length;
+            if (bulkBtn) {
+                bulkBtn.style.display = checked.length > 0 ? 'inline-flex' : 'none';
+            }
+        }
+
+        let pendingDeleteAction = null;
+
+        function confirmDeleteNovel(novelId, title, chapterCount) {
+            const modal = document.getElementById('modal-confirm-delete');
+            const titleElem = document.getElementById('confirm-delete-title');
+            const descElem = document.getElementById('confirm-delete-desc');
+            const detailsElem = document.getElementById('confirm-delete-details');
+            const submitBtn = document.getElementById('btn-confirm-delete-submit');
+
+            titleElem.innerText = `Xóa Bộ Truyện: "${title || novelId}"`;
+            descElem.innerHTML = `Bạn có chắc chắn muốn xóa vĩnh viễn bộ truyện này?<br><span style="color:#ef4444; font-size:0.82rem;">⚠️ Hành động này sẽ xóa sạch dữ liệu trong PostgreSQL, Storage và Book Bible!</span>`;
+            detailsElem.innerHTML = `
+                <div><strong>Slug ID:</strong> <code style="color:#c7d2fe;">${escapeHtml(novelId)}</code></div>
+                <div style="margin-top:0.25rem;"><strong>Tổng số chương:</strong> ${chapterCount || 0} chương</div>
+                <div style="margin-top:0.25rem; color:#94a3b8;"><strong>Dữ liệu liên đới:</strong> Metadata, Chapters Text, EPUB Cache, Character Profile, Timeline Events</div>
+            `;
+
+            pendingDeleteAction = () => executeDeleteNovels([novelId]);
+            submitBtn.onclick = () => {
+                if (pendingDeleteAction) pendingDeleteAction();
+            };
+
+            modal.classList.add('active');
+        }
+
+        function bulkDeleteSelectedNovels() {
+            const checked = Array.from(document.querySelectorAll('.db-novel-checkbox:checked')).map(cb => cb.value);
+            if (checked.length === 0) return;
+
+            const modal = document.getElementById('modal-confirm-delete');
+            const titleElem = document.getElementById('confirm-delete-title');
+            const descElem = document.getElementById('confirm-delete-desc');
+            const detailsElem = document.getElementById('confirm-delete-details');
+            const submitBtn = document.getElementById('btn-confirm-delete-submit');
+
+            titleElem.innerText = `Xóa Hàng Loạt (${checked.length}) Bộ Truyện`;
+            descElem.innerHTML = `Bạn có chắc chắn muốn xóa vĩnh viễn <strong>${checked.length}</strong> bộ truyện đã chọn khỏi Database & Storage?`;
+            detailsElem.innerHTML = `
+                <div><strong>Danh sách Novel ID:</strong></div>
+                <div style="max-height:80px; overflow-y:auto; margin-top:0.3rem; font-family:monospace; color:#c7d2fe;">${checked.map(id => escapeHtml(id)).join(', ')}</div>
+            `;
+
+            pendingDeleteAction = () => executeDeleteNovels(checked);
+            submitBtn.onclick = () => {
+                if (pendingDeleteAction) pendingDeleteAction();
+            };
+
+            modal.classList.add('active');
+        }
+
+        async function executeDeleteNovels(novelIds) {
+            const submitBtn = document.getElementById('btn-confirm-delete-submit');
+            const origHtml = submitBtn.innerHTML;
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fa-solid fa-spinner spinner"></i> Đang xóa...';
+
+            try {
+                if (novelIds.length === 1) {
+                    const novelId = novelIds[0];
+                    const res = await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}`), {
+                        method: 'DELETE'
+                    });
+                    if (!res.ok) {
+                        const errData = await res.json().catch(() => ({}));
+                        throw new Error(errData.detail || "Không thể xóa truyện");
+                    }
+                    showToast(`Đã xóa thành công bộ truyện "${novelId}"!`, "success");
+                } else {
+                    const res = await fetch(apiUrl('/api/v1/library/novels/bulk-delete'), {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ novel_ids: novelIds })
+                    });
+                    if (!res.ok) {
+                        const errData = await res.json().catch(() => ({}));
+                        throw new Error(errData.detail || "Không thể xóa hàng loạt");
+                    }
+                    const data = await res.json();
+                    showToast(data.message || `Đã xóa thành công ${data.deleted_count} bộ truyện!`, "success");
+                }
+
+                closeModal('modal-confirm-delete');
+                closeModal('modal-novel-detail');
+                loadLibraryNovels();
+                loadDatabaseSummary();
+                if (typeof loadCpBooks === 'function') loadCpBooks();
+            } catch (err) {
+                showToast("Lỗi xóa truyện: " + err.message, "error");
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = origHtml;
+            }
+        }
+
+        function deleteCurrentOpenNovel() {
+            if (!currentNovelId) return;
+            const title = document.getElementById('detail-novel-title').innerText || currentNovelId;
+            const chapters = document.getElementById('detail-chapter-count').innerText || '0';
+            confirmDeleteNovel(currentNovelId, title, parseInt(chapters, 10));
+        }
+
         async function loadDatabaseSummary() {
             const jobsBody = document.getElementById('db-jobs-list');
             const biblesBox = document.getElementById('db-bibles-container');
+            const novelsBody = document.getElementById('db-novels-list');
 
             jobsBody.innerHTML = '<tr><td colspan="6" style="padding:1rem; text-align:center; color:var(--text-sub);"><i class="fa-solid fa-spinner spinner"></i> Đang tải...</td></tr>';
             biblesBox.innerHTML = '<span style="color:var(--text-sub); font-size:0.85rem;"><i class="fa-solid fa-spinner spinner"></i> Đang tải...</span>';
+            if (novelsBody) novelsBody.innerHTML = '<tr><td colspan="6" style="padding:1.5rem; text-align:center; color:var(--text-sub);"><i class="fa-solid fa-spinner spinner"></i> Đang tải danh sách truyện...</td></tr>';
 
             try {
-                const res = await fetch(apiUrl('/api/v1/admin/storage/summary'));
-                if (!res.ok) throw new Error("Không thể lấy dữ liệu storage");
+                const [storageRes, novelsRes] = await Promise.all([
+                    fetch(apiUrl('/api/v1/admin/storage/summary')),
+                    fetch(apiUrl('/api/v1/library/novels'))
+                ]);
+
+                if (novelsRes.ok) {
+                    const novels = await novelsRes.json();
+                    renderDbNovelsTable(novels);
+                }
+
+                if (!storageRes.ok) throw new Error("Không thể lấy dữ liệu storage");
                 
-                const data = await res.json();
+                const data = await storageRes.json();
                 const jobs = data.jobs || [];
                 const bibles = data.bibles || {};
 
@@ -1181,14 +1874,14 @@
                         else if (j.status === 'failed') statusColor = '#ef4444';
 
                         const downloadBtn = j.status === 'completed'
-                            ? `<a href="/api/v1/translate/download/${j.job_id}" class="btn" style="padding:0.25rem 0.6rem; font-size:0.75rem; background:#10b981; text-decoration:none;"><i class="fa-solid fa-download"></i> Tải Về</a>`
+                            ? `<a href="${apiUrl(`/api/v1/translate/download/${encodeURIComponent(j.job_id)}`)}" class="btn" style="padding:0.25rem 0.6rem; font-size:0.75rem; background:#10b981; text-decoration:none;"><i class="fa-solid fa-download"></i> Tải Về</a>`
                             : `<span style="color:var(--text-sub); font-size:0.8rem;">-</span>`;
 
                         return `<tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
-                            <td style="padding:0.6rem; font-family:monospace; color:#c7d2fe;">${j.job_id.substring(0,8)}...</td>
-                            <td style="padding:0.6rem; font-weight:600;">${j.filename}</td>
-                            <td style="padding:0.6rem; text-transform:uppercase;">${j.input_type}</td>
-                            <td style="padding:0.6rem; color:${statusColor}; font-weight:600;">${j.status}</td>
+                            <td style="padding:0.6rem; font-family:monospace; color:#c7d2fe;">${escapeHtml(String(j.job_id).substring(0,8))}...</td>
+                            <td style="padding:0.6rem; font-weight:600;">${escapeHtml(j.filename)}</td>
+                            <td style="padding:0.6rem; text-transform:uppercase;">${escapeHtml(j.input_type)}</td>
+                            <td style="padding:0.6rem; color:${statusColor}; font-weight:600;">${escapeHtml(j.status)}</td>
                             <td style="padding:0.6rem;">${j.progress_percentage}%</td>
                             <td style="padding:0.6rem;">${downloadBtn}</td>
                         </tr>`;
@@ -1206,11 +1899,11 @@
                         const places = b.places || [];
                         const terms = b.terms || [];
 
-                        const charTags = chars.slice(0, 10).map(c => `<span class="tag">${c.original_name} → ${c.vi_name}</span>`).join('');
+                        const charTags = chars.slice(0, 10).map(c => `<span class="tag">${escapeHtml(c.original_name)} → ${escapeHtml(c.vi_name)}</span>`).join('');
                         const extraChars = chars.length > 10 ? `<span style="font-size:0.75rem; color:var(--text-sub); margin-left:0.5rem;">+${chars.length - 10} nhân vật khác</span>` : '';
 
                         return `<div class="bible-card">
-                            <div class="bible-card-title"><i class="fa-solid fa-book"></i> Novel / Job ID: ${k.substring(0,16)}...</div>
+                            <div class="bible-card-title"><i class="fa-solid fa-book"></i> Novel / Job ID: ${escapeHtml(k.substring(0,16))}...</div>
                             <div style="font-size:0.8rem; color:var(--text-sub); margin-bottom:0.5rem;">
                                 <span>👥 ${chars.length} Nhân vật</span> | <span>🏛️ ${places.length} Địa danh</span> | <span>📜 ${terms.length} Thuật ngữ</span>
                             </div>
@@ -1219,8 +1912,8 @@
                     }).join('');
                 }
             } catch (err) {
-                jobsBody.innerHTML = `<tr><td colspan="6" style="padding:1rem; text-align:center; color:#ef4444;">Lỗi tải dữ liệu: ${err.message}</td></tr>`;
-                biblesBox.innerHTML = `<span style="color:#ef4444; font-size:0.85rem;">Lỗi: ${err.message}</span>`;
+                jobsBody.innerHTML = `<tr><td colspan="6" style="padding:1rem; text-align:center; color:#ef4444;">Lỗi tải dữ liệu: ${escapeHtml(err.message)}</td></tr>`;
+                biblesBox.innerHTML = `<span style="color:#ef4444; font-size:0.85rem;">Lỗi: ${escapeHtml(err.message)}</span>`;
             }
         }
 
@@ -1230,8 +1923,14 @@
         let currentNovelId = null;
         let selectedChapterFile = null;
 
+        function openModal(id) {
+            const modal = document.getElementById(id);
+            if (modal) modal.classList.add('active');
+        }
+
         function closeModal(id) {
-            document.getElementById(id).classList.remove('active');
+            const modal = document.getElementById(id);
+            if (modal) modal.classList.remove('active');
         }
 
         function openCreateNovelModal() {
@@ -1310,7 +2009,7 @@
                     if (!res.ok) return;
 
                     const job = await res.json();
-                    document.getElementById('import-progress-step').innerHTML = `<i class="fa-solid fa-spinner spinner"></i> ${job.current_step || 'Đang xử lý...'}`;
+                    document.getElementById('import-progress-step').innerHTML = `<i class="fa-solid fa-spinner spinner"></i> ${escapeHtml(job.current_step || 'Đang xử lý...')}`;
                     document.getElementById('import-progress-pct').innerText = `${job.progress_percentage}%`;
                     document.getElementById('import-progress-fill').style.width = `${job.progress_percentage}%`;
                     document.getElementById('import-progress-ch-curr').innerText = job.current_chapter || 0;
@@ -1328,7 +2027,7 @@
                         }, 800);
                     } else if (job.status === 'failed') {
                         clearInterval(activeImportPoll);
-                        document.getElementById('import-progress-step').innerHTML = `<i class="fa-solid fa-circle-xmark" style="color:#ef4444;"></i> Lỗi: ${job.error_message}`;
+                        document.getElementById('import-progress-step').innerHTML = `<i class="fa-solid fa-circle-xmark" style="color:#ef4444;"></i> Lỗi: ${escapeHtml(job.error_message)}`;
                         document.getElementById('btn-submit-import-epub').disabled = false;
                     }
                 } catch (e) {
@@ -1397,17 +2096,18 @@
 
                 grid.innerHTML = novels.map(n => {
                     const pct = n.total_chapters > 0 ? Math.round((n.translated_chapters / n.total_chapters) * 100) : 0;
-                    const coverHtml = n.cover_url
-                        ? `<img src="${n.cover_url}" class="novel-cover" alt="${n.title}" onerror="this.outerHTML='<div class=\\'novel-cover\\'><i class=\\'fa-solid fa-book\\'></i></div>'">`
+                    const coverUrl = safeMediaUrl(n.cover_url);
+                    const coverHtml = coverUrl
+                        ? `<img data-private-cover="${escapeHtml(coverUrl)}" class="novel-cover" alt="${escapeHtml(n.title)}" onerror="this.outerHTML='<div class=\\'novel-cover\\'><i class=\\'fa-solid fa-book\\'></i></div>'">`
                         : `<div class="novel-cover"><i class="fa-solid fa-book"></i></div>`;
 
-                    const genresHtml = (n.genre || []).slice(0, 3).map(g => `<span class="tag" style="font-size:0.75rem;">${g}</span>`).join('');
+                    const genresHtml = (n.genre || []).slice(0, 3).map(g => `<span class="tag" style="font-size:0.75rem;">${escapeHtml(g)}</span>`).join('');
 
                     return `<div class="novel-card">
                         ${coverHtml}
                         <div class="novel-body">
-                            <div class="novel-title">${n.title}</div>
-                            <div class="novel-author">${n.author || 'Chưa rõ tác giả'} ${n.original_title ? '(' + n.original_title + ')' : ''}</div>
+                            <div class="novel-title">${escapeHtml(n.title)}</div>
+                            <div class="novel-author">${escapeHtml(n.author || 'Chưa rõ tác giả')} ${n.original_title ? '(' + escapeHtml(n.original_title) + ')' : ''}</div>
                             <div>${genresHtml}</div>
                             <div style="margin-top:auto;">
                                 <div style="display:flex; justify-content:space-between; font-size:0.8rem; color:var(--text-sub);">
@@ -1418,10 +2118,10 @@
                                     <div class="novel-progress-fill" style="width:${pct}%"></div>
                                 </div>
                                 <div style="display:flex; gap:0.5rem; margin-top:0.75rem;">
-                                    <button class="btn" style="flex:1; padding:0.4rem 0.6rem; font-size:0.8rem;" onclick="openNovelDetail('${n.novel_id}')">
+                                    <button class="btn novel-open-btn" data-novel-id="${escapeHtml(n.novel_id)}" style="flex:1; padding:0.4rem 0.6rem; font-size:0.8rem;">
                                         <i class="fa-solid fa-folder-open"></i> Quản Lý & Dịch
                                     </button>
-                                    <button class="btn btn-secondary" style="padding:0.4rem 0.6rem; font-size:0.8rem; color:#ef4444;" onclick="deleteNovel('${n.novel_id}')" title="Xóa truyện">
+                                    <button class="btn btn-secondary novel-delete-btn" data-novel-id="${escapeHtml(n.novel_id)}" style="padding:0.4rem 0.6rem; font-size:0.8rem; color:#ef4444;" title="Xóa truyện">
                                         <i class="fa-solid fa-trash"></i>
                                     </button>
                                 </div>
@@ -1430,8 +2130,16 @@
                     </div>`;
                 }).join('');
 
+                grid.querySelectorAll('[data-private-cover]').forEach(image => loadPrivateCover(image, image.dataset.privateCover));
+                grid.querySelectorAll('.novel-open-btn').forEach(button => {
+                    button.addEventListener('click', () => openNovelDetail(button.dataset.novelId || ''));
+                });
+                grid.querySelectorAll('.novel-delete-btn').forEach(button => {
+                    button.addEventListener('click', () => deleteNovel(button.dataset.novelId || ''));
+                });
+
             } catch (err) {
-                grid.innerHTML = `<div style="grid-column:1/-1; text-align:center; padding:2rem; color:#ef4444;">Lỗi: ${err.message}</div>`;
+                grid.innerHTML = `<div style="grid-column:1/-1; text-align:center; padding:2rem; color:#ef4444;">Lỗi: ${escapeHtml(err.message)}</div>`;
             }
         }
 
@@ -1444,7 +2152,7 @@
             document.getElementById('detail-chapters-tbody').innerHTML = '<tr><td colspan="5" style="padding:1.5rem; text-align:center; color:var(--text-sub);"><i class="fa-solid fa-spinner spinner"></i> Đang tải danh sách chương...</td></tr>';
 
             try {
-                const res = await fetch(apiUrl(`/api/v1/library/novels/${novelId}`));
+                const res = await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}`));
                 if (!res.ok) throw new Error("Không thể tải thông tin truyện");
                 const novel = await res.json();
 
@@ -1456,14 +2164,16 @@
 
                 // Cover
                 const coverBox = document.getElementById('detail-cover-box');
-                if (novel.cover_url) {
-                    coverBox.innerHTML = `<img src="${novel.cover_url}" style="width:100%; height:100%; object-fit:cover;">`;
+                const coverUrl = safeMediaUrl(novel.cover_url);
+                if (coverUrl) {
+                    coverBox.innerHTML = `<img data-private-cover="${escapeHtml(coverUrl)}" style="width:100%; height:100%; object-fit:cover;">`;
+                    loadPrivateCover(coverBox.querySelector('[data-private-cover]'), coverUrl, '<i class="fa-solid fa-book" style="font-size:2.5rem; color:#818cf8;"></i>');
                 } else {
                     coverBox.innerHTML = '<i class="fa-solid fa-book" style="font-size:2.5rem; color:#818cf8;"></i>';
                 }
 
                 // Genres
-                document.getElementById('detail-novel-genres').innerHTML = (novel.genre || []).map(g => `<span class="tag" style="font-size:0.75rem;">${g}</span>`).join('');
+                document.getElementById('detail-novel-genres').innerHTML = (novel.genre || []).map(g => `<span class="tag" style="font-size:0.75rem;">${escapeHtml(g)}</span>`).join('');
 
                 // Export EPUB button handler
                 document.getElementById('btn-export-epub').onclick = () => exportNovelEpub(novelId);
@@ -1483,22 +2193,35 @@
                         else if (ch.status === 'failed') statusBadge = '<span style="color:#ef4444; font-weight:600;"><i class="fa-solid fa-triangle-exclamation"></i> Lỗi</span>';
 
                         const translateBtn = ch.status === 'completed'
-                            ? `<button class="btn btn-secondary" onclick="triggerTranslateChapter('${novelId}', ${ch.chapter_index})" style="padding:0.25rem 0.6rem; font-size:0.75rem;"><i class="fa-solid fa-rotate-right"></i> Dịch lại</button>`
-                            : `<button class="btn" onclick="triggerTranslateChapter('${novelId}', ${ch.chapter_index})" style="padding:0.25rem 0.6rem; font-size:0.75rem;"><i class="fa-solid fa-bolt"></i> Dịch ngay</button>`;
+                            ? `<button class="btn btn-secondary chapter-translate-btn" data-novel-id="${escapeHtml(novelId)}" data-chapter-index="${ch.chapter_index}" style="padding:0.25rem 0.6rem; font-size:0.75rem;"><i class="fa-solid fa-rotate-right"></i> Dịch lại</button>`
+                            : `<button class="btn chapter-translate-btn" data-novel-id="${escapeHtml(novelId)}" data-chapter-index="${ch.chapter_index}" style="padding:0.25rem 0.6rem; font-size:0.75rem;"><i class="fa-solid fa-bolt"></i> Dịch ngay</button>`;
 
                         return `<tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
                             <td style="padding:0.6rem; font-weight:600; color:#c7d2fe;">#${ch.chapter_index}</td>
-                            <td style="padding:0.6rem; font-weight:600;">${ch.chapter_title}</td>
+                            <td style="padding:0.6rem; font-weight:600;">${escapeHtml(ch.chapter_title)}</td>
                             <td style="padding:0.6rem; color:var(--text-sub);">${ch.word_count} từ</td>
                             <td style="padding:0.6rem;">${statusBadge}</td>
                             <td style="padding:0.6rem; text-align:right; display:flex; gap:0.4rem; justify-content:flex-end;">
-                                <button class="btn btn-secondary" onclick="openChapterReader('${novelId}', ${ch.chapter_index})" style="padding:0.25rem 0.6rem; font-size:0.75rem;">
+                                <button class="btn btn-secondary chapter-reader-btn" data-novel-id="${escapeHtml(novelId)}" data-chapter-index="${ch.chapter_index}" style="padding:0.25rem 0.6rem; font-size:0.75rem;">
                                     <i class="fa-solid fa-eye"></i> Đọc
                                 </button>
                                 ${translateBtn}
                             </td>
                         </tr>`;
                     }).join('');
+                    const chaptersBody = document.getElementById('detail-chapters-tbody');
+                    chaptersBody.querySelectorAll('.chapter-reader-btn').forEach(button => {
+                        button.addEventListener('click', () => openChapterReader(
+                            button.dataset.novelId || '',
+                            Number(button.dataset.chapterIndex)
+                        ));
+                    });
+                    chaptersBody.querySelectorAll('.chapter-translate-btn').forEach(button => {
+                        button.addEventListener('click', () => triggerTranslateChapter(
+                            button.dataset.novelId || '',
+                            Number(button.dataset.chapterIndex)
+                        ));
+                    });
                 }
 
                 // Load Book Bible characters
@@ -1515,7 +2238,7 @@
             container.innerHTML = '<span style="color:var(--text-sub); font-size:0.85rem;"><i class="fa-solid fa-spinner spinner"></i> Đang tải dữ liệu nhân vật...</span>';
 
             try {
-                const res = await fetch(apiUrl(`/api/v1/library/novels/${novelId}/bible`));
+                const res = await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/bible`));
                 if (!res.ok) throw new Error("Không thể tải Book Bible");
                 const bible = await res.json();
 
@@ -1529,17 +2252,17 @@
                 }
 
                 const charTags = chars.map(c => {
-                    const roleText = c.role ? ` (${c.role})` : '';
-                    return `<span class="tag" style="background:rgba(99,102,241,0.2); border:1px solid rgba(99,102,241,0.4);" title="${c.voice_notes || ''}"><strong>${c.original_name}</strong> → <span style="color:#a5b4fc;">${c.vi_name}</span>${roleText}</span>`;
+                    const roleText = c.role ? ` (${escapeHtml(c.role)})` : '';
+                    return `<span class="tag" style="background:rgba(99,102,241,0.2); border:1px solid rgba(99,102,241,0.4);" title="${escapeHtml(c.voice_notes || '')}"><strong>${escapeHtml(c.original_name)}</strong> → <span style="color:#a5b4fc;">${escapeHtml(c.vi_name)}</span>${roleText}</span>`;
                 }).join('');
 
-                const placeTags = places.map(p => `<span class="tag" style="background:rgba(16,185,129,0.15); border:1px solid rgba(16,185,129,0.3); color:#6ee7b7;">🏛️ ${p.original_name} → ${p.vi_name}</span>`).join('');
+                const placeTags = places.map(p => `<span class="tag" style="background:rgba(16,185,129,0.15); border:1px solid rgba(16,185,129,0.3); color:#6ee7b7;">🏛️ ${escapeHtml(p.original_name)} → ${escapeHtml(p.vi_name)}</span>`).join('');
 
-                const termTags = terms.map(t => `<span class="tag" style="background:rgba(245,158,11,0.15); border:1px solid rgba(245,158,11,0.3); color:#fde68a;">📜 ${t.original_name} → ${t.vi_name}</span>`).join('');
+                const termTags = terms.map(t => `<span class="tag" style="background:rgba(245,158,11,0.15); border:1px solid rgba(245,158,11,0.3); color:#fde68a;">📜 ${escapeHtml(t.original_name)} → ${escapeHtml(t.vi_name)}</span>`).join('');
 
                 container.innerHTML = charTags + placeTags + termTags;
             } catch (e) {
-                container.innerHTML = `<span style="color:#ef4444; font-size:0.85rem;">Lỗi tải nhân vật: ${e.message}</span>`;
+                container.innerHTML = `<span style="color:#ef4444; font-size:0.85rem;">Lỗi tải nhân vật: ${escapeHtml(e.message)}</span>`;
             }
         }
 
@@ -1561,7 +2284,7 @@
             btn.innerHTML = '<i class="fa-solid fa-spinner spinner"></i> Đang phân tích...';
 
             try {
-                const res = await fetch(apiUrl(`/api/v1/library/novels/${currentNovelId}/scan-characters?max_chapters=5`), {
+                const res = await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(currentNovelId)}/scan-characters?max_chapters=5`), {
                     method: 'POST',
                     headers: {
                         'X-API-Key': apiKey,
@@ -1599,7 +2322,7 @@
             container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-sub);"><i class="fa-solid fa-spinner spinner"></i> Đang tải dữ liệu hồ sơ nhân vật...</div>';
 
             try {
-                const res = await fetch(apiUrl(`/api/v1/library/novels/${currentNovelId}/chapters/${chIdx}/character-snapshot`));
+                const res = await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(currentNovelId)}/chapters/${chIdx}/character-snapshot`));
                 if (!res.ok) throw new Error("Không thể tải trạng thái nhân vật");
                 const data = await res.json();
 
@@ -1614,28 +2337,28 @@
 
                 container.innerHTML = chars.map(c => {
                     const itemsHtml = (c.items && c.items.length > 0)
-                        ? c.items.map(i => `<span class="tag" style="background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.3); color:#fca5a5;">🎒 ${i}</span>`).join(' ')
+                        ? c.items.map(i => `<span class="tag" style="background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.3); color:#fca5a5;">🎒 ${escapeHtml(i)}</span>`).join(' ')
                         : '<span style="color:var(--text-sub); font-size:0.8rem;">Chưa ghi nhận</span>';
 
                     const skillsHtml = (c.skills && c.skills.length > 0)
-                        ? c.skills.map(s => `<span class="tag" style="background:rgba(245,158,11,0.15); border:1px solid rgba(245,158,11,0.3); color:#fde68a;">📜 ${s}</span>`).join(' ')
+                        ? c.skills.map(s => `<span class="tag" style="background:rgba(245,158,11,0.15); border:1px solid rgba(245,158,11,0.3); color:#fde68a;">📜 ${escapeHtml(s)}</span>`).join(' ')
                         : '<span style="color:var(--text-sub); font-size:0.8rem;">Chưa ghi nhận</span>';
 
                     const addressHtml = (c.address_terms && c.address_terms.length > 0)
-                        ? c.address_terms.map(a => `<span class="tag" style="font-size:0.75rem;">${a}</span>`).join(' ')
+                        ? c.address_terms.map(a => `<span class="tag" style="font-size:0.75rem;">${escapeHtml(a)}</span>`).join(' ')
                         : '<span style="color:var(--text-sub); font-size:0.8rem;">Chưa có</span>';
 
                     return `<div style="background:rgba(30,41,59,0.7); border:1px solid var(--card-border); border-radius:12px; padding:1.2rem; display:flex; flex-direction:column; gap:0.6rem;">
                         <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.06); padding-bottom:0.5rem;">
                             <div style="font-size:1.1rem; font-weight:700; color:#fff;">
-                                👤 ${c.vi_name} <span style="font-size:0.85rem; color:var(--text-sub); font-weight:normal;">(${c.original_name})</span>
+                                👤 ${escapeHtml(c.vi_name)} <span style="font-size:0.85rem; color:var(--text-sub); font-weight:normal;">(${escapeHtml(c.original_name)})</span>
                             </div>
-                            <span class="badge" style="background:rgba(99,102,241,0.3);">${c.role}</span>
+                            <span class="badge" style="background:rgba(99,102,241,0.3);">${escapeHtml(c.role)}</span>
                         </div>
 
                         <div style="display:grid; grid-template-columns:120px 1fr; gap:0.5rem; font-size:0.88rem; align-items:baseline;">
                             <span style="color:#a5b4fc; font-weight:600;">⚡ Cảnh giới / Tu vi:</span>
-                            <span style="color:#f1f5f9; font-weight:600;">${c.realm}</span>
+                            <span style="color:#f1f5f9; font-weight:600;">${escapeHtml(c.realm)}</span>
                         </div>
 
                         <div style="display:grid; grid-template-columns:120px 1fr; gap:0.5rem; font-size:0.88rem; align-items:baseline;">
@@ -1656,7 +2379,7 @@
                 }).join('');
 
             } catch (err) {
-                container.innerHTML = `<div style="color:#ef4444; text-align:center; padding:1.5rem;">Lỗi: ${err.message}</div>`;
+                container.innerHTML = `<div style="color:#ef4444; text-align:center; padding:1.5rem;">Lỗi: ${escapeHtml(err.message)}</div>`;
             }
         }
 
@@ -1696,7 +2419,7 @@
 
         async function sendAddChapterReq(formData) {
             try {
-                const res = await fetch(apiUrl(`/api/v1/library/novels/${currentNovelId}/chapters`), {
+                const res = await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(currentNovelId)}/chapters`), {
                     method: 'POST',
                     body: formData
                 });
@@ -1730,7 +2453,7 @@
             }
 
             try {
-                const res = await fetch(apiUrl(`/api/v1/library/novels/${novelId}/chapters/${chapterIndex}/translate`), {
+                const res = await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/chapters/${chapterIndex}/translate`), {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -1762,7 +2485,7 @@
 
             try {
                 // Fetch original
-                const resOrig = await fetch(apiUrl(`/api/v1/library/novels/${novelId}/chapters/${chapterIndex}/content?version=original`));
+                const resOrig = await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/chapters/${chapterIndex}/content?version=original`));
                 if (resOrig.ok) {
                     const dataOrig = await resOrig.json();
                     document.getElementById('reader-orig-text').value = dataOrig.content || '';
@@ -1771,7 +2494,7 @@
                 }
 
                 // Fetch translated
-                const resTrans = await fetch(apiUrl(`/api/v1/library/novels/${novelId}/chapters/${chapterIndex}/content?version=translated`));
+                const resTrans = await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/chapters/${chapterIndex}/content?version=translated`));
                 if (resTrans.ok) {
                     const dataTrans = await resTrans.json();
                     document.getElementById('reader-trans-text').value = dataTrans.content || '';
@@ -1792,7 +2515,7 @@
             }
 
             // Route through backend endpoint: redirects to CDN if cached on R2, or compiles & serves on demand
-            window.location.href = apiUrl(`/api/v1/library/novels/${novelId}/export/epub`);
+            window.location.href = apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/export/epub`);
 
             setTimeout(() => {
                 if (btn) {
@@ -1803,20 +2526,787 @@
         }
 
         async function deleteNovel(novelId) {
-            if (!confirm(`Bạn có chắc chắn muốn xóa bộ truyện '${novelId}' và toàn bộ các chương trên Cloudflare R2?`)) {
+            const novel = (dbNovelsCache || []).find(n => n.novel_id === novelId);
+            const title = novel ? novel.title : novelId;
+            const chapters = novel ? novel.total_chapters : 0;
+            confirmDeleteNovel(novelId, title, chapters);
+        }
+
+        // ==========================================
+        // CHARACTER PROFILE & REVIEW TAB LOGIC
+        // ==========================================
+        let cpCurrentBookId = null;
+        let cpCurrentEditionId = null;
+        let cpAutoApprove = false;
+        let cpBooksCache = [];
+
+        async function initCharacterProfileTab() {
+            await Promise.all([
+                loadCpSettings(),
+                loadCpBooks()
+            ]);
+        }
+
+        async function loadCpSettings() {
+            try {
+                const res = await fetch(apiUrl('/api/v1/book-bible/settings'));
+                if (res.ok) {
+                    const data = await res.json();
+                    cpAutoApprove = !!data.auto_approve;
+                    renderAutoApproveToggle();
+                }
+            } catch (err) {
+                console.error("Failed to load settings:", err);
+            }
+        }
+
+        function renderAutoApproveToggle() {
+            const track = document.getElementById('cp-auto-toggle-track');
+            const title = document.getElementById('cp-auto-title');
+            const desc = document.getElementById('cp-auto-desc');
+            if (cpAutoApprove) {
+                track.classList.add('active');
+                title.innerText = "Tự Động Duyệt: Đang BẬT ⚡";
+                title.style.color = "#34d399";
+                desc.innerText = "Sự kiện AI trích xuất sẽ tự động duyệt & cập nhật ngay vào Snapshot";
+            } else {
+                track.classList.remove('active');
+                title.innerText = "Tự Động Duyệt: Đang TẮT";
+                title.style.color = "#f8fafc";
+                desc.innerText = "Cần người dùng duyệt thủ công trước khi lưu vào Snapshot";
+            }
+        }
+
+        async function toggleAutoApprove() {
+            const nextState = !cpAutoApprove;
+            try {
+                const res = await fetch(apiUrl('/api/v1/book-bible/settings'), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ auto_approve: nextState })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    cpAutoApprove = !!data.auto_approve;
+                    renderAutoApproveToggle();
+                }
+            } catch (err) {
+                alert("Lỗi khi cập nhật cài đặt: " + err.message);
+            }
+        }
+
+        async function loadCpBooks() {
+            const select = document.getElementById('cp-book-select');
+            try {
+                const res = await fetch(apiUrl('/api/v1/book-bible/books'));
+                if (res.ok) {
+                    cpBooksCache = await res.json();
+                    if (!cpBooksCache || cpBooksCache.length === 0) {
+                        select.innerHTML = '<option value="">-- Chưa có truyện nào. Bấm "+ Sách Mới" --</option>';
+                        document.getElementById('cp-badge-book-id').innerHTML = '<i class="fa-solid fa-book"></i> Chưa có sách';
+                        document.getElementById('cp-badge-edition').innerHTML = '<i class="fa-solid fa-code-branch"></i> Edition: N/A';
+                        document.getElementById('cp-badge-revision').innerHTML = '<i class="fa-solid fa-clock-rotate-left"></i> Revision: 0';
+                        document.getElementById('cp-badge-events-count').innerHTML = '<i class="fa-solid fa-bolt"></i> 0 sự kiện';
+                        document.getElementById('cp-events-container').innerHTML = `
+                            <div style="text-align:center; padding:2rem; color:var(--text-sub);">
+                                <i class="fa-solid fa-book-open" style="font-size:2rem; margin-bottom:0.75rem; color:#6366f1;"></i>
+                                <p style="font-size:0.9rem; margin-bottom:0.75rem;">Hệ thống chưa có bộ truyện nào trong Book Bible.</p>
+                                <button class="btn" onclick="openCpCreateBookModal()" style="padding:0.4rem 0.9rem; font-size:0.85rem;">
+                                    <i class="fa-solid fa-plus"></i> Bấm để tạo hoặc chọn truyện
+                                </button>
+                            </div>
+                        `;
+                    } else {
+                        select.innerHTML = '<option value="">-- Chọn bộ truyện (' + cpBooksCache.length + ' truyện) --</option>';
+                        cpBooksCache.forEach(b => {
+                            const opt = document.createElement('option');
+                            opt.value = b.book_id;
+                            const evText = b.event_count ? `${b.event_count} sự kiện` : '0 sự kiện';
+                            const revText = `v${b.revision || 0}`;
+                            opt.innerText = `${b.title} (${evText}, phiên bản ${revText})`;
+                            select.appendChild(opt);
+                        });
+                        if (!cpCurrentBookId || !cpBooksCache.find(b => b.book_id === cpCurrentBookId)) {
+                            select.value = cpBooksCache[0].book_id;
+                            await onCpBookSelected();
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to load books:", err);
+            }
+        }
+
+        async function deleteSelectedCpBook() {
+            if (!cpCurrentBookId) {
+                alert("Vui lòng chọn bộ truyện muốn xóa!");
+                return;
+            }
+            const book = cpBooksCache.find(b => b.book_id === cpCurrentBookId);
+            const bookTitle = book ? book.title : cpCurrentBookId;
+            if (!confirm(`Bạn có chắc chắn muốn xóa bộ truyện "${bookTitle}" và toàn bộ tiến trình nhân vật không?`)) {
+                return;
+            }
+            try {
+                const res = await fetch(apiUrl(`/api/v1/book-bible/books/${encodeURIComponent(cpCurrentBookId)}`), {
+                    method: 'DELETE'
+                });
+                if (res.ok) {
+                    alert(`Đã xóa bộ truyện "${bookTitle}" thành công!`);
+                    cpCurrentBookId = null;
+                    await loadCpBooks();
+                } else {
+                    alert("Lỗi khi xóa bộ truyện!");
+                }
+            } catch (err) {
+                alert("Lỗi kết nối: " + err.message);
+            }
+        }
+
+        async function cleanAllTestAndGhostData() {
+            if (!confirm("Hệ thống sẽ quét và dọn sạch tất cả dữ liệu test, truyện rác và đồng bộ lại danh sách. Bạn có muốn tiếp tục?")) {
+                return;
+            }
+            try {
+                const res = await fetch(apiUrl('/api/v1/admin/clean-test-data'), { method: 'POST' });
+                if (res.ok) {
+                    const data = await res.json();
+                    alert(`Đã dọn dẹp xong! Đã xóa ${data.deleted_count || 0} file rác trên R2 và ${data.deleted_books_from_memory?.length || 0} sách test.`);
+                    cpCurrentBookId = null;
+                    await loadCpBooks();
+                } else {
+                    alert("Lỗi khi dọn dẹp dữ liệu test!");
+                }
+            } catch (err) {
+                alert("Lỗi kết nối: " + err.message);
+            }
+        }
+
+        async function openCpCreateBookModal() {
+
+            await loadQuickLibraryNovels();
+            openModal('modal-cp-resolve-book');
+        }
+
+        async function loadQuickLibraryNovels() {
+            const container = document.getElementById('cp-library-quick-chips');
+            const wrap = document.getElementById('cp-library-quick-select-container');
+            if (!container || !wrap) return;
+            try {
+                const res = await fetch(apiUrl('/api/v1/library/novels'));
+                if (res.ok) {
+                    const novels = await res.json();
+                    if (novels && novels.length > 0) {
+                        wrap.style.display = 'block';
+                        container.innerHTML = novels.map(n => `
+                            <button type="button" class="btn btn-secondary cp-prefill-book" data-title="${escapeHtml(n.title || '')}" data-author="${escapeHtml(n.author || '')}" style="padding:0.3rem 0.6rem; font-size:0.78rem; background:rgba(99,102,241,0.15); border-color:rgba(99,102,241,0.3);">
+                                <i class="fa-solid fa-book"></i> ${escapeHtml(n.title || '')}
+                            </button>
+                        `).join('');
+                        container.querySelectorAll('.cp-prefill-book').forEach(button => {
+                            button.addEventListener('click', () => prefillCpBook(button.dataset.title || '', button.dataset.author || ''));
+                        });
+                    } else {
+                        wrap.style.display = 'none';
+                    }
+                }
+            } catch (e) {
+                wrap.style.display = 'none';
+            }
+        }
+
+        function prefillCpBook(title, author) {
+            document.getElementById('cp-new-book-title').value = title || '';
+            document.getElementById('cp-new-book-author').value = author || '';
+        }
+
+        async function onCpBookSelected() {
+            const bookId = document.getElementById('cp-book-select').value;
+            cpCurrentBookId = bookId || null;
+            if (!cpCurrentBookId) {
+                document.getElementById('cp-badge-book-id').innerHTML = '<i class="fa-solid fa-book"></i> Chưa chọn sách';
+                document.getElementById('cp-badge-edition').innerHTML = '<i class="fa-solid fa-code-branch"></i> Ấn bản: N/A';
+                document.getElementById('cp-badge-revision').innerHTML = '<i class="fa-solid fa-clock-rotate-left"></i> Phiên bản: 0';
+                document.getElementById('cp-badge-events-count').innerHTML = '<i class="fa-solid fa-bolt"></i> 0 sự kiện';
+                document.getElementById('cp-events-container').innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-sub);">Chưa chọn sách.</div>';
                 return;
             }
 
+
+            const book = cpBooksCache.find(b => b.book_id === cpCurrentBookId);
+            document.getElementById('cp-badge-book-id').innerHTML = `<i class="fa-solid fa-book"></i> ${escapeHtml(book ? book.title : cpCurrentBookId)}`;
+            document.getElementById('cp-badge-revision').innerHTML = `<i class="fa-solid fa-clock-rotate-left"></i> Rev ${book ? book.revision : 0}`;
+
+            // Ensure an edition exists for this book
+            await ensureEditionForBook(cpCurrentBookId, book ? book.title : "Default Edition");
+            await Promise.all([
+                loadEventsList(),
+                loadCharacterSnapshot()
+            ]);
+        }
+
+        async function ensureEditionForBook(bookId, title) {
             try {
-                const res = await fetch(apiUrl(`/api/v1/library/novels/${novelId}`), {
-                    method: 'DELETE'
+                const res = await fetch(apiUrl(`/api/v1/book-bible/books/${bookId}/editions`), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        metadata: { title: title || "Novel", language: "vi" },
+                        chapter_count: 500
+                    })
                 });
-                if (!res.ok) throw new Error("Không thể xóa truyện");
-                loadLibraryNovels();
+                if (res.ok) {
+                    const edition = await res.json();
+                    cpCurrentEditionId = edition.edition_id;
+                    document.getElementById('cp-badge-edition').innerHTML = `<i class="fa-solid fa-code-branch"></i> ${escapeHtml(edition.edition_id.substring(0, 14))}...`;
+                }
+            } catch (err) {
+                console.error("Failed to ensure edition:", err);
+            }
+        }
+
+        async function submitCpCreateBook(e) {
+            e.preventDefault();
+            const title = document.getElementById('cp-new-book-title').value.trim();
+            const author = document.getElementById('cp-new-book-author').value.trim();
+            const language = document.getElementById('cp-new-book-lang').value.trim() || 'vi';
+
+            if (!title) return;
+
+            try {
+                const res = await fetch(apiUrl('/api/v1/book-bible/books/resolve'), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        metadata: { title, author, language },
+                        create_if_missing: true
+                    })
+                });
+                if (!res.ok) throw new Error("Không thể tạo sách mới");
+                const data = await res.json();
+                closeModal('modal-cp-resolve-book');
+                await loadCpBooks();
+                document.getElementById('cp-book-select').value = data.book_id;
+                await onCpBookSelected();
+                alert(`Đã khởi tạo thành công sách '${title}'!`);
             } catch (err) {
                 alert("Lỗi: " + err.message);
             }
         }
+
+        async function submitChapterTextForExtraction() {
+            if (!cpCurrentBookId) {
+                alert("Vui lòng chọn hoặc tạo bộ sách trước khi nộp chương!");
+                return;
+            }
+
+            if (!cpCurrentEditionId) {
+                const book = cpBooksCache.find(b => b.book_id === cpCurrentBookId);
+                await ensureEditionForBook(cpCurrentBookId, book ? book.title : "Novel");
+            }
+
+            if (!cpCurrentEditionId) {
+                cpCurrentEditionId = cpCurrentBookId;
+            }
+
+            const chapterIndex = parseInt(document.getElementById('cp-submit-chapter').value) || 1;
+            const textContent = document.getElementById('cp-submit-text').value.trim();
+            const sourceLabel = document.getElementById('cp-submit-label').value.trim();
+
+            if (!textContent) {
+                alert("Vui lòng nhập nội dung văn bản của chương!");
+                return;
+            }
+
+            const btn = document.getElementById('btn-cp-submit');
+            const statusSpan = document.getElementById('cp-submit-status');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner spinner"></i> Đang nộp & phân tích AI...';
+            statusSpan.innerHTML = '<span style="color:#a5b4fc;"><i class="fa-solid fa-spinner spinner"></i> Đang gửi lên backend...</span>';
+
+            const apiKey = (document.getElementById('api-key-input').value || '').trim();
+            const model = (document.getElementById('api-model').value || '').trim();
+            const provider = (document.getElementById('api-provider').value || 'gemini').trim();
+
+            const headers = { 'Content-Type': 'application/json' };
+            if (apiKey) headers['x-api-key'] = apiKey;
+            if (model) headers['x-model'] = model;
+            headers['x-provider'] = provider;
+
+            try {
+                const res = await fetch(apiUrl(`/api/v1/book-bible/editions/${cpCurrentEditionId}/chapters/${chapterIndex}/submissions`), {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify({
+                        local_chapter_index: chapterIndex,
+                        input_type: 'chapter_text',
+                        content: textContent,
+                        source_label: sourceLabel || undefined
+                    })
+                });
+
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || "Nộp chương thất bại");
+                }
+
+                const sub = await res.json();
+                statusSpan.innerHTML = `<span style="color:#10b981;"><i class="fa-solid fa-circle-check"></i> Đã gửi submission (${escapeHtml(String(sub.submission_id).substring(0, 12))}...). Đang xử lý AI ngầm...</span>`;
+
+                // Poll submission status until completed or failed
+                pollSubmission(sub.submission_id, chapterIndex);
+            } catch (err) {
+                alert("Lỗi: " + err.message);
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fa-solid fa-brain"></i> Gửi Phân Tích AI';
+                statusSpan.innerHTML = `<span style="color:#ef4444;"><i class="fa-solid fa-circle-xmark"></i> ${escapeHtml(err.message)}</span>`;
+            }
+        }
+
+        async function pollSubmission(submissionId, chapterIndex) {
+            const btn = document.getElementById('btn-cp-submit');
+            const statusSpan = document.getElementById('cp-submit-status');
+
+            let attempts = 0;
+            const maxAttempts = 30; // 30 * 2s = 60s
+
+            const interval = setInterval(async () => {
+                attempts++;
+                try {
+                    const res = await fetch(apiUrl(`/api/v1/book-bible/submissions/${encodeURIComponent(submissionId)}`));
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data.status === 'completed') {
+                            clearInterval(interval);
+                            btn.disabled = false;
+                            btn.innerHTML = '<i class="fa-solid fa-brain"></i> Gửi Phân Tích AI';
+                            statusSpan.innerHTML = `<span style="color:#10b981;"><i class="fa-solid fa-check"></i> AI đã trích xuất xong! (${data.event_ids ? data.event_ids.length : 0} sự kiện).</span>`;
+                            
+                            // Set snapshot chapter and refresh
+                            document.getElementById('cp-snapshot-chapter').value = chapterIndex;
+                            await refreshCharacterTabData();
+                        } else if (data.status === 'failed') {
+                            clearInterval(interval);
+                            btn.disabled = false;
+                            btn.innerHTML = '<i class="fa-solid fa-brain"></i> Gửi Phân Tích AI';
+                            statusSpan.innerHTML = `<span style="color:#ef4444;"><i class="fa-solid fa-triangle-exclamation"></i> Lỗi: ${escapeHtml(data.error_message || 'Trích xuất thất bại')}</span>`;
+                        } else {
+                            statusSpan.innerHTML = `<span style="color:#f59e0b;"><i class="fa-solid fa-spinner spinner"></i> Trạng thái AI: ${escapeHtml(data.status)}... (${attempts*2}s)</span>`;
+                        }
+                    }
+                } catch (err) {
+                    console.error("Polling error:", err);
+                }
+
+                if (attempts >= maxAttempts) {
+                    clearInterval(interval);
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fa-solid fa-brain"></i> Gửi Phân Tích AI';
+                    statusSpan.innerHTML = `<span style="color:#94a3b8;">Hết thời gian chờ. Bạn có thể bấm làm mới danh sách sự kiện sau.</span>`;
+                }
+            }, 2000);
+        }
+
+        async function loadEventsList() {
+            if (!cpCurrentBookId) return;
+
+            const filterStatus = document.getElementById('cp-filter-status').value;
+            const container = document.getElementById('cp-events-container');
+
+            let url = `/api/v1/book-bible/events?book_id=${encodeURIComponent(cpCurrentBookId)}`;
+            if (filterStatus) {
+                url += `&status=${encodeURIComponent(filterStatus)}`;
+            }
+
+            try {
+                const res = await fetch(apiUrl(url));
+                if (res.ok) {
+                    const events = await res.json();
+                    cpEventsCache = events;
+                    
+                    // Update pending count badge
+                    const pendingCountRes = await fetch(apiUrl(`/api/v1/book-bible/events?book_id=${encodeURIComponent(cpCurrentBookId)}&status=pending`));
+                    if (pendingCountRes.ok) {
+                        const pendingEvents = await pendingCountRes.json();
+                        document.getElementById('cp-pending-count').innerText = `${pendingEvents.length} Chờ Duyệt`;
+                        document.getElementById('cp-badge-events-count').innerHTML = `<i class="fa-solid fa-bolt"></i> ${events.length} sự kiện`;
+                    }
+
+                    renderEventsList(events);
+                }
+            } catch (err) {
+                console.error("Failed to load events:", err);
+                container.innerHTML = `<div style="text-align:center; padding:1.5rem; color:#ef4444;">Lỗi tải sự kiện: ${escapeHtml(err.message)}</div>`;
+            }
+        }
+
+        function getCategoryBadge(category) {
+            const cat = (category || 'other').toLowerCase();
+            const labels = {
+                'realm': '🏔️ Cảnh giới',
+                'skill': '⚡ Kỹ năng',
+                'identity': '👤 Danh tính / Thân phận',
+                'relationship': '🤝 Quan hệ / Xưng hô',
+                'item': '🗡️ Vật phẩm',
+                'pet': '🐾 Linh thú / Sủng vật',
+                'status': '📌 Trạng thái',
+                'faction': '🏛️ Môn phái / Phe phái',
+                'power': '🔥 Sức mạnh'
+            };
+            const safeCat = /^[a-z0-9_-]+$/.test(cat) ? cat : 'other';
+            const label = labels[cat] || `🏷️ ${escapeHtml(category)}`;
+            return `<span class="cat-badge cat-${safeCat}">${label}</span>`;
+        }
+
+        function formatEventValue(value) {
+            if (value === null || value === undefined) return '<em style="color:var(--text-sub)">null</em>';
+            if (typeof value === 'object') {
+                return `<code style="background:rgba(0,0,0,0.3); padding:0.2rem 0.4rem; border-radius:4px; font-size:0.8rem; color:#cbd5e1;">${escapeHtml(JSON.stringify(value, null, 1))}</code>`;
+            }
+            return `<strong style="color:#f8fafc;">${escapeHtml(value)}</strong>`;
+        }
+
+        function renderEventsList(events) {
+            const container = document.getElementById('cp-events-container');
+            if (!events || events.length === 0) {
+                container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-sub); font-size:0.88rem;">Không có sự kiện nào phù hợp với bộ lọc.</div>';
+                return;
+            }
+
+            container.innerHTML = events.map(ev => {
+                const statusBadge = ev.status === 'approved' 
+                    ? '<span class="badge" style="background:rgba(16,185,129,0.2); color:#34d399; border-color:rgba(16,185,129,0.4);"><i class="fa-solid fa-check"></i> Approved</span>'
+                    : ev.status === 'rejected'
+                    ? '<span class="badge" style="background:rgba(239,68,68,0.2); color:#f87171; border-color:rgba(239,68,68,0.4);"><i class="fa-solid fa-xmark"></i> Rejected</span>'
+                    : '<span class="badge" style="background:rgba(245,158,11,0.2); color:#fbbf24; border-color:rgba(245,158,11,0.4);"><i class="fa-solid fa-hourglass-half"></i> Pending</span>';
+
+                const confPercent = Math.round((ev.confidence || 0) * 100);
+
+                const actionButtons = ev.status === 'pending' ? `
+                    <div style="display:flex; gap:0.4rem; flex-wrap:wrap; justify-content:flex-end;">
+                        <button class="btn btn-secondary event-edit-btn" data-event-id="${escapeHtml(ev.event_id)}" style="padding:0.3rem 0.6rem; font-size:0.78rem;" title="Chỉnh sửa hoặc bổ sung dẫn chứng">
+                            <i class="fa-solid fa-pen-to-square"></i> Sửa / Dẫn chứng
+                        </button>
+                        <button class="btn event-approve-btn" data-event-id="${escapeHtml(ev.event_id)}" style="padding:0.3rem 0.7rem; font-size:0.78rem; background:#10b981; border-color:#10b981;">
+                            <i class="fa-solid fa-check"></i> Duyệt
+                        </button>
+                        <button class="btn btn-secondary event-reject-btn" data-event-id="${escapeHtml(ev.event_id)}" style="padding:0.3rem 0.7rem; font-size:0.78rem; color:#f87171; border-color:rgba(239,68,68,0.3);">
+                            <i class="fa-solid fa-xmark"></i> Từ chối
+                        </button>
+                    </div>
+                ` : `
+                    <div style="display:flex; gap:0.4rem; flex-wrap:wrap; justify-content:flex-end;">
+                        <button class="btn btn-secondary event-edit-btn" data-event-id="${escapeHtml(ev.event_id)}" style="padding:0.25rem 0.6rem; font-size:0.75rem;" title="Chỉnh sửa hoặc bổ sung dẫn chứng">
+                            <i class="fa-solid fa-pen-to-square"></i> Dẫn chứng
+                        </button>
+                        ${ev.status !== 'approved' ? `<button class="btn btn-secondary event-approve-btn" data-event-id="${escapeHtml(ev.event_id)}" style="padding:0.25rem 0.6rem; font-size:0.75rem;"><i class="fa-solid fa-rotate-left"></i> Duyệt lại</button>` : ''}
+                        ${ev.status !== 'rejected' ? `<button class="btn btn-secondary event-reject-btn" data-event-id="${escapeHtml(ev.event_id)}" style="padding:0.25rem 0.6rem; font-size:0.75rem; color:#f87171;"><i class="fa-solid fa-ban"></i> Hủy duyệt</button>` : ''}
+                    </div>
+                `;
+
+                return `
+                    <div class="event-card">
+                        <div class="event-header">
+                            <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+                                <span style="font-weight:700; font-size:0.95rem; color:#818cf8;"><i class="fa-solid fa-user"></i> ${escapeHtml(ev.character_original_name)}</span>
+                                <span class="badge" style="font-size:0.72rem;">Chương ${ev.canonical_chapter}</span>
+                                ${getCategoryBadge(ev.category)}
+                                <span style="font-size:0.75rem; color:var(--text-sub);">(${escapeHtml(ev.operation)})</span>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:0.5rem;">
+                                ${statusBadge}
+                                ${actionButtons}
+                            </div>
+                        </div>
+
+                        <div style="font-size:0.85rem; padding:0.4rem 0.6rem; background:rgba(0,0,0,0.25); border-radius:6px;">
+                            <span style="color:var(--text-sub);">${escapeHtml(ev.attribute_key)}:</span> ${formatEventValue(ev.value)}
+                        </div>
+
+                        ${ev.evidence ? `
+                            <div style="font-size:0.78rem; color:var(--text-sub); border-left:2px solid var(--accent); padding-left:0.5rem; font-style:italic;">
+                                "${escapeHtml(ev.evidence)}"
+                            </div>
+                        ` : ''}
+
+                        <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.72rem; color:var(--text-sub); margin-top:0.2rem;">
+                            <span>Độ tin cậy AI: <strong>${confPercent}%</strong></span>
+                            <span>ID: ${escapeHtml(String(ev.event_id).substring(0, 16))}...</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            container.querySelectorAll('.event-edit-btn').forEach(button => {
+                button.addEventListener('click', () => openEditEventModal(button.dataset.eventId || ''));
+            });
+            container.querySelectorAll('.event-approve-btn').forEach(button => {
+                button.addEventListener('click', () => approveEvent(button.dataset.eventId || ''));
+            });
+            container.querySelectorAll('.event-reject-btn').forEach(button => {
+                button.addEventListener('click', () => rejectEvent(button.dataset.eventId || ''));
+            });
+        }
+
+        function openEditEventModal(eventId) {
+            const event = cpEventsCache.find(e => e.event_id === eventId);
+            if (!event) return;
+
+            document.getElementById('cp-edit-event-id').value = event.event_id;
+            document.getElementById('cp-edit-event-char').innerText = event.character_original_name;
+            document.getElementById('cp-edit-event-chap').innerText = `Chương ${event.canonical_chapter}`;
+            document.getElementById('cp-edit-event-cat-badge').innerHTML = getCategoryBadge(event.category);
+            document.getElementById('cp-edit-event-attr').innerText = event.attribute_key;
+            document.getElementById('cp-edit-event-val').value = typeof event.value === 'object' ? JSON.stringify(event.value) : (event.value || '');
+            document.getElementById('cp-edit-event-evidence').value = event.evidence || '';
+
+            openModal('modal-cp-edit-event');
+        }
+
+        async function submitApproveWithEvidence() {
+            const eventId = document.getElementById('cp-edit-event-id').value;
+            const evidence = document.getElementById('cp-edit-event-evidence').value.trim();
+            const valRaw = document.getElementById('cp-edit-event-val').value.trim();
+
+            let val = valRaw;
+            try {
+                if (valRaw.startsWith('{') || valRaw.startsWith('[')) {
+                    val = JSON.parse(valRaw);
+                }
+            } catch (e) {}
+
+            try {
+                const res = await fetch(apiUrl(`/api/v1/book-bible/events/${encodeURIComponent(eventId)}/approve`), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        evidence: evidence || undefined,
+                        value: val || undefined
+                    })
+                });
+
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || "Không thể duyệt sự kiện");
+                }
+
+                closeModal('modal-cp-edit-event');
+                await Promise.all([
+                    loadEventsList(),
+                    loadCharacterSnapshot()
+                ]);
+            } catch (err) {
+                alert("Lỗi: " + err.message);
+            }
+        }
+
+        async function submitSaveEventOnly() {
+            const eventId = document.getElementById('cp-edit-event-id').value;
+            const evidence = document.getElementById('cp-edit-event-evidence').value.trim();
+            const valRaw = document.getElementById('cp-edit-event-val').value.trim();
+
+            let val = valRaw;
+            try {
+                if (valRaw.startsWith('{') || valRaw.startsWith('[')) {
+                    val = JSON.parse(valRaw);
+                }
+            } catch (e) {}
+
+            try {
+                const res = await fetch(apiUrl(`/api/v1/book-bible/events/${encodeURIComponent(eventId)}`), {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        evidence: evidence || undefined,
+                        value: val || undefined
+                    })
+                });
+
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || "Không thể lưu sự kiện");
+                }
+
+                closeModal('modal-cp-edit-event');
+                await loadEventsList();
+            } catch (err) {
+                alert("Lỗi: " + err.message);
+            }
+        }
+
+        async function approveEvent(eventId) {
+            try {
+                const res = await fetch(apiUrl(`/api/v1/book-bible/events/${encodeURIComponent(eventId)}/approve`), { method: 'POST' });
+                if (res.ok) {
+                    await Promise.all([
+                        loadEventsList(),
+                        loadCharacterSnapshot()
+                    ]);
+                }
+            } catch (err) {
+                alert("Lỗi khi duyệt sự kiện: " + err.message);
+            }
+        }
+
+        async function rejectEvent(eventId) {
+            try {
+                const res = await fetch(apiUrl(`/api/v1/book-bible/events/${encodeURIComponent(eventId)}/reject`), { method: 'POST' });
+                if (res.ok) {
+                    await Promise.all([
+                        loadEventsList(),
+                        loadCharacterSnapshot()
+                    ]);
+                }
+            } catch (err) {
+                alert("Lỗi khi từ chối sự kiện: " + err.message);
+            }
+        }
+
+        async function approveAllPendingEvents() {
+            if (!cpCurrentBookId) return;
+            if (!confirm("Bạn có chắc chắn muốn duyệt tất cả các sự kiện đang chờ duyệt của bộ truyện này?")) return;
+
+            try {
+                const res = await fetch(apiUrl('/api/v1/book-bible/events/approve-all'), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ book_id: cpCurrentBookId })
+                });
+                if (res.ok) {
+                    const approved = await res.json();
+                    alert(`Đã duyệt thành công ${approved.length} sự kiện!`);
+                    await Promise.all([
+                        loadEventsList(),
+                        loadCharacterSnapshot()
+                    ]);
+                }
+            } catch (err) {
+                alert("Lỗi: " + err.message);
+            }
+        }
+
+        async function loadCharacterSnapshot() {
+            if (!cpCurrentEditionId) return;
+
+            const chapterIndex = parseInt(document.getElementById('cp-snapshot-chapter').value) || 1;
+            const container = document.getElementById('cp-snapshot-characters-container');
+            const statusBadge = document.getElementById('cp-snapshot-status');
+
+            container.innerHTML = '<div style="text-align:center; padding:1.5rem; color:var(--text-sub);"><i class="fa-solid fa-spinner spinner"></i> Đang tính toán Snapshot...</div>';
+
+            try {
+                const res = await fetch(apiUrl(`/api/v1/book-bible/editions/${cpCurrentEditionId}/chapters/${chapterIndex}/snapshot`));
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || "Không thể tải snapshot");
+                }
+
+                const data = await res.json();
+                statusBadge.innerText = data.snapshot_status === 'complete' ? 'Complete (Đầy đủ)' : 'Partial (Một phần)';
+                statusBadge.style.color = data.snapshot_status === 'complete' ? '#34d399' : '#fbbf24';
+
+                renderSnapshotCharacters(data.characters, chapterIndex);
+            } catch (err) {
+                container.innerHTML = `<div style="text-align:center; padding:1.5rem; color:#ef4444;">Lỗi: ${escapeHtml(err.message)}</div>`;
+            }
+        }
+
+        function renderSnapshotCharacters(characters, chapter) {
+            const container = document.getElementById('cp-snapshot-characters-container');
+            if (!characters || characters.length === 0) {
+                container.innerHTML = `<div style="text-align:center; padding:2rem; color:var(--text-sub); font-size:0.88rem;">Chưa có thông tin nhân vật nào được duyệt tính đến Chương ${chapter}.</div>`;
+                return;
+            }
+
+            container.innerHTML = characters.map(c => {
+                const attrs = c.attributes || {};
+                let attrRows = '';
+
+                for (const [key, val] of Object.entries(attrs)) {
+                    attrRows += `
+                        <div style="display:flex; justify-content:space-between; font-size:0.82rem; padding:0.25rem 0; border-bottom:1px solid rgba(255,255,255,0.05);">
+                            <span style="color:var(--text-sub);">${escapeHtml(key)}:</span>
+                            <span style="color:#f1f5f9; text-align:right; max-width:65%; word-break:break-word;">${formatEventValue(val)}</span>
+                        </div>
+                    `;
+                }
+
+                return `
+                    <div class="character-card">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <div>
+                                <h4 style="color:#fff; font-size:1rem; font-weight:700;"><i class="fa-solid fa-user-tag" style="color:var(--accent);"></i> ${escapeHtml(c.original_name)}</h4>
+                                <span style="font-size:0.75rem; color:var(--text-sub);">Cập nhật gần nhất: Chương ${c.last_changed_chapter || chapter}</span>
+                            </div>
+                            <button class="btn btn-secondary character-timeline-btn" data-character-id="${escapeHtml(c.character_id)}" data-character-name="${escapeHtml(c.original_name)}" style="padding:0.35rem 0.7rem; font-size:0.78rem;">
+                                <i class="fa-solid fa-timeline"></i> Timeline
+                            </button>
+                        </div>
+                        <div style="display:flex; flex-direction:column; margin-top:0.3rem;">
+                            ${attrRows || '<span style="font-size:0.8rem; color:var(--text-sub);">Chưa có thuộc tính chi tiết.</span>'}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            container.querySelectorAll('.character-timeline-btn').forEach(button => {
+                button.addEventListener('click', () => viewCharacterTimeline(
+                    button.dataset.characterId || '',
+                    button.dataset.characterName || ''
+                ));
+            });
+        }
+
+        async function viewCharacterTimeline(characterId, characterName) {
+            if (!cpCurrentEditionId) return;
+
+            const chapterIndex = parseInt(document.getElementById('cp-snapshot-chapter').value) || 1;
+            const modalTitle = document.getElementById('cp-timeline-modal-title');
+            const content = document.getElementById('cp-timeline-content');
+
+            modalTitle.innerHTML = `<i class="fa-solid fa-timeline" style="color:var(--accent);"></i> Timeline: ${escapeHtml(characterName)} (đến Chương ${chapterIndex})`;
+            content.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-sub);"><i class="fa-solid fa-spinner spinner"></i> Đang tải timeline...</div>';
+            openModal('modal-cp-character-timeline');
+
+            try {
+                const res = await fetch(apiUrl(`/api/v1/book-bible/editions/${cpCurrentEditionId}/chapters/${chapterIndex}/characters/${encodeURIComponent(characterId)}/timeline`));
+                if (res.ok) {
+                    const events = await res.json();
+                    if (!events || events.length === 0) {
+                        content.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-sub);">Chưa có sự kiện timeline nào được duyệt.</div>';
+                        return;
+                    }
+
+                    content.innerHTML = events.map(e => `
+                        <div style="padding:0.8rem; background:rgba(15,23,42,0.8); border:1px solid var(--card-border); border-radius:8px; display:flex; flex-direction:column; gap:0.4rem;">
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <div style="display:flex; gap:0.4rem; align-items:center;">
+                                    <span class="badge" style="font-size:0.75rem;">Chương ${e.canonical_chapter}</span>
+                                    ${getCategoryBadge(e.category)}
+                                    <span style="font-size:0.8rem; color:var(--text-sub);">${escapeHtml(e.attribute_key)} (${escapeHtml(e.operation)})</span>
+                                </div>
+                                <span style="font-size:0.72rem; color:var(--text-sub);">${new Date(e.created_at).toLocaleDateString('vi-VN')}</span>
+                            </div>
+                            <div style="font-size:0.85rem; color:#fff;">
+                                <strong>Giá trị:</strong> ${formatEventValue(e.value)}
+                            </div>
+                            ${e.evidence ? `<div style="font-size:0.78rem; color:var(--text-sub); font-style:italic;">"${escapeHtml(e.evidence)}"</div>` : ''}
+                        </div>
+                    `).join('');
+                }
+            } catch (err) {
+                content.innerHTML = `<div style="color:#ef4444;">Lỗi tải timeline: ${escapeHtml(err.message)}</div>`;
+            }
+        }
+
+        async function refreshCharacterTabData() {
+            await Promise.all([
+                loadCpSettings(),
+                loadCpBooks(),
+                loadEventsList(),
+                loadCharacterSnapshot()
+            ]);
+        }
     </script>
 </body>
 </html>
+

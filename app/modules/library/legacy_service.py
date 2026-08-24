@@ -970,6 +970,9 @@ class LegacyLibraryService:
             total = len(canonical_chapters)
             if job:
                 job.total_chapters = total
+                job.current_step = f"Đã trích xuất {total} chương. Bắt đầu lưu trữ..."
+                job.progress_percentage = 12
+                self._persist_import_job(job)
 
             existing_chapters_map = {ch.chapter_index: ch for ch in meta.chapters}
             merged_chapters = dict(existing_chapters_map)
@@ -995,7 +998,9 @@ class LegacyLibraryService:
                             job.skipped_chapters = skipped_count
                             job.current_chapter = seq_idx
                             job.current_step = f"Bỏ qua chương {actual_index} (đã có bản {'dịch' if is_translated else 'gốc'}): {existing_ch.chapter_title}"
-                            job.progress_percentage = 10 + int((seq_idx / max(1, total)) * 75)
+                            job.progress_percentage = 12 + int((seq_idx / max(1, total)) * 75)
+                            if seq_idx % 10 == 0 or seq_idx == total:
+                                self._persist_import_job(job)
                         continue
 
                     # Save text to storage
@@ -1056,7 +1061,9 @@ class LegacyLibraryService:
                 if job:
                     job.current_chapter = seq_idx
                     job.current_step = f"Đang nạp chương {actual_index} ({seq_idx}/{total}): {ch_title}"
-                    job.progress_percentage = 10 + int((seq_idx / max(1, total)) * 75)
+                    job.progress_percentage = 12 + int((seq_idx / max(1, total)) * 75)
+                    if seq_idx % 10 == 0 or seq_idx == total:
+                        self._persist_import_job(job)
 
                 # Periodic Checkpoint and GC every 20 chapters
                 if seq_idx % 20 == 0:
@@ -1145,26 +1152,25 @@ class LegacyLibraryService:
                     LibraryRepository.save_import_job(session, job)
                     session.commit()
             except Exception as exc:
-                if settings.structured_storage_backend == "postgres":
-                    logger.error("Failed to persist import job %s in postgres mode: %s", job.job_id, exc)
-                    raise exc
-                logger.warning("Failed to persist import job %s in dual mode: %s", job.job_id, exc)
+                logger.warning("Failed to persist import job %s in DB: %s", job.job_id, exc)
 
     def get_import_job(self, job_id: str) -> Optional[ImportJobStatus]:
-        if job_id in self._import_jobs:
-            return self._import_jobs[job_id]
+        mem_job = self._import_jobs.get(job_id)
 
         if settings.structured_storage_read_source == "postgres" or settings.structured_storage_backend == "postgres":
             try:
                 with db_session() as session:
                     db_job = LibraryRepository.get_import_job(session, job_id)
                     if db_job:
+                        # Nếu mem_job trong process này có progress cao hơn DB, trả về mem_job
+                        if mem_job and mem_job.status == "processing" and (mem_job.progress_percentage or 0) >= (db_job.progress_percentage or 0):
+                            return mem_job
                         self._import_jobs[job_id] = db_job
                         return db_job
             except Exception as exc:
                 logger.warning("Failed to get import job from DB: %s", exc)
 
-        return None
+        return mem_job
 
     def recover_import_jobs(self) -> None:
         """Mark interrupted imports explicitly instead of leaving them stuck."""
@@ -1228,7 +1234,8 @@ class LegacyLibraryService:
 
                 job.title = title
                 job.current_step = f"Đang tạo/so khớp bộ truyện '{title}' & trích xuất ảnh bìa..."
-                job.progress_percentage = 10
+                job.progress_percentage = 8
+                self._persist_import_job(job)
 
                 # Extract Cover Image safely
                 cover_data, cover_ext = extract_cover_from_epub(book, epub_bytes)
@@ -1243,6 +1250,9 @@ class LegacyLibraryService:
                 meta = self.create_novel(req, cover_data=cover_data, cover_filename=f"cover.{cover_ext}")
                 actual_id = meta.novel_id
                 job.novel_id = actual_id
+                job.current_step = f"Đang lưu trữ file EPUB nguyên bản..."
+                job.progress_percentage = 10
+                self._persist_import_job(job)
 
                 # Save uploaded epub file into isolated uploads folder
                 upload_key = f"novels/{actual_id}/uploads/{job_id}.epub"
@@ -1269,17 +1279,20 @@ class LegacyLibraryService:
                 if auto_scan_characters and meta.chapters and api_key:
                     job.current_step = "Đang tự động quét & trích xuất nhân vật / Book Bible..."
                     job.progress_percentage = 90
+                    self._persist_import_job(job)
                     import asyncio
                     try:
-                        asyncio.run(self.scan_characters_and_timeline(
-                            novel_id=actual_id,
-                            max_chapters=5,
-                            provider=provider,
-                            api_key=api_key,
-                            model=model,
-                        ))
+                        async def _scan_with_timeout():
+                            return await self.scan_characters_and_timeline(
+                                novel_id=actual_id,
+                                max_chapters=5,
+                                provider=provider,
+                                api_key=api_key,
+                                model=model,
+                            )
+                        asyncio.run(asyncio.wait_for(_scan_with_timeout(), timeout=45.0))
                     except Exception as scan_err:
-                        logger.warning("Auto scan characters skipped or failed: %s", scan_err)
+                        logger.warning("Auto scan characters skipped or timed out: %s", scan_err)
 
                 job.status = "completed"
                 job.current_step = f"Đã hoàn thành nhập '{title}' (thêm {job.added_chapters} mới, bỏ qua {job.skipped_chapters} đã có)!"

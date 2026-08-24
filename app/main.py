@@ -38,7 +38,9 @@ app.add_middleware(
 app.include_router(api_v1_router)
 app.include_router(auth_router)
 app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static")), name="static")
-app.mount("/reader-assets", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static", "reader-tts")), name="reader-assets")
+reader_assets_dir = os.path.join(os.path.dirname(__file__), "static", "reader-tts")
+if os.path.isdir(reader_assets_dir):
+    app.mount("/reader-assets", StaticFiles(directory=reader_assets_dir), name="reader-assets")
 
 
 

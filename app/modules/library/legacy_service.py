@@ -1214,12 +1214,13 @@ class LegacyLibraryService:
         )
         self._persist_import_job(job)
 
-        def _worker():
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".epub") as tmp:
-                tmp.write(epub_bytes)
-                tmp_path = tmp.name
-
+        def _worker(raw_epub_data: bytes):
+            tmp_path = ""
             try:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".epub") as tmp:
+                    tmp.write(raw_epub_data)
+                    tmp_path = tmp.name
+
                 book = read_epub_safe(tmp_path)
 
                 # Extract metadata
@@ -1238,7 +1239,7 @@ class LegacyLibraryService:
                 self._persist_import_job(job)
 
                 # Extract Cover Image safely
-                cover_data, cover_ext = extract_cover_from_epub(book, epub_bytes)
+                cover_data, cover_ext = extract_cover_from_epub(book, raw_epub_data)
 
                 # Create Novel metadata
                 req = NovelCreateRequest(
@@ -1256,10 +1257,10 @@ class LegacyLibraryService:
 
                 # Save uploaded epub file into isolated uploads folder
                 upload_key = f"novels/{actual_id}/uploads/{job_id}.epub"
-                self._save_raw_file(upload_key, epub_bytes, content_type="application/epub+zip")
+                self._save_raw_file(upload_key, raw_epub_data, content_type="application/epub+zip")
                 if is_translated and start_chapter_index is None:
                     full_key = f"novels/{actual_id}/full.epub"
-                    self._save_raw_file(full_key, epub_bytes, content_type="application/epub+zip")
+                    self._save_raw_file(full_key, raw_epub_data, content_type="application/epub+zip")
 
                 # Process chapters with dual-version diff and checkpointing
                 meta = self._process_epub_chapters_sync(
@@ -1271,7 +1272,7 @@ class LegacyLibraryService:
                     job=job,
                 )
                 del book
-                del epub_bytes
+                del raw_epub_data
                 del cover_data
                 gc.collect()
 
@@ -1307,10 +1308,10 @@ class LegacyLibraryService:
                 job.current_step = f"Lỗi: {exc}"
                 self._persist_import_job(job)
             finally:
-                if os.path.exists(tmp_path):
+                if tmp_path and os.path.exists(tmp_path):
                     os.unlink(tmp_path)
 
-        thread = threading.Thread(target=_worker, daemon=True)
+        thread = threading.Thread(target=_worker, args=(epub_bytes,), daemon=True)
         thread.start()
         return job
 

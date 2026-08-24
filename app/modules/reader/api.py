@@ -48,16 +48,35 @@ def get_reader_cover(novel_id: str):
     metadata = reader_service._library.get_novel(novel_id)
     if not metadata or not metadata.cover_url:
         raise HTTPException(status_code=404, detail="Không tìm thấy ảnh bìa.")
-    cover_url = str(metadata.cover_url)
-    if "/novels/" in cover_url:
-        key = "novels/" + cover_url.split("/novels/", 1)[1]
+    cover_url = str(metadata.cover_url).strip()
+    bucket = getattr(storage_repo.supabase_provider, "bucket", "novels") or "novels"
+    if f"/object/public/{bucket}/" in cover_url:
+        key = cover_url.split(f"/object/public/{bucket}/", 1)[-1]
+    elif f"/object/authenticated/{bucket}/" in cover_url:
+        key = cover_url.split(f"/object/authenticated/{bucket}/", 1)[-1]
     elif "/storage/" in cover_url:
         key = cover_url.split("/storage/", 1)[-1].lstrip("/")
+    elif "/novels/" in cover_url:
+        key = "novels/" + cover_url.split("/novels/")[-1]
     else:
-        key = ""
+        key = cover_url.lstrip("/")
+
+    while key.startswith("novels/novels/"):
+        key = key[7:]
     if not key.startswith("novels/"):
         key = f"novels/{novel_id}/cover.jpg"
+
     data = storage_repo.get_bytes(key)
+    if data is None:
+        # Fallback thử các đuôi ảnh phổ biến khác
+        for ext in ("png", "jpeg", "webp"):
+            alt_key = f"novels/{novel_id}/cover.{ext}"
+            if alt_key != key:
+                data = storage_repo.get_bytes(alt_key)
+                if data is not None:
+                    key = alt_key
+                    break
+
     if data is None:
         raise HTTPException(status_code=404, detail="Không tìm thấy ảnh bìa.")
     content_type = guess_type(key)[0] or "image/jpeg"

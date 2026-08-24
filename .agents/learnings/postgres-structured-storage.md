@@ -106,6 +106,16 @@
 - **Fix**: Nhóm (group) toàn bộ file theo primary ID, chỉ giữ bản ghi có revision cao nhất hoặc `created_at` mới nhất. Dùng logic `session.add` và skip nếu entity đã tồn tại trong DB.
 - **Files liên quan**: `scripts/migrate_structured_r2_to_postgres.py`
 
+### OOM Restart & SSL Handshake Bottleneck on Large EPUB Import with Supabase Storage
+- **Ngày**: 2026-08-24
+- **Vấn đề**: Tải file EPUB lớn (>500 chương) lên Render Free (512MB RAM) bị sập tiến trình tại chương ~495 với lỗi *"Import bị gián đoạn do server restart"*.
+- **Root cause**: `SupabaseStorageProvider` khởi tạo `httpx.Client()` mới cho từng chương gây rò rỉ SSL context; `BeautifulSoup` và `EpubBook` không được giải phóng chủ động (`decompose()`, `gc.collect()`), làm RAM vượt 512MB khiến Linux OOM Killer gửi `SIGKILL`.
+- **Fix**: 
+  1. Duy trì `httpx.Client` tái sử dụng (connection pooling `max_keepalive_connections=20, max_connections=50`) trong `SupabaseStorageProvider`.
+  2. Bổ sung `soup.decompose()` trong `_extract_raw_chapters_from_epub`.
+  3. Giải phóng `book`, `epub_bytes`, `raw_sections` và gọi `gc.collect()` định kỳ mỗi 20 chương trong `_process_epub_chapters_sync`.
+- **Files liên quan**: `app/infrastructure/storage/legacy_storage.py`, `app/modules/library/legacy_service.py`, `tests/test_supabase_storage.py`
+
 ---
 
 ## How-To

@@ -1,3 +1,4 @@
+import gc
 import io
 import json
 import logging
@@ -791,105 +792,108 @@ class LegacyLibraryService:
             content_html = content_bytes.decode("utf-8", errors="ignore")
             soup = BeautifulSoup(content_html, "html.parser")
 
-            # Xóa các thẻ không phục vụ đọc
-            for tag in soup(["script", "style", "nav", "noscript"]):
-                tag.decompose()
+            try:
+                # Xóa các thẻ không phục vụ đọc
+                for tag in soup(["script", "style", "nav", "noscript"]):
+                    tag.decompose()
 
-            # Bỏ qua file cover / toc / nav nếu tên rõ ràng và không có nhiều nội dung truyện
-            if any(ign in name_lower or ign in id_lower for ign in ignored_names):
-                p_tags = soup.find_all(["p", "div"])
-                total_text_len = sum(len(p.get_text().strip()) for p in p_tags)
-                if total_text_len < 300:
+                # Bỏ qua file cover / toc / nav nếu tên rõ ràng và không có nhiều nội dung truyện
+                if any(ign in name_lower or ign in id_lower for ign in ignored_names):
+                    p_tags = soup.find_all(["p", "div"])
+                    total_text_len = sum(len(p.get_text().strip()) for p in p_tags)
+                    if total_text_len < 300:
+                        continue
+
+                # Kiểm tra nếu tài liệu có nhiều tiêu đề chương (multi-chapter file)
+                headings = soup.find_all(["h1", "h2", "h3", "h4"])
+                chapter_headings = []
+                for h in headings:
+                    h_text = h.get_text().strip()
+                    if parse_chapter_index_from_title(h_text) is not None or re.search(r"^(?:chương|chuong|hồi|hoi|tiết|tiet|chapter)\s*\d+", h_text, re.IGNORECASE):
+                        chapter_headings.append(h)
+
+                if len(chapter_headings) > 1:
+                    # Tài liệu chứa nhiều chương gộp chung -> Tách theo từng heading
+                    pending_title = ""
+                    body = soup.find("body") or soup
+                    current_split_title = chapter_headings[0].get_text().strip()
+                    current_split_lines: List[str] = []
+
+                    for elem in body.find_all(["p", "h1", "h2", "h3", "h4", "div", "blockquote", "li"]):
+                        if elem in chapter_headings:
+                            if current_split_lines:
+                                sec_text = "\n\n".join(current_split_lines).strip()
+                                if len(sec_text) >= 30:
+                                    raw_sections.append((current_split_title, sec_text))
+                            current_split_title = elem.get_text().strip()
+                            current_split_lines = []
+                        elif elem.name in ["p", "blockquote", "li"]:
+                            t = elem.get_text().strip()
+                            if t:
+                                current_split_lines.append(t)
+                        elif elem.name == "div" and not elem.find(["p", "div", "blockquote"]):
+                            t = elem.get_text().strip()
+                            if t:
+                                current_split_lines.append(t)
+
+                    if current_split_lines:
+                        sec_text = "\n\n".join(current_split_lines).strip()
+                        if len(sec_text) >= 30:
+                            raw_sections.append((current_split_title, sec_text))
                     continue
 
-            # Kiểm tra nếu tài liệu có nhiều tiêu đề chương (multi-chapter file)
-            headings = soup.find_all(["h1", "h2", "h3", "h4"])
-            chapter_headings = []
-            for h in headings:
-                h_text = h.get_text().strip()
-                if parse_chapter_index_from_title(h_text) is not None or re.search(r"^(?:chương|chuong|hồi|hoi|tiết|tiet|chapter)\s*\d+", h_text, re.IGNORECASE):
-                    chapter_headings.append(h)
+                # Thay thế thẻ br bằng dấu xuống dòng
+                for br in soup.find_all("br"):
+                    br.replace_with("\n")
 
-            if len(chapter_headings) > 1:
-                # Tài liệu chứa nhiều chương gộp chung -> Tách theo từng heading
-                pending_title = ""
-                body = soup.find("body") or soup
-                current_split_title = chapter_headings[0].get_text().strip()
-                current_split_lines: List[str] = []
+                # Trường hợp thông thường: 1 file = 1 chương (hoặc 1 trang tiêu đề lẻ)
+                p_tags = soup.find_all(["p", "blockquote", "li"])
+                if len(p_tags) > 0:
+                    text_lines = [
+                        elem.get_text().strip()
+                        for elem in soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6", "p", "blockquote", "li"])
+                        if elem.get_text().strip()
+                    ]
+                else:
+                    body = soup.find("body") or soup
+                    text_lines = [l.strip() for l in body.get_text("\n").split("\n") if l.strip()]
 
-                for elem in body.find_all(["p", "h1", "h2", "h3", "h4", "div", "blockquote", "li"]):
-                    if elem in chapter_headings:
-                        if current_split_lines:
-                            sec_text = "\n\n".join(current_split_lines).strip()
-                            if len(sec_text) >= 30:
-                                raw_sections.append((current_split_title, sec_text))
-                        current_split_title = elem.get_text().strip()
-                        current_split_lines = []
-                    elif elem.name in ["p", "blockquote", "li"]:
-                        t = elem.get_text().strip()
-                        if t:
-                            current_split_lines.append(t)
-                    elif elem.name == "div" and not elem.find(["p", "div", "blockquote"]):
-                        t = elem.get_text().strip()
-                        if t:
-                            current_split_lines.append(t)
+                full_text = "\n\n".join(text_lines).strip()
+                if not full_text:
+                    continue
 
-                if current_split_lines:
-                    sec_text = "\n\n".join(current_split_lines).strip()
-                    if len(sec_text) >= 30:
-                        raw_sections.append((current_split_title, sec_text))
-                continue
+                h_tag = soup.find(["h1", "h2", "h3", "h4"])
+                ch_title = h_tag.get_text().strip() if h_tag else ""
+                if not ch_title and text_lines:
+                    first_line = text_lines[0]
+                    if parse_chapter_index_from_title(first_line) is not None and len(first_line) <= 80:
+                        ch_title = first_line
 
-            # Thay thế thẻ br bằng dấu xuống dòng
-            for br in soup.find_all("br"):
-                br.replace_with("\n")
+                # Xử lý trang chỉ có Tiêu đề (Title-only page / không có nội dung đoạn văn truyện)
+                story_p_len = sum(len(p.get_text().strip()) for p in p_tags)
+                is_title_only = False
+                if len(p_tags) > 0:
+                    if story_p_len < 20 and (bool(ch_title) or parse_chapter_index_from_title(full_text) is not None):
+                        is_title_only = True
+                else:
+                    if len(full_text) < 80 and len(text_lines) <= 1 and (bool(ch_title) or parse_chapter_index_from_title(full_text) is not None):
+                        is_title_only = True
 
-            # Trường hợp thông thường: 1 file = 1 chương (hoặc 1 trang tiêu đề lẻ)
-            p_tags = soup.find_all(["p", "blockquote", "li"])
-            if len(p_tags) > 0:
-                text_lines = [
-                    elem.get_text().strip()
-                    for elem in soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6", "p", "blockquote", "li"])
-                    if elem.get_text().strip()
-                ]
-            else:
-                body = soup.find("body") or soup
-                text_lines = [l.strip() for l in body.get_text("\n").split("\n") if l.strip()]
+                if is_title_only:
+                    pending_title = ch_title or full_text
+                    continue
 
-            full_text = "\n\n".join(text_lines).strip()
-            if not full_text:
-                continue
+                # Nếu có pending_title từ trang tiêu đề trước đó, ưu tiên sử dụng
+                final_title = ch_title
+                if pending_title:
+                    if not final_title or len(final_title) > 80 or parse_chapter_index_from_title(final_title) is None:
+                        final_title = pending_title
+                    pending_title = ""
 
-            h_tag = soup.find(["h1", "h2", "h3", "h4"])
-            ch_title = h_tag.get_text().strip() if h_tag else ""
-            if not ch_title and text_lines:
-                first_line = text_lines[0]
-                if parse_chapter_index_from_title(first_line) is not None and len(first_line) <= 80:
-                    ch_title = first_line
-
-            # Xử lý trang chỉ có Tiêu đề (Title-only page / không có nội dung đoạn văn truyện)
-            story_p_len = sum(len(p.get_text().strip()) for p in p_tags)
-            is_title_only = False
-            if len(p_tags) > 0:
-                if story_p_len < 20 and (bool(ch_title) or parse_chapter_index_from_title(full_text) is not None):
-                    is_title_only = True
-            else:
-                if len(full_text) < 80 and len(text_lines) <= 1 and (bool(ch_title) or parse_chapter_index_from_title(full_text) is not None):
-                    is_title_only = True
-
-            if is_title_only:
-                pending_title = ch_title or full_text
-                continue
-
-            # Nếu có pending_title từ trang tiêu đề trước đó, ưu tiên sử dụng
-            final_title = ch_title
-            if pending_title:
-                if not final_title or len(final_title) > 80 or parse_chapter_index_from_title(final_title) is None:
-                    final_title = pending_title
-                pending_title = ""
-
-            if len(full_text) >= 30:
-                raw_sections.append((final_title, full_text))
+                if len(full_text) >= 30:
+                    raw_sections.append((final_title, full_text))
+            finally:
+                soup.decompose()
 
         return raw_sections
 
@@ -960,6 +964,8 @@ class LegacyLibraryService:
                 raw_sections,
                 start_chapter_index=start_chapter_index,
             )
+            del raw_sections
+            gc.collect()
 
             total = len(canonical_chapters)
             if job:
@@ -1052,7 +1058,7 @@ class LegacyLibraryService:
                     job.current_step = f"Đang nạp chương {actual_index} ({seq_idx}/{total}): {ch_title}"
                     job.progress_percentage = 10 + int((seq_idx / max(1, total)) * 75)
 
-                # Periodic Checkpoint every 20 chapters
+                # Periodic Checkpoint and GC every 20 chapters
                 if seq_idx % 20 == 0:
                     meta.chapters = [merged_chapters[k] for k in sorted(merged_chapters.keys())]
                     meta.total_chapters = len(meta.chapters)
@@ -1060,6 +1066,7 @@ class LegacyLibraryService:
                     meta.updated_at = now_str
                     self._save_metadata(meta)
                     self._cache[actual_id] = meta
+                    gc.collect()
 
             # Final save
             meta.chapters = [merged_chapters[k] for k in sorted(merged_chapters.keys())]
@@ -1068,6 +1075,7 @@ class LegacyLibraryService:
             meta.updated_at = datetime.now(timezone.utc).isoformat()
             self._save_metadata(meta)
             self._cache[actual_id] = meta
+            gc.collect()
             return meta
 
     def import_epub_novel(
@@ -1252,6 +1260,10 @@ class LegacyLibraryService:
                     force_overwrite=force_overwrite,
                     job=job,
                 )
+                del book
+                del epub_bytes
+                del cover_data
+                gc.collect()
 
                 # Optional character scan
                 if auto_scan_characters and meta.chapters and api_key:

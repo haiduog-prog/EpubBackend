@@ -92,6 +92,24 @@ class SupabaseStorageProvider(BaseStorageProvider):
         self.api_key = api_key if api_key is not None else settings.supabase_key
         self.bucket = bucket if bucket is not None else settings.supabase_storage_bucket
         self.public_url = (public_url if public_url is not None else settings.supabase_storage_public_url).rstrip("/")
+        self._client: Optional[httpx.Client] = None
+        self._client_lock = threading.Lock()
+
+    def _get_client(self) -> httpx.Client:
+        with self._client_lock:
+            if self._client is None or getattr(self._client, "is_closed", False):
+                limits = httpx.Limits(max_keepalive_connections=20, max_connections=50, keepalive_expiry=30.0)
+                self._client = httpx.Client(timeout=60.0, limits=limits)
+            return self._client
+
+    def close(self) -> None:
+        with self._client_lock:
+            if self._client is not None and not getattr(self._client, "is_closed", False):
+                try:
+                    self._client.close()
+                except Exception:
+                    pass
+                self._client = None
 
     @property
     def provider_name(self) -> str:
@@ -125,12 +143,12 @@ class SupabaseStorageProvider(BaseStorageProvider):
         headers["x-upsert"] = "true"
 
         try:
-            with httpx.Client(timeout=60.0) as client:
-                resp = client.post(url, headers=headers, content=data)
-                if resp.status_code in (200, 201):
-                    return self.get_public_url(clean_key)
-                logger.warning("Supabase put_bytes failed (%s, status=%d): %s", clean_key, resp.status_code, resp.text)
-                return None
+            client = self._get_client()
+            resp = client.post(url, headers=headers, content=data)
+            if resp.status_code in (200, 201):
+                return self.get_public_url(clean_key)
+            logger.warning("Supabase put_bytes failed (%s, status=%d): %s", clean_key, resp.status_code, resp.text)
+            return None
         except Exception as exc:
             logger.warning("Supabase put_bytes exception (%s): %s", clean_key, exc)
             return None
@@ -158,21 +176,21 @@ class SupabaseStorageProvider(BaseStorageProvider):
         headers = self._get_headers()
 
         try:
-            with httpx.Client(timeout=60.0) as client:
-                resp = client.get(url, headers=headers)
-                if resp.status_code == 200:
-                    return resp.content
-                if resp.status_code == 404:
-                    # Fallback sang public URL endpoint nếu có
-                    pub_url = f"{self.base_url}/storage/v1/object/public/{self.bucket}/{clean_key}"
-                    pub_resp = client.get(pub_url)
-                    if pub_resp.status_code == 200:
-                        return pub_resp.content
-                    return None
-                if raise_on_error:
-                    resp.raise_for_status()
-                logger.warning("Supabase get_bytes failed (%s, status=%d): %s", clean_key, resp.status_code, resp.text)
+            client = self._get_client()
+            resp = client.get(url, headers=headers)
+            if resp.status_code == 200:
+                return resp.content
+            if resp.status_code == 404:
+                # Fallback sang public URL endpoint nếu có
+                pub_url = f"{self.base_url}/storage/v1/object/public/{self.bucket}/{clean_key}"
+                pub_resp = client.get(pub_url)
+                if pub_resp.status_code == 200:
+                    return pub_resp.content
                 return None
+            if raise_on_error:
+                resp.raise_for_status()
+            logger.warning("Supabase get_bytes failed (%s, status=%d): %s", clean_key, resp.status_code, resp.text)
+            return None
         except Exception as exc:
             if raise_on_error:
                 raise exc
@@ -208,15 +226,15 @@ class SupabaseStorageProvider(BaseStorageProvider):
         headers = self._get_headers()
         headers["Range"] = "bytes=0-0"
         try:
-            with httpx.Client(timeout=15.0) as client:
-                resp = client.get(url, headers=headers)
-                if resp.status_code in (200, 206):
-                    return True
-                if resp.status_code == 404:
-                    return False
-                info_url = f"{self.base_url}/storage/v1/object/info/authenticated/{self.bucket}/{clean_key}"
-                info_resp = client.get(info_url, headers=self._get_headers())
-                return info_resp.status_code == 200
+            client = self._get_client()
+            resp = client.get(url, headers=headers)
+            if resp.status_code in (200, 206):
+                return True
+            if resp.status_code == 404:
+                return False
+            info_url = f"{self.base_url}/storage/v1/object/info/authenticated/{self.bucket}/{clean_key}"
+            info_resp = client.get(info_url, headers=self._get_headers())
+            return info_resp.status_code == 200
         except Exception:
             return False
 
@@ -232,17 +250,17 @@ class SupabaseStorageProvider(BaseStorageProvider):
         headers["Content-Type"] = "application/json"
         deleted_count = 0
 
-        with httpx.Client(timeout=30.0) as client:
-            for i in range(0, len(object_names), 100):
-                chunk = [k.lstrip("/") for k in object_names[i : i + 100]]
-                try:
-                    resp = client.request("DELETE", url, headers=headers, json={"prefixes": chunk})
-                    if resp.status_code in (200, 204):
-                        deleted_count += len(chunk)
-                    else:
-                        logger.warning("Supabase delete_files failed (status=%d): %s", resp.status_code, resp.text)
-                except Exception as exc:
-                    logger.warning("Supabase delete_files exception: %s", exc)
+        client = self._get_client()
+        for i in range(0, len(object_names), 100):
+            chunk = [k.lstrip("/") for k in object_names[i : i + 100]]
+            try:
+                resp = client.request("DELETE", url, headers=headers, json={"prefixes": chunk})
+                if resp.status_code in (200, 204):
+                    deleted_count += len(chunk)
+                else:
+                    logger.warning("Supabase delete_files failed (status=%d): %s", resp.status_code, resp.text)
+            except Exception as exc:
+                logger.warning("Supabase delete_files exception: %s", exc)
         return deleted_count
 
     def list_files(self, prefix: str = "", raise_on_error: bool = False) -> List[str]:
@@ -254,43 +272,43 @@ class SupabaseStorageProvider(BaseStorageProvider):
         headers = self._get_headers()
         url = f"{self.base_url}/storage/v1/object/list/{self.bucket}"
 
-        with httpx.Client(timeout=30.0) as client:
-            while queue:
-                curr = queue.pop(0)
-                offset = 0
-                limit = 100
-                while True:
-                    payload = {
-                        "prefix": curr,
-                        "limit": limit,
-                        "offset": offset,
-                        "sortBy": {"column": "name", "order": "asc"},
-                    }
-                    try:
-                        resp = client.post(url, headers=headers, json=payload)
-                        if resp.status_code != 200:
-                            if raise_on_error:
-                                resp.raise_for_status()
-                            logger.warning("Supabase list error (prefix=%s, status=%d): %s", curr, resp.status_code, resp.text)
-                            break
-                        items = resp.json()
-                        if not items:
-                            break
-                        for item in items:
-                            name = item.get("name", "")
-                            full_key = f"{curr}/{name}".strip("/") if curr else name
-                            if item.get("id") is None and item.get("metadata") is None:
-                                queue.append(full_key)
-                            else:
-                                results.append(full_key)
-                        if len(items) < limit:
-                            break
-                        offset += limit
-                    except Exception as exc:
-                        logger.warning("Supabase list exception (prefix=%s): %s", curr, exc)
+        client = self._get_client()
+        while queue:
+            curr = queue.pop(0)
+            offset = 0
+            limit = 100
+            while True:
+                payload = {
+                    "prefix": curr,
+                    "limit": limit,
+                    "offset": offset,
+                    "sortBy": {"column": "name", "order": "asc"},
+                }
+                try:
+                    resp = client.post(url, headers=headers, json=payload)
+                    if resp.status_code != 200:
                         if raise_on_error:
-                            raise exc
+                            resp.raise_for_status()
+                        logger.warning("Supabase list error (prefix=%s, status=%d): %s", curr, resp.status_code, resp.text)
                         break
+                    items = resp.json()
+                    if not items:
+                        break
+                    for item in items:
+                        name = item.get("name", "")
+                        full_key = f"{curr}/{name}".strip("/") if curr else name
+                        if item.get("id") is None and item.get("metadata") is None:
+                            queue.append(full_key)
+                        else:
+                            results.append(full_key)
+                    if len(items) < limit:
+                        break
+                    offset += limit
+                except Exception as exc:
+                    logger.warning("Supabase list exception (prefix=%s): %s", curr, exc)
+                    if raise_on_error:
+                        raise exc
+                    break
         return sorted(list(set(results)))
 
     def list_json_objects(self, prefix: str) -> List[dict]:

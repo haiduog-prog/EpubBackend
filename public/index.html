@@ -751,7 +751,7 @@
             <div class="card">
                 <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
                     <div>
-                        <div class="card-title" style="margin-bottom:0.2rem;"><i class="fa-solid fa-book-open"></i> Kho Truyện Trên Cloudflare R2</div>
+                        <div class="card-title" style="margin-bottom:0.2rem;"><i class="fa-solid fa-book-open"></i> Kho Truyện Đám Mây</div>
                         <p style="color:var(--text-sub); font-size:0.85rem;">Quản lý các bộ tiểu thuyết, từng chương, tự động dịch và đóng gói EPUB.</p>
                     </div>
                     <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
@@ -769,7 +769,7 @@
 
                 <div class="novel-grid" id="library-novels-grid">
                     <div style="grid-column: 1 / -1; text-align:center; padding:2rem; color:var(--text-sub);">
-                        <i class="fa-solid fa-spinner spinner"></i> Đang tải danh sách truyện từ Cloudflare R2...
+                        <i class="fa-solid fa-spinner spinner"></i> Đang tải danh sách truyện từ kho lưu trữ...
                     </div>
                 </div>
             </div>
@@ -1116,7 +1116,7 @@
                     <h3 style="font-size:1.2rem; font-weight:700;"><i class="fa-solid fa-file-import" style="color:var(--accent);"></i> Nhập File EPUB Vào Kho</h3>
                     <button onclick="closeModal('modal-import-epub')" style="background:none; border:none; color:var(--text-sub); font-size:1.2rem; cursor:pointer;"><i class="fa-solid fa-xmark"></i></button>
                 </div>
-                <p style="color:var(--text-sub); font-size:0.85rem;">Hệ thống sẽ tự động bóc tách tên truyện, tác giả, ảnh bìa và toàn bộ các chương trong file EPUB vào Cloudflare R2.</p>
+                <p style="color:var(--text-sub); font-size:0.85rem;">Hệ thống sẽ tự động bóc tách tên truyện, tác giả, ảnh bìa và toàn bộ các chương trong file EPUB vào kho lưu trữ.</p>
                 <form id="form-import-epub" onsubmit="submitImportEpub(event)" style="display:flex; flex-direction:column; gap:1rem;">
                     <div>
                         <label style="font-size:0.85rem; color:var(--text-sub); display:block; margin-bottom:0.3rem;">Chọn file EPUB *</label>
@@ -1153,7 +1153,7 @@
                         </div>
                         <div style="display:flex; justify-content:space-between; font-size:0.78rem; color:var(--text-sub); margin-top:0.3rem;">
                             <span>Chương: <strong id="import-progress-ch-curr" style="color:#fff;">0</strong> / <span id="import-progress-ch-total">0</span></span>
-                            <span id="import-progress-status-badge" style="color:#94a3b8;">Đang xử lý Cloudflare R2...</span>
+                            <span id="import-progress-status-badge" style="color:#94a3b8;">Đang xử lý lưu trữ...</span>
                         </div>
                     </div>
 
@@ -2078,7 +2078,7 @@
 
         async function loadLibraryNovels() {
             const grid = document.getElementById('library-novels-grid');
-            grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:2rem; color:var(--text-sub);"><i class="fa-solid fa-spinner spinner"></i> Đang tải danh sách truyện từ Cloudflare R2...</div>';
+            grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:2rem; color:var(--text-sub);"><i class="fa-solid fa-spinner spinner"></i> Đang tải danh sách truyện từ kho lưu trữ...</div>';
 
             try {
                 const res = await fetch(apiUrl('/api/v1/library/novels'));
@@ -2089,7 +2089,7 @@
                     grid.innerHTML = `<div style="grid-column:1/-1; text-align:center; padding:3rem; color:var(--text-sub);">
                         <i class="fa-solid fa-folder-open" style="font-size:2.5rem; color:#6366f1; margin-bottom:0.75rem;"></i>
                         <p style="font-size:1rem; font-weight:600; color:#cbd5e1;">Kho truyện đang trống</p>
-                        <p style="font-size:0.85rem; margin-top:0.3rem;">Bấm nút "+ Tạo Truyện Mới" để thêm bộ tiểu thuyết đầu tiên lên Cloudflare R2.</p>
+                        <p style="font-size:0.85rem; margin-top:0.3rem;">Bấm nút "+ Tạo Truyện Mới" để thêm bộ tiểu thuyết đầu tiên lên kho lưu trữ.</p>
                     </div>`;
                     return;
                 }

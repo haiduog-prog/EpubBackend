@@ -31,12 +31,16 @@ class MockHttpxClient:
 
     def __init__(self, *args, **kwargs):
         self.storage = {}
+        self.is_closed = False
 
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         pass
+
+    def close(self):
+        self.is_closed = True
 
     def post(self, url, headers=None, content=None, json=None):
         # 1. Object upload: /storage/v1/object/{bucket}/{key}
@@ -166,3 +170,30 @@ def test_storage_repository_provider_switching(monkeypatch):
 
     repo_r2.put_bytes("test/r2_file.txt", b"R2 content")
     assert repo_r2.get_bytes("test/r2_file.txt") == b"R2 content"
+
+
+def test_supabase_provider_client_pooling_and_close(monkeypatch):
+    clients_created = []
+
+    def mock_client_factory(**kwargs):
+        client = MockHttpxClient(**kwargs)
+        clients_created.append(client)
+        return client
+
+    monkeypatch.setattr("httpx.Client", mock_client_factory)
+
+    provider = SupabaseStorageProvider(
+        base_url="https://xyz.supabase.co",
+        api_key="test-key",
+        bucket="novels",
+    )
+
+    # Calling put_bytes multiple times should reuse the same httpx.Client instance
+    for i in range(10):
+        provider.put_bytes(f"chapters/ch_{i}.txt", f"Chapter {i} text".encode("utf-8"))
+
+    assert len(clients_created) == 1
+
+    # Closing provider cleans up client
+    provider.close()
+    assert provider._client is None

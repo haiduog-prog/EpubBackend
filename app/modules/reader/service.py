@@ -116,15 +116,16 @@ class ReaderService:
         )
 
     def _to_chapter_summary(self, novel_id: str, chapter: ChapterItem) -> ReaderChapterSummary:
-        content_urls = self._content_urls(chapter)
+        # Chapter bytes are returned only by the authenticated API endpoint.
+        # Never serialize storage/CDN URLs into the browser response.
         return ReaderChapterSummary(
             chapter_index=chapter.chapter_index,
             chapter_id=chapter.chapter_id,
             chapter_title=chapter.chapter_title,
             word_count=chapter.word_count,
             updated_at=chapter.updated_at,
-            content_url=content_urls[0] if content_urls else None,
-            content_urls=content_urls,
+            content_url=None,
+            content_urls=[],
         )
 
     def _content_urls(self, chapter: ChapterItem) -> List[str]:
@@ -147,7 +148,7 @@ class ReaderService:
             author=metadata.author,
             genre=metadata.genre,
             description=metadata.description,
-            cover_url=metadata.cover_url,
+            cover_url=(f"/api/v1/reader/books/{metadata.novel_id}/cover" if metadata.cover_url else None),
             status=metadata.status,
             total_chapters=len(metadata.chapters),
             translated_chapters=translated_count,

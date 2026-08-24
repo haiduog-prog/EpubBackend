@@ -23,6 +23,26 @@ class Settings(BaseModel):
     # Supabase Storage Configuration
     supabase_url: str = Field(default_factory=lambda: os.getenv("SUPABASE_URL", ""))
     supabase_key: str = Field(default_factory=lambda: os.getenv("SUPABASE_KEY", os.getenv("SUPABASE_SERVICE_ROLE_KEY", os.getenv("SUPABASE_ANON_KEY", ""))))
+    # Keep the browser-safe publishable key separate from the storage key,
+    # which may be a service-role secret used only by the backend.
+    supabase_publishable_key: str = Field(
+        default_factory=lambda: os.getenv(
+            "SUPABASE_PUBLISHABLE_KEY",
+            os.getenv("SUPABASE_ANON_KEY", ""),
+        )
+    )
+    supabase_jwt_issuer: str = Field(default_factory=lambda: os.getenv("SUPABASE_JWT_ISSUER", ""))
+    supabase_jwt_audience: str = Field(default_factory=lambda: os.getenv("SUPABASE_JWT_AUDIENCE", "authenticated"))
+    supabase_jwt_secret: str = Field(default_factory=lambda: os.getenv("SUPABASE_JWT_SECRET", ""))
+    supabase_jwks_cache_seconds: int = Field(
+        default_factory=lambda: int(os.getenv("SUPABASE_JWKS_CACHE_SECONDS", "300"))
+    )
+    auth_required: bool = Field(
+        default_factory=lambda: os.getenv(
+            "AUTH_REQUIRED",
+            "true" if os.getenv("APP_ENV", "development").lower() not in {"development", "dev", "local", "test"} else "false",
+        ).lower() in {"1", "true", "yes", "on"}
+    )
     supabase_storage_bucket: str = Field(default_factory=lambda: os.getenv("SUPABASE_STORAGE_BUCKET", "novels"))
     supabase_storage_public_url: str = Field(default_factory=lambda: os.getenv("SUPABASE_STORAGE_PUBLIC_URL", ""))
 

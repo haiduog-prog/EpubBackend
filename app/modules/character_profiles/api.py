@@ -46,8 +46,9 @@ profile_service = CharacterProfileApplication(
 
 
 def _require_trusted_client(client_key: Optional[str]) -> None:
-    require_write_access(client_key)
-
+    # The parent /api/v1 dependency verifies Supabase JWT. Keep the legacy token only for explicit CLI callers.
+    if client_key:
+        require_write_access(client_key)
 
 def _content_fingerprint(content: Optional[str], supplied: Optional[str]) -> str:
     if supplied:

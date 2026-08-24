@@ -301,7 +301,7 @@
                     <span class="brand-kicker">Thư viện đọc cá nhân</span>
                 </span>
             </a>
-            <a class="text-button" id="admin-link" href="/" title="Mở khu vực quản trị">Quản trị <span aria-hidden="true">↗</span></a>
+            <div style="display:flex;gap:8px;align-items:center"><button class="text-button" id="logout-button" type="button">Đăng xuất</button><a class="text-button" id="admin-link" href="/" title="Mở khu vực quản trị">Quản trị <span aria-hidden="true">↗</span></a></div>
         </header>
 
         <main class="library-view" id="library-view">
@@ -393,8 +393,10 @@
         </main>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="/static/auth.js"></script>
     <script>
-        (() => {
+        (async () => {
             'use strict';
 
             const DEFAULT_PREFERENCES = {
@@ -412,7 +414,10 @@
                 chapterCache: new Map(),
                 preferences: readPreferences(),
                 progressTimer: null,
-                initialChapter: null
+                initialChapter: null,
+                remoteProgress: new Map(),
+                preferenceTimer: null,
+                syncTimer: null
             };
 
             const $ = (id) => document.getElementById(id);
@@ -429,6 +434,8 @@
             function writePreferences() {
                 try {
                     localStorage.setItem('reader.preferences', JSON.stringify(state.preferences));
+                    window.clearTimeout(state.preferenceTimer);
+                    state.preferenceTimer = window.setTimeout(syncPreferences, 2000);
                 } catch (_) { /* Storage can be unavailable in private browsing. */ }
             }
 
@@ -439,7 +446,8 @@
             function readProgress(novelId) {
                 try {
                     const saved = JSON.parse(localStorage.getItem(progressKey(novelId)) || 'null');
-                    return saved && Number.isInteger(saved.chapterIndex) ? saved : null;
+                    const remote = state.remoteProgress && state.remoteProgress.get(novelId);
+                    return remote || (saved && Number.isInteger(saved.chapterIndex) ? saved : null);
                 } catch (_) {
                     return null;
                 }
@@ -448,11 +456,15 @@
             function writeProgress() {
                 if (!state.book || !state.chapter) return;
                 try {
-                    localStorage.setItem(progressKey(state.book.novel_id), JSON.stringify({
+                    const progress = {
                         chapterIndex: state.chapter.chapter.chapter_index,
                         scrollTop: Math.max(0, window.scrollY || 0),
                         updatedAt: new Date().toISOString()
-                    }));
+                    };
+                    localStorage.setItem(progressKey(state.book.novel_id), JSON.stringify(progress));
+                    state.remoteProgress.set(state.book.novel_id, progress);
+                    window.clearTimeout(state.syncTimer);
+                    state.syncTimer = window.setTimeout(syncProgress, 2000);
                 } catch (_) { /* Storage can be unavailable in private browsing. */ }
             }
 
@@ -468,12 +480,7 @@
             }
 
             function getApiBaseUrl() {
-                const defaultBackendUrl = 'https://epubbackend.onrender.com';
-                const params = new URLSearchParams(window.location.search);
-                let stored = '';
-                try { stored = localStorage.getItem('epub_backend_url') || ''; } catch (_) { /* Storage can be unavailable. */ }
-                const configured = (params.get('backend') || stored || defaultBackendUrl).trim();
-                return configured ? configured.replace(/\/+$/, '') : '';
+                return "";
             }
 
             function apiUrl(path) {
@@ -540,7 +547,10 @@
                     image.className = 'book-cover';
                     image.alt = `Ảnh bìa ${book.title}`;
                     image.loading = compact ? 'lazy' : 'eager';
-                    image.src = coverUrl;
+                    window.EpubAuth.authFetch(coverUrl).then(response => {
+                        if (!response.ok) throw new Error("cover");
+                        return response.blob();
+                    }).then(blob => { image.src = URL.createObjectURL(blob); }).catch(() => image.dispatchEvent(new Event("error")));
                     image.addEventListener('error', () => {
                         const fallback = makeElement('div', 'cover-fallback');
                         fallback.append(makeElement('span', 'cover-fallback-mark', 'M'), makeElement('span', 'cover-fallback-title', book.title));
@@ -570,6 +580,9 @@
 
                 state.books.forEach(book => {
                     const card = makeElement('article', 'book-card');
+                    card.tabIndex = 0;
+                    card.setAttribute('role', 'button');
+                    card.setAttribute('aria-label', `Đọc truyện ${book.title}`);
                     card.append(renderCover(book, true));
                     const body = makeElement('div', 'book-body');
                     const title = makeElement('h2', 'book-title', book.title);
@@ -867,6 +880,7 @@
 
             function bindControls() {
                 $('back-to-library').addEventListener('click', showLibrary);
+                $('logout-button').addEventListener('click', async () => { await window.EpubAuth.signOut(); window.location.replace('/login'); });
                 $('toc-toggle').addEventListener('click', () => setTocOpen(!document.body.classList.contains('toc-open')));
                 $('mobile-backdrop').addEventListener('click', closeToc);
                 $('settings-toggle').addEventListener('click', () => $('settings-panel').classList.toggle('is-open'));
@@ -894,6 +908,8 @@
                     writePreferences();
                 });
                 window.addEventListener('scroll', scheduleProgressSave, { passive: true });
+                window.addEventListener('online', () => { syncPreferences(); syncProgress(); });
+                document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { syncPreferences(); syncProgress(); } });
                 document.addEventListener('keydown', event => {
                     if (['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(document.activeElement.tagName)) return;
                     if (event.key === 'Escape') {
@@ -910,10 +926,24 @@
                 });
             }
 
-            applyPreferences();
-            applyBackendLinks();
-            bindControls();
-            loadBooks();
+            try {
+                await window.EpubAuth.ready;
+                const session = await window.EpubAuth.guard();
+                if (!session) return;
+                const remote = await window.EpubAuth.migrateReaderState();
+                if (remote) {
+                    state.preferences = { ...DEFAULT_PREFERENCES, ...(remote.preferences || {}) };
+                    state.remoteProgress = new Map((remote.progress || []).map(item => [item.novel_id, {
+                        chapterIndex: item.chapter_index, scrollTop: item.scroll_top, updatedAt: item.updated_at
+                    }]));
+                }
+                applyPreferences();
+                applyBackendLinks();
+                bindControls();
+                loadBooks();
+            } catch (error) {
+                setStatus(error.message || 'Không thể khởi tạo xác thực.', 'error');
+            }
         })();
     </script>
 </body>

@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="vi">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Đăng nhập · Mực & Trang</title>
+    <style>
+        :root { color-scheme: light; font-family: "Segoe UI", sans-serif; background: #f4f1ea; color: #26231f; }
+        * { box-sizing: border-box; }
+        body { align-items: center; display: flex; justify-content: center; margin: 0; min-height: 100vh; padding: 24px; }
+        main { background: #fbfaf7; border: 1px solid #ded8cd; border-radius: 14px; box-shadow: 0 20px 70px rgba(56,41,27,.14); max-width: 420px; padding: 36px; width: 100%; }
+        h1 { font-family: Georgia, serif; font-size: 2.3rem; font-weight: 500; margin: 0 0 10px; }
+        p { color: #756f67; line-height: 1.6; }
+        label { display: block; font-size: .85rem; font-weight: 700; margin: 20px 0 7px; }
+        input { border: 1px solid #cfc8bc; border-radius: 8px; font: inherit; padding: 12px; width: 100%; }
+        button { background: #9b3f32; border: 0; border-radius: 8px; color: white; cursor: pointer; font: inherit; font-weight: 700; margin-top: 24px; padding: 13px; width: 100%; }
+        button:disabled { cursor: wait; opacity: .6; }
+        [role="alert"] { color: #9b3f32; min-height: 24px; }
+    </style>
+</head>
+<body>
+<main>
+    <p style="color:#9b3f32;font-size:.75rem;font-weight:800;letter-spacing:.14em;text-transform:uppercase;">Mực & Trang</p>
+    <h1>Đăng nhập</h1>
+    <p>Đăng nhập để đồng bộ tiến độ đọc và mở khu vực quản trị.</p>
+    <form id="login-form" novalidate>
+        <label for="email">Email</label>
+        <input id="email" type="email" autocomplete="username" required>
+        <label for="password">Mật khẩu</label>
+        <input id="password" type="password" autocomplete="current-password" required>
+        <p id="login-error" role="alert"></p>
+        <button id="login-button" type="submit">Đăng nhập</button>
+    </form>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/static/auth.js"></script>
+<script>
+(async function () {
+    const form = document.getElementById("login-form");
+    const error = document.getElementById("login-error");
+    const button = document.getElementById("login-button");
+    const params = new URLSearchParams(window.location.search);
+    try {
+        await window.EpubAuth.ready;
+        const existing = await window.EpubAuth.getSession();
+        if (existing) window.location.replace(window.EpubAuth.nextPath(params.get("next")));
+    } catch (_) { error.textContent = "Không thể kết nối dịch vụ xác thực."; }
+    form.addEventListener("submit", async function (event) {
+        event.preventDefault();
+        error.textContent = "";
+        button.disabled = true;
+        try {
+            const result = await window.EpubAuth.signIn(document.getElementById("email").value, document.getElementById("password").value);
+            if (result.error) throw result.error;
+            window.location.replace(window.EpubAuth.nextPath(params.get("next")));
+        } catch (_) {
+            error.textContent = "Email hoặc mật khẩu không đúng.";
+            button.disabled = false;
+        }
+    });
+})();
+</script>
+</body>
+</html>

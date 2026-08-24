@@ -11,12 +11,18 @@ from app.config import settings
 
 def require_write_access(
     x_book_bible_client_key: Optional[str] = Header(default=None),
+    authorization: Optional[str] = Header(default=None),
 ) -> None:
     """Require the configured write credential outside local development.
 
     The default development mode intentionally remains convenient for local CLI
     and test usage. Deployments must set ``APP_ENV`` and the token explicitly.
     """
+    # A verified Supabase Bearer token from the parent /api/v1 dependency is sufficient for the UI.
+    auth_value = authorization if isinstance(authorization, str) else ""
+    if auth_value.strip().lower().startswith("bearer "):
+        return
+
     expected = os.getenv("BOOK_BIBLE_WRITE_TOKEN", settings.book_bible_write_token).strip()
     app_env = os.getenv("APP_ENV", settings.app_env)
     local_environment = app_env.lower() in {"development", "dev", "local", "test"}

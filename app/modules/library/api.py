@@ -26,6 +26,11 @@ from app.modules.library.application.facade import library_service
 
 logger = logging.getLogger("EpubBackend.LibraryAPI")
 
+def _privateize_novel(novel):
+    if novel is None or not getattr(novel, "cover_url", None):
+        return novel
+    return novel.model_copy(update={"cover_url": f"/api/v1/reader/books/{novel.novel_id}/cover"})
+
 router = APIRouter(prefix="/library", tags=["Novel Library"])
 
 
@@ -56,7 +61,7 @@ async def create_novel_endpoint(
         novel_id=novel_id,
     )
     try:
-        return library_service.create_novel(req, cover_data=cover_data, cover_filename=cover_filename)
+        return _privateize_novel(library_service.create_novel(req, cover_data=cover_data, cover_filename=cover_filename))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -133,7 +138,7 @@ async def scan_characters_endpoint(
 
 @router.get("/novels", response_model=List[NovelSummary])
 def list_novels_endpoint():
-    return library_service.list_novels()
+    return [_privateize_novel(novel) for novel in library_service.list_novels()]
 
 
 @router.get("/novels/{novel_id}", response_model=NovelMetadata)
@@ -141,7 +146,7 @@ def get_novel_endpoint(novel_id: str):
     novel = library_service.get_novel(novel_id)
     if not novel:
         raise HTTPException(status_code=404, detail="Không tìm thấy bộ truyện này.")
-    return novel
+    return _privateize_novel(novel)
 
 
 @router.put("/novels/{novel_id}", response_model=NovelMetadata)
@@ -149,7 +154,7 @@ def update_novel_endpoint(novel_id: str, req: NovelUpdateRequest, _: None = Depe
     novel = library_service.update_novel(novel_id, req)
     if not novel:
         raise HTTPException(status_code=404, detail="Không tìm thấy bộ truyện này.")
-    return novel
+    return _privateize_novel(novel)
 
 
 @router.delete("/novels/{novel_id}")

@@ -120,13 +120,8 @@ def test_reader_exposes_public_storage_url_for_direct_reads():
             ]
 
     result = ReaderService(FakeLibrary()).get_book("reader-book")
-
-    assert result.chapters[0].content_url == (
-        "https://project.supabase.co/storage/v1/object/public/novels/"
-        "novels/reader-book/chapters/1.translated.txt"
-    )
-    assert result.chapters[0].content_urls[1] == "https://cdn.example.com/reader-book/1.txt"
-
+    assert result.chapters[0].content_url is None
+    assert result.chapters[0].content_urls == []
 
 def test_get_chapter_fails_closed_when_storage_content_is_missing(reader_service):
     with pytest.raises(ReaderNotFoundError, match="chưa sẵn sàng"):
@@ -163,14 +158,13 @@ def test_reader_api_is_read_only_and_maps_expected_errors(reader_service, monkey
     assert reader_page.status_code == 200
     assert 'id="reader-view"' in reader_page.text
     assert 'localStorage.setItem(progressKey' in reader_page.text
-    assert 'copy.append(makeElement(\'p\'' in reader_page.text
-    assert "localStorage.getItem('epub_backend_url')" in reader_page.text
+    assert 'window.EpubAuth' in reader_page.text
     assert "fetch(apiUrl(path)" in reader_page.text
 
     reader_paths = {
         path: methods
         for path, methods in app.openapi()["paths"].items()
-        if "/reader/" in path or path.endswith("/reader/books")
+        if path.startswith("/api/v1/reader/books") or path == "/reader"
     }
     assert reader_paths
     assert all(set(methods) == {"get"} for methods in reader_paths.values())

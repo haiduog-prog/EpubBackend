@@ -1,12 +1,14 @@
-﻿import os
+import os
 import logging
 from contextlib import asynccontextmanager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from app.api import api_v1_router
+from app.api.auth import router as auth_router
 from app.modules.translation.api import recover_pending_translation_jobs
 from app.modules.library.application.facade import library_service
 
@@ -26,7 +28,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -34,7 +36,19 @@ app.add_middleware(
 
 # Include API v1 router
 app.include_router(api_v1_router)
+app.include_router(auth_router)
+app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static")), name="static")
+app.mount("/reader-assets", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static", "reader-tts")), name="reader-assets")
 
+
+
+@app.get("/login", response_class=HTMLResponse)
+def read_login_ui():
+    login_path = os.path.join(os.path.dirname(__file__), "static", "login.html")
+    if os.path.exists(login_path):
+        with open(login_path, "r", encoding="utf-8") as f:
+            return f.read()
+    return "<h1>Login UI unavailable</h1>"
 
 @app.get("/", response_class=HTMLResponse)
 def read_root_ui():

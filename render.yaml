@@ -25,6 +25,12 @@ services:
         sync: false
       - key: SUPABASE_KEY
         sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: SUPABASE_JWT_AUDIENCE
+        value: authenticated
+      - key: AUTH_REQUIRED
+        value: "true"
       - key: SUPABASE_STORAGE_BUCKET
         value: novels
       - key: SUPABASE_STORAGE_PUBLIC_URL
@@ -38,4 +44,4 @@ services:
       - key: CLOUDFLARE_R2_BUCKET_NAME
         value: epub-translator-bucket
       - key: CLOUDFLARE_R2_PUBLIC_URL
-        value: https://pub-698cb88b6743407a8590d8e8d2f5b65b.r2.dev
+        value: ""

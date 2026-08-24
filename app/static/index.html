@@ -552,7 +552,7 @@
         </div>
 
         <!-- Backend API Server URL Bar -->
-        <div class="api-config-bar" title="Đường link máy chủ Backend (Local hoặc Cloudflare Tunnel)">
+        <div class="api-config-bar" title="Backend dùng cùng origin" style="display:none;">
             <i class="fa-solid fa-server" style="color:#10b981; font-size:0.9rem;"></i>
             <input type="text" id="backend-url-input" placeholder="Backend API (VD: https://...trycloudflare.com)" style="width:230px;" onchange="saveBackendUrl(this.value)">
         </div>
@@ -572,11 +572,12 @@
             <input type="password" id="api-key-input" placeholder="Nhập API Key..." onchange="saveApiSettings()">
         </div>
 
-        <div class="api-config-bar" title="Credential tạm thời cho các thao tác ghi trên backend">
+        <div class="api-config-bar" title="Credential legacy dành cho CLI" style="display:none;">
             <i class="fa-solid fa-shield-halved" style="color:#fbbf24; font-size:0.9rem;"></i>
             <input type="password" id="backend-write-token" placeholder="Backend write token (không lưu)" autocomplete="off">
         </div>
 
+        <button id="logout-button" class="btn" type="button" style="margin-left:auto;">Đăng xuất</button>
         <span class="badge"><i class="fa-solid fa-microchip"></i> Auto Quota Fallback</span>
     </header>
 
@@ -1206,6 +1207,8 @@
         </div>
     </main>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="/static/auth.js"></script>
     <script>
         let currentFile = null;
         let activePollInterval = null;
@@ -1224,13 +1227,7 @@
         };
 
         function getApiBaseUrl() {
-            const inputEl = document.getElementById('backend-url-input');
-            const custom = (inputEl ? inputEl.value : localStorage.getItem('epub_backend_url') || '').trim();
-            if (custom) return custom.replace(/\/+$/, '');
-            if (window.location.hostname !== '127.0.0.1' && window.location.hostname !== 'localhost') {
-                return 'https://epubbackend.onrender.com';
-            }
-            return '';
+            return "";
         }
 
         function apiUrl(path) {
@@ -1238,16 +1235,8 @@
             return base ? `${base}${path}` : path;
         }
 
-        // Attach the short-lived backend credential to API requests without persisting it.
-        const nativeFetch = window.fetch.bind(window);
-        window.fetch = (input, init = {}) => {
-            const token = document.getElementById('backend-write-token')?.value.trim();
-            if (!token) return nativeFetch(input, init);
-            const headers = new Headers(init.headers || {});
-            headers.set('X-Book-Bible-Client-Key', token);
-            return nativeFetch(input, { ...init, headers });
-        };
-
+        // auth.js attaches the Supabase Bearer token to every /api/v1 request.
+        // X-Book-Bible-Client-Key remains documented only for legacy CLI callers.
         function escapeHtml(value) {
             return String(value ?? '').replace(/[&<>"']/g, char => ({
                 '&': '&amp;',
@@ -1269,17 +1258,29 @@
             }
         }
 
+        async function loadPrivateCover(image, url, fallbackHtml) {
+            try {
+                const response = await window.EpubAuth.authFetch(url, { headers: { Accept: 'image/*' } });
+                if (!response.ok) throw new Error('cover');
+                image.src = URL.createObjectURL(await response.blob());
+            } catch (_) {
+                if (image && image.parentNode) image.outerHTML = fallbackHtml || '<div class="novel-cover"><i class="fa-solid fa-book"></i></div>';
+            }
+        }
         function saveBackendUrl(val) {
             localStorage.setItem('epub_backend_url', (val || '').trim());
             if (typeof loadLibraryNovels === 'function') loadLibraryNovels();
             if (typeof loadDatabaseSummary === 'function') loadDatabaseSummary();
         }
 
-        window.addEventListener('DOMContentLoaded', () => {
+        window.addEventListener('DOMContentLoaded', async () => {
+            const session = await window.EpubAuth.guard();
+            if (!session) return;
+            document.getElementById('logout-button')?.addEventListener('click', async () => { await window.EpubAuth.signOut(); window.location.replace('/login'); });
             const savedProvider = localStorage.getItem('epub_provider') || 'gemini';
             const savedKey = '';
             const savedModel = localStorage.getItem('epub_model');
-            const savedBackend = localStorage.getItem('epub_backend_url') || (window.location.hostname !== '127.0.0.1' && window.location.hostname !== 'localhost' ? 'https://epubbackend.onrender.com' : '');
+            const savedBackend = '';
 
             document.getElementById('api-provider').value = savedProvider;
             document.getElementById('api-key-input').value = savedKey;
@@ -1759,7 +1760,7 @@
                     const pct = n.total_chapters > 0 ? Math.round((n.translated_chapters / n.total_chapters) * 100) : 0;
                     const coverUrl = safeMediaUrl(n.cover_url);
                     const coverHtml = coverUrl
-                        ? `<img src="${escapeHtml(coverUrl)}" class="novel-cover" alt="${escapeHtml(n.title)}" onerror="this.outerHTML='<div class=\\'novel-cover\\'><i class=\\'fa-solid fa-book\\'></i></div>'">`
+                        ? `<img data-private-cover="${escapeHtml(coverUrl)}" class="novel-cover" alt="${escapeHtml(n.title)}" onerror="this.outerHTML='<div class=\\'novel-cover\\'><i class=\\'fa-solid fa-book\\'></i></div>'">`
                         : `<div class="novel-cover"><i class="fa-solid fa-book"></i></div>`;
 
                     const genresHtml = (n.genre || []).slice(0, 3).map(g => `<span class="tag" style="font-size:0.75rem;">${escapeHtml(g)}</span>`).join('');
@@ -1791,6 +1792,7 @@
                     </div>`;
                 }).join('');
 
+                grid.querySelectorAll('[data-private-cover]').forEach(image => loadPrivateCover(image, image.dataset.privateCover));
                 grid.querySelectorAll('.novel-open-btn').forEach(button => {
                     button.addEventListener('click', () => openNovelDetail(button.dataset.novelId || ''));
                 });
@@ -1826,7 +1828,8 @@
                 const coverBox = document.getElementById('detail-cover-box');
                 const coverUrl = safeMediaUrl(novel.cover_url);
                 if (coverUrl) {
-                    coverBox.innerHTML = `<img src="${escapeHtml(coverUrl)}" style="width:100%; height:100%; object-fit:cover;">`;
+                    coverBox.innerHTML = `<img data-private-cover="${escapeHtml(coverUrl)}" style="width:100%; height:100%; object-fit:cover;">`;
+                    loadPrivateCover(coverBox.querySelector('[data-private-cover]'), coverUrl, '<i class="fa-solid fa-book" style="font-size:2.5rem; color:#818cf8;"></i>');
                 } else {
                     coverBox.innerHTML = '<i class="fa-solid fa-book" style="font-size:2.5rem; color:#818cf8;"></i>';
                 }

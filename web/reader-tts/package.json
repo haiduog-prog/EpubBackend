@@ -1,0 +1,9 @@
+{
+  "name": "epub-backend-reader-tts",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "onnxruntime-web": "1.22.0"
+  }
+}

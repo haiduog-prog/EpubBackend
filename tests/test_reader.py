@@ -158,8 +158,14 @@ def test_reader_api_is_read_only_and_maps_expected_errors(reader_service, monkey
     assert reader_page.status_code == 200
     assert 'id="reader-view"' in reader_page.text
     assert 'localStorage.setItem(progressKey' in reader_page.text
+    assert 'tts-sentence' in reader_page.text
+    assert 'reader-assets/reader-tts.js' in reader_page.text
     assert 'window.EpubAuth' in reader_page.text
     assert "fetch(apiUrl(path)" in reader_page.text
+
+    assets = client.get("/reader-assets/voices.v1.json")
+    assert assets.status_code == 200
+    assert len(assets.json()["voices"]) == 25
 
     reader_paths = {
         path: methods

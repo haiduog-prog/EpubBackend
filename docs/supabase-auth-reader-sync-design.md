@@ -80,6 +80,8 @@ Tài liệu tham khảo:
 - `SUPABASE_URL`
 - `SUPABASE_PUBLISHABLE_KEY`
 - `SUPABASE_JWT_AUDIENCE=authenticated`
+- Local development có thể dùng `APP_ENV=development` và `AUTH_REQUIRED=false`; backend trả `mode=local` cho UI và sử dụng identity development, không yêu cầu Supabase key.
+- Production phải đặt `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` và `AUTH_REQUIRED=true`; thiếu cấu hình sẽ fail closed.
 - Issuer được suy ra là `${SUPABASE_URL}/auth/v1`.
 - Service/secret key hiện có không được tái sử dụng làm publishable key.
 

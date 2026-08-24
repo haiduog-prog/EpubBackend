@@ -1,0 +1,79 @@
+:root {
+  --tts-panel: color-mix(in srgb, var(--surface-strong) 96%, transparent);
+  --tts-elevated: color-mix(in srgb, var(--surface) 88%, transparent);
+  --tts-player-height: 92px;
+}
+
+body.tts-open { padding-bottom: var(--tts-player-height); }
+
+.tts-player {
+  align-items: center;
+  backdrop-filter: blur(18px);
+  background: color-mix(in srgb, var(--surface-strong) 94%, transparent);
+  border-top: 1px solid var(--line);
+  bottom: 0;
+  box-shadow: 0 -14px 42px rgba(31, 24, 18, .14);
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(160px, 1fr) auto minmax(210px, 1fr);
+  left: 0;
+  min-height: var(--tts-player-height);
+  padding: 12px clamp(16px, 4vw, 44px);
+  position: fixed;
+  right: 0;
+  transform: translateY(110%);
+  transition: transform 220ms ease;
+  z-index: 70;
+}
+.tts-player.is-visible { transform: translateY(0); }
+.tts-player__brand { min-width: 0; }
+.tts-player__eyebrow { color: var(--accent); font-size: .64rem; font-weight: 800; letter-spacing: .15em; text-transform: uppercase; }
+.tts-player__voice { color: var(--ink); font-family: var(--serif); font-size: 1.05rem; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tts-player__status { color: var(--muted); font-size: .7rem; margin-top: 3px; min-height: 1em; }
+.tts-player__controls { align-items: center; display: flex; gap: 8px; justify-content: center; }
+.tts-control { align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 50%; cursor: pointer; display: inline-flex; height: 40px; justify-content: center; transition: background 160ms ease, border-color 160ms ease, transform 160ms ease; width: 40px; }
+.tts-control:hover:not(:disabled) { background: var(--accent-soft); border-color: var(--accent); }
+.tts-control:active:not(:disabled) { transform: translateY(1px); }
+.tts-control--primary { background: var(--accent); border-color: var(--accent); color: #fff8ef; height: 52px; width: 52px; }
+.tts-control--primary:hover:not(:disabled) { background: var(--accent-strong); border-color: var(--accent-strong); }
+.tts-control:disabled { cursor: default; opacity: .4; }
+.tts-player__tools { align-items: end; display: flex; gap: 12px; justify-content: flex-end; }
+.tts-speed-label { color: var(--muted); display: flex; flex-direction: column; font-size: .64rem; gap: 4px; }
+.tts-speed { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; color: var(--ink); font-size: .78rem; padding: 6px 8px; }
+.tts-progress { bottom: 0; height: 3px; left: 0; position: absolute; right: 0; }
+.tts-progress > span { background: var(--accent); display: block; height: 100%; transform-origin: left; transition: transform 120ms linear; width: 100%; }
+.tts-sentence { border-radius: 4px; transition: background-color 150ms ease, box-shadow 150ms ease; }
+.tts-sentence.is-speaking { background: color-mix(in srgb, var(--accent-soft) 84%, transparent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-soft) 52%, transparent); }
+
+.tts-dialog-backdrop { align-items: center; background: rgba(20, 18, 16, .42); display: none; inset: 0; justify-content: center; padding: 20px; position: fixed; z-index: 90; }
+.tts-dialog-backdrop.is-open { display: flex; }
+.tts-dialog { background: var(--surface-strong); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 24px 80px rgba(25, 17, 12, .25); display: flex; flex-direction: column; max-height: min(720px, calc(100vh - 40px)); max-width: 620px; overflow: hidden; width: 100%; }
+.tts-dialog__head { align-items: start; border-bottom: 1px solid var(--line); display: flex; gap: 18px; justify-content: space-between; padding: 22px 24px 18px; }
+.tts-dialog__head h2 { font-family: var(--serif); font-size: 1.65rem; font-weight: 500; margin: 0 0 5px; }
+.tts-dialog__head p { color: var(--muted); font-size: .78rem; line-height: 1.55; margin: 0; max-width: 430px; }
+.tts-dialog__close { background: transparent; border: 1px solid transparent; border-radius: 50%; cursor: pointer; font-size: 1.3rem; height: 36px; width: 36px; }
+.tts-dialog__close:hover { background: var(--accent-soft); border-color: var(--line); }
+.tts-voice-list { display: grid; gap: 8px; overflow: auto; padding: 16px; }
+.tts-voice-row { align-items: center; background: var(--tts-elevated); border: 1px solid var(--line); border-radius: 9px; display: flex; gap: 14px; justify-content: space-between; padding: 12px 13px; }
+.tts-voice-row.is-active { border-color: var(--accent); box-shadow: inset 3px 0 var(--accent); }
+.tts-voice-copy { min-width: 0; }
+.tts-voice-name { color: var(--ink); font-family: var(--serif); font-size: 1rem; overflow-wrap: anywhere; }
+.tts-voice-meta { color: var(--muted); font-size: .68rem; line-height: 1.45; margin-top: 4px; }
+.tts-voice-action { background: var(--surface-strong); border: 1px solid var(--line); border-radius: 6px; color: var(--ink); cursor: pointer; flex: 0 0 auto; font-size: .72rem; min-width: 82px; padding: 8px 10px; }
+.tts-voice-action:hover:not(:disabled) { background: var(--accent-soft); border-color: var(--accent); }
+.tts-voice-action:disabled { cursor: wait; opacity: .55; }
+.tts-voice-progress { background: var(--line); border-radius: 99px; height: 4px; margin-top: 7px; overflow: hidden; width: min(230px, 100%); }
+.tts-voice-progress span { background: var(--accent); display: block; height: 100%; transition: width 100ms ease; }
+.tts-dialog__foot { border-top: 1px solid var(--line); color: var(--muted); font-size: .68rem; line-height: 1.5; padding: 13px 18px; }
+
+@media (max-width: 780px) {
+  .tts-player { gap: 10px; grid-template-columns: 1fr auto; padding: 10px 14px; }
+  .tts-player__tools { grid-column: 1 / -1; justify-content: space-between; }
+  .tts-player__brand { grid-column: 1 / -1; }
+  .tts-player__status { display: none; }
+  .tts-player__controls { grid-column: 1 / -1; grid-row: 2; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tts-player, .tts-sentence, .tts-progress > span, .tts-voice-progress span { transition: none; }
+}

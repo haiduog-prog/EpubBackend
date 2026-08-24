@@ -26,3 +26,7 @@ serviceAccountKey.json
 # Executables & Tools
 tools/
 *.exe
+
+# Reader TTS frontend dependencies
+node_modules/
+coverage/

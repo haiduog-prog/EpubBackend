@@ -19,6 +19,16 @@
 
 ---
 
+### Backend-Owned Auth Bootstrap
+- **Ngày**: 2026-08-24
+- **Chi tiết**: UI chỉ gọi `/api/auth/config`; backend chọn `mode=local` cho development hoặc trả cấu hình Supabase publishable key cho production. Local identity chỉ bật khi `APP_ENV` là development/local/test và `AUTH_REQUIRED=false`; production luôn fail-closed.
+- **Files liên quan**: `app/api/auth.py`, `app/auth.py`, `app/config.py`, `app/static/auth.js`
+
+### Local Browser TTS
+- **Ngày**: 2026-08-24
+- **Chi tiết**: TTS chạy trong Web Worker bằng ONNX Runtime Web và phonemizer/espeak-ng; voice manifest và model assets được phục vụ từ backend `/reader-assets`, còn nội dung chương vẫn lấy qua API reader. Cách này giữ văn bản ở local và không phụ thuộc dịch vụ TTS bên ngoài.
+- **Files liên quan**: `app/static/reader-tts/`, `app/static/reader.html`, `docs/reader-local-tts-design.md`
+
 ## Bugs & Solutions
 
 ### Metadata Chapter Zero Caused Reader 500
@@ -35,6 +45,13 @@
 - **Files liên quan**: `app/modules/library/legacy_service.py`, `app/modules/reader/schemas.py`, `app/static/reader.html`
 
 ---
+
+### Missing Auth Config Was Reported As Wrong Password
+- **Ngày**: 2026-08-24
+- **Vấn đề**: Render `/api/auth/config` trả 503 vì thiếu `SUPABASE_URL` hoặc `SUPABASE_PUBLISHABLE_KEY`, nhưng login catch chung hiển thị “Email hoặc mật khẩu không đúng”.
+- **Root cause**: Form không phân biệt lỗi cấu hình backend với lỗi Supabase credentials; password không được gửi tới FastAPI.
+- **Fix**: Kiểm tra `/api/auth/config` trước; production đặt đủ env trên backend và không dùng service-role key làm publishable key.
+- **Files liên quan**: `app/api/auth.py`, `app/static/auth.js`, `render.yaml`
 
 ## How-To
 
@@ -57,6 +74,15 @@
 - **Files liên quan**: `app/static/reader.html`, `app/static/index.html`
 
 ---
+
+### Configure Auth And TTS In Production
+- **Ngày**: 2026-08-24
+- **Bước thực hiện**:
+  1. Đặt `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_JWT_AUDIENCE=authenticated` và `AUTH_REQUIRED=true` trên Render.
+  2. Redeploy rồi kiểm tra `/api/auth/config` trả `mode=supabase` và HTTP 200.
+  3. Kiểm tra `/reader-assets/voices.v1.json`, sau đó tải voice qua nút “Tải giọng”.
+  4. Chạy `node --check app/static/reader-tts/reader-tts.js` và test reader trước khi push.
+- **Files liên quan**: `render.yaml`, `app/api/auth.py`, `app/static/reader-tts/voices.v1.json`
 
 ## Patterns
 
@@ -86,3 +112,8 @@
 - **Ngày**: 2026-08-24
 - **Chi tiết**: Với blob public nhưng CDN không hỗ trợ CORS, dùng backend làm proxy đọc server-side. Cách này giữ direct-read cho storage có CORS, đồng thời bảo đảm dữ liệu legacy vẫn đọc được mà không cần đưa credential storage vào browser.
 - **Files liên quan**: `app/infrastructure/storage/legacy_storage.py`, `app/modules/library/legacy_service.py`
+
+### Sentence Queue And Voice LRU Cache
+- **Ngày**: 2026-08-24
+- **Chi tiết**: Tách văn bản thành sentence spans để highlight; worker tạo audio theo hàng đợi ngắn nhằm bắt đầu phát nhanh và nối câu không khoảng lặng. Cache IndexedDB chỉ giữ tối đa ba voice, xóa voice ít dùng nhất; lỗi voice phụ fallback về Minh Quang nếu đã cài.
+- **Files liên quan**: `app/static/reader-tts/reader-tts.js`, `app/static/reader-tts/tts-worker.js`, `app/static/reader.html`

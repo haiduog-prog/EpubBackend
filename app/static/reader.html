@@ -153,6 +153,7 @@
             border: 1px solid var(--line);
             border-radius: 8px;
             box-shadow: 0 7px 22px rgba(50, 39, 28, 0.04);
+            cursor: pointer;
             display: flex;
             flex-direction: column;
             min-width: 0;
@@ -160,13 +161,16 @@
             transition: box-shadow 180ms ease, border-color 180ms ease, transform 180ms ease;
         }
 
-        .book-card:hover { border-color: var(--accent); box-shadow: var(--shadow); transform: translateY(-3px); }
-        .book-cover { aspect-ratio: 2 / 3; background: var(--accent-soft); color: var(--accent-strong); display: block; object-fit: cover; width: 100%; }
+        .book-card:hover { border-color: var(--accent); box-shadow: var(--shadow); transform: translateY(-4px); }
+        .book-card:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+        .book-card:hover .book-title { color: var(--accent); }
+        .book-cover { aspect-ratio: 2 / 3; background: var(--accent-soft); color: var(--accent-strong); display: block; object-fit: cover; width: 100%; transition: transform 240ms ease; }
+        .book-card:hover .book-cover { transform: scale(1.02); }
         .cover-fallback { align-items: center; background: var(--accent-soft); display: flex; flex-direction: column; gap: 9px; justify-content: center; min-height: 220px; padding: 22px; text-align: center; }
         .cover-fallback-mark { font-family: var(--serif); font-size: 2.5rem; }
         .cover-fallback-title { font-family: var(--serif); font-size: 1rem; line-height: 1.35; }
         .book-body { display: flex; flex: 1; flex-direction: column; gap: 10px; padding: 17px 16px 16px; }
-        .book-title { font-family: var(--serif); font-size: 1.2rem; line-height: 1.2; overflow-wrap: anywhere; }
+        .book-title { font-family: var(--serif); font-size: 1.2rem; line-height: 1.2; overflow-wrap: anywhere; transition: color 160ms ease; }
         .book-author { color: var(--muted); font-size: 0.8rem; min-height: 19px; overflow-wrap: anywhere; }
         .book-meta { color: var(--muted); display: flex; font-size: 0.75rem; justify-content: space-between; margin-top: auto; padding-top: 10px; }
         .book-progress { background: var(--line); height: 3px; overflow: hidden; }
@@ -290,6 +294,7 @@
             .cover-fallback { min-height: 160px; }
         }
     </style>
+    <link rel="stylesheet" href="/reader-assets/reader-tts.css">
 </head>
 <body>
     <div class="app-shell">
@@ -395,6 +400,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="/static/auth.js"></script>
+    <script src="/reader-assets/reader-tts.js"></script>
     <script>
         (async () => {
             'use strict';
@@ -417,7 +423,8 @@
                 initialChapter: null,
                 remoteProgress: new Map(),
                 preferenceTimer: null,
-                syncTimer: null
+                syncTimer: null,
+                audio: null
             };
 
             const $ = (id) => document.getElementById(id);
@@ -597,15 +604,49 @@
                     const progressFill = document.createElement('span');
                     progressFill.style.width = progress && book.translated_chapters ? `${Math.min(100, Math.max(4, (progress.chapterIndex / Math.max(1, book.translated_chapters)) * 100))}%` : '0%';
                     progressBar.append(progressFill);
-                    const button = makeElement('button', 'book-open', 'Mở truyện');
-                    button.type = 'button';
-                    button.addEventListener('click', () => openBook(book.novel_id));
-                    body.append(title, author, meta, progressBar, button);
+                    body.append(title, author, meta, progressBar);
                     card.append(body);
+                    card.addEventListener('click', () => openBook(book.novel_id));
+                    card.addEventListener('keydown', event => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            openBook(book.novel_id);
+                        }
+                    });
                     grid.append(card);
                 });
             }
 
+            async function syncPreferences() {
+                try {
+                    const response = await window.EpubAuth.authFetch('/api/v1/reader/me/preferences', {
+                        method: 'PUT', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                        body: JSON.stringify({ preferences: state.preferences })
+                    });
+                    if (!response.ok) throw new Error('sync');
+                    localStorage.removeItem('reader.sync.preferences.pending');
+                } catch (_) { localStorage.setItem('reader.sync.preferences.pending', '1'); /* local-first */ }
+            }
+
+            async function syncProgress() {
+                if (!state.book || !state.chapter) return;
+                const novelId = state.book.novel_id;
+                const payload = readProgress(novelId);
+                if (!payload) return;
+                try {
+                    const response = await window.EpubAuth.authFetch(`/api/v1/reader/me/progress/${encodeURIComponent(novelId)}`, {
+                        method: 'PUT', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                        body: JSON.stringify({ chapter_index: payload.chapterIndex, scroll_top: Math.max(0, Number(payload.scrollTop) || 0) })
+                    });
+                    if (response.ok) {
+                        localStorage.removeItem('reader.sync.progress.pending');
+                        const remote = await response.json();
+                        state.remoteProgress = new Map((remote.progress || []).map(item => [item.novel_id, {
+                            chapterIndex: item.chapter_index, scrollTop: item.scroll_top, updatedAt: item.updated_at
+                        }]));
+                    }
+                } catch (_) { localStorage.setItem('reader.sync.progress.pending', '1'); /* local-first */ }
+            }
             async function fetchJson(path, signal) {
                 let response;
                 try {
@@ -706,8 +747,17 @@
                 const copy = $('chapter-copy');
                 copy.replaceChildren();
                 const normalized = String(data.content || '').replace(/\r\n?/g, '\n').trim();
-                const paragraphs = normalized ? normalized.split(/\n\s*\n/) : [''];
-                paragraphs.forEach(value => copy.append(makeElement('p', '', value.trim())));
+                const sentences = window.ReaderTts ? window.ReaderTts.segmentText(normalized) : [];
+                const paragraphs = new Map();
+                sentences.forEach(sentence => {
+                    if (!paragraphs.has(sentence.paragraphIndex)) paragraphs.set(sentence.paragraphIndex, makeElement('p'));
+                    const span = makeElement('span', 'tts-sentence', sentence.originalText);
+                    span.dataset.ttsSentence = String(sentence.sentenceIndex);
+                    paragraphs.get(sentence.paragraphIndex).append(span, document.createTextNode(' '));
+                });
+                if (!paragraphs.size) paragraphs.set(0, makeElement('p', '', ''));
+                paragraphs.forEach(paragraph => copy.append(paragraph));
+                state.audio?.onChapterRendered(data.chapter.chapter_index, normalized);
                 renderNavigation();
                 updateActiveToc();
                 updateUrl(data.chapter.chapter_index);
@@ -720,6 +770,7 @@
             }
 
             function renderLoading() {
+                state.audio?.onChapterLoading();
                 $('chapter-title').textContent = 'Đang mở chương...';
                 $('chapter-meta').textContent = '';
                 $('chapter-copy').replaceChildren(makeElement('div', 'chapter-loading', 'Đang lấy bản dịch từ kho lưu trữ...'));
@@ -779,6 +830,7 @@
 
             async function loadChapter(chapterIndex, options = {}) {
                 if (!state.book || !chapterIndex) return false;
+                state.audio?.onChapterLoading();
                 if (state.activeController) state.activeController.abort();
                 const controller = new AbortController();
                 state.activeController = controller;
@@ -845,6 +897,9 @@
             }
 
             function showLibrary() {
+                state.audio?.pause();
+                document.body.classList.remove('tts-open');
+                document.querySelector('.tts-player')?.classList.remove('is-visible');
                 if (state.activeController) state.activeController.abort();
                 const url = new URL(window.location.href);
                 url.searchParams.delete('book');
@@ -916,6 +971,8 @@
                         $('settings-panel').classList.remove('is-open');
                         closeToc();
                     }
+                    if (event.key === ' ' && state.audio) { event.preventDefault(); state.audio.isPlaying() ? state.audio.pause() : state.audio.play(); return; }
+
                     if (!state.chapter) return;
                     if (event.key === 'ArrowLeft' && state.chapter.previous_chapter) loadChapter(state.chapter.previous_chapter.chapter_index);
                     if (event.key === 'ArrowRight' && state.chapter.next_chapter) loadChapter(state.chapter.next_chapter.chapter_index);
@@ -939,6 +996,12 @@
                 }
                 applyPreferences();
                 applyBackendLinks();
+                state.audio = window.ReaderTts?.createReaderAudioController({
+                    getNovelId: () => state.book?.novel_id,
+                    getNextChapterIndex: () => state.chapter?.next_chapter?.chapter_index,
+                    loadChapter,
+                    onStatus: (message, tone) => { if (tone === 'error') setStatus(message, tone); }
+                });
                 bindControls();
                 loadBooks();
             } catch (error) {

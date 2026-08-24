@@ -1,7 +1,7 @@
 # Novel Translation Engine
 
 > Tổng hợp kiến thức về hệ thống dịch truyện thuần Việt (v2) hỗ trợ EPUB/HTML/TXT với Structured Outputs, Prompt Caching và Decoupled LLM Providers.
-> Cập nhật lần cuối: 2026-08-21
+> Cập nhật lần cuối: 2026-08-25
 
 ---
 
@@ -11,6 +11,11 @@
 - **Ngày**: 2026-08-10
 - **Chi tiết**: Tách biệt LLM Client qua Abstract Class `BaseLLMClient` (`app/llm/base.py`). Các provider (`AnthropicProvider`, `GeminiProvider`) triển khai độc lập và được tạo qua `LLMFactory`. Giúp mở rộng LLM provider mới mà không ảnh hưởng tầng API hay Business logic.
 - **Files liên quan**: `app/llm/base.py`, `app/llm/anthropic_provider.py`, `app/llm/gemini_provider.py`, `app/llm/factory.py`
+
+### Persistent Connection Pooling & Resource-Bounded Import
+- **Ngày**: 2026-08-24
+- **Chi tiết**: Tái sử dụng HTTP client với `httpx.Limits(max_keepalive_connections=20, max_connections=50)` trong `SupabaseStorageProvider`. Chủ động giải phóng DOM `BeautifulSoup.decompose()`, `del raw_sections` và kích hoạt `gc.collect()` định kỳ mỗi 20 chương khi nạp file EPUB lớn (500-2000 chương), giữ RAM server luôn < 180MB trên Render Free (512MB limit).
+- **Files liên quan**: `app/infrastructure/storage/legacy_storage.py`, `app/modules/library/legacy_service.py`
 
 ### Deterministic Book Bible Delta Merging (Code-level Upsert)
 - **Ngày**: 2026-08-10
@@ -120,6 +125,27 @@
   3. Cập nhật `PROMPT_1_EXTRACT_BOOK_BIBLE_DELTA` ràng buộc AI trích xuất đúng tên chữ Hán vào `original_name` và tên thuần Việt vào `vi_name`.
 - **Files liên quan**: `app/services/book_bible_service.py`, `app/services/character_profile_service.py`, `app/prompts/templates.py`, `tests/test_entity_resolution.py`
 
+### UnboundLocalError on Closure Variables in Background Worker Thread
+- **Ngày**: 2026-08-24
+- **Vấn đề**: Luồng worker import EPUB crash ngay lập tức với lỗi `UnboundLocalError: cannot access local variable 'epub_bytes' where it is not associated with a value`.
+- **Root cause**: Lệnh `del epub_bytes` đặt bên trong hàm lồng `_worker` khiến Python phân loại `epub_bytes` thành local variable, làm việc đọc `tmp.write(epub_bytes)` trước đó bị lỗi scope.
+- **Fix**: Truyền dữ liệu trực tiếp qua tham số luồng `_worker(raw_epub_data)` với `args=(epub_bytes,)`, đồng thời bọc toàn bộ khối thực thi trong `try...except...finally`.
+- **Files liên quan**: `app/modules/library/legacy_service.py`
+
+### Stale Import Job Status Freeze across Multi-Worker Deployments
+- **Ngày**: 2026-08-24
+- **Vấn đề**: Giao diện Web hiển thị tiến trình import EPUB bị đóng băng ở 5% suốt 30 phút dù server vẫn phản hồi 200 OK.
+- **Root cause**: Background thread chỉ cập nhật tiến độ trên đối tượng in-memory `ImportJobStatus` mà không lưu định kỳ vào PostgreSQL. Khi client poll status, các worker process khác đọc từ database (nơi còn lưu 5% ban đầu) và trả về cache cũ.
+- **Fix**: Đồng bộ `_persist_import_job` vào PostgreSQL định kỳ mỗi 10 chương và tại các mốc xử lý chính (10%, 12%, 90%, 100%), đồng thời nâng cấp `get_import_job` chống kẹt stale cache.
+- **Files liên quan**: `app/modules/library/legacy_service.py`
+
+### Reader Cover Duplicate Prefix (novels/novels/) in Supabase Storage URLs
+- **Ngày**: 2026-08-24
+- **Vấn đề**: Tải ảnh bìa `/api/v1/reader/books/{id}/cover` trả về 400 Bad Request / 404 Not Found từ Supabase Storage.
+- **Root cause**: URL Supabase chứa tên bucket `/object/public/novels/` khiến hàm parse cover bị tách chuỗi sai và nối thừa tiền tố thành `novels/novels/novels/{id}/cover.jpg`.
+- **Fix**: Chuẩn hóa logic trích xuất relative storage key, loại bỏ tiền tố `novels/` dư thừa và bổ sung fallback tìm theo các định dạng ảnh phổ biến (`.png`, `.jpeg`, `.webp`).
+- **Files liên quan**: `app/modules/reader/api.py`
+
 ## How-To
 
 ### Thêm LLM Provider Mới
@@ -203,5 +229,10 @@
 - **Ngày**: 2026-08-21
 - **Chi tiết**: Pattern trích xuất asset an toàn: ưu tiên đọc từ ebooklib image item có nội dung hợp lệ (`len(bytes) > 0`). Nếu thất bại hoặc manifest bị hỏng, tự động fallback quét trực tiếp danh sách file trong ZIP archive (`zf.namelist()`) theo định dạng ảnh (`.jpg`, `.png`, `.webp`, `.jpeg`) và từ khóa `cover` hoặc ảnh đầu tiên.
 - **Files liên quan**: `app/parsers/epub_parser.py`, `app/services/library_service.py`
+
+### Safe Thread Closure Argument Passing & Isolated Exception Boundary
+- **Ngày**: 2026-08-24
+- **Chi tiết**: Khi spawn daemon thread (`threading.Thread`), luôn truyền dữ liệu thô / payload qua `args=(...)` thay vì dựa vào biến bao ngoài (closure variable), nhằm tránh lỗi `UnboundLocalError` khi dùng `del` trong luồng. Toàn bộ thân hàm của thread (kể cả tạo file tạm) phải nằm gọn trong `try...except...finally` để mọi ngoại lệ được bắt, log chi tiết và cập nhật `job.status = 'failed'`.
+- **Files liên quan**: `app/modules/library/legacy_service.py`
 
 

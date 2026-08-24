@@ -36,7 +36,10 @@ function toPhonemeIds(phonemeText) {
 
 async function initRuntime() {
   if (runtimeReady) return;
-  ort.env.wasm.wasmPaths = new URL('./', import.meta.url).href;
+  ort.env.wasm.wasmPaths = {
+    mjs: new URL('./ort-wasm-simd-threaded.mjs', import.meta.url).href,
+    wasm: new URL('./ort-wasm-simd-threaded.wasm', import.meta.url).href
+  };
   ort.env.wasm.numThreads = 1;
   ort.env.wasm.proxy = false;
   runtimeReady = true;
@@ -96,7 +99,8 @@ async function drain() {
       if (task.type === 'LOAD') await loadVoice(task);
       if (task.type === 'SYNTHESIZE') await synthesize(task);
     } catch (error) {
-      post('ERROR', { requestId: task.requestId, voiceId: activeVoiceId, message: error?.message || 'TTS worker lỗi.' });
+      console.error('TTS worker task error:', task?.type, error);
+      post('ERROR', { requestId: task.requestId, voiceId: task.voiceId || activeVoiceId, message: error?.message || 'TTS worker lỗi.' });
     }
   }
   processing = false;

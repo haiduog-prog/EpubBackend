@@ -63,6 +63,11 @@ class Settings(BaseModel):
         default_factory=lambda: os.getenv("ANTHROPIC_MODEL", "claude-3-5-haiku-latest")
     )
 
+    # Local development seeding
+    seed_demo_data: bool = Field(
+        default_factory=lambda: os.getenv("SEED_DEMO_DATA", "false").lower() in {"1", "true", "yes", "on"}
+    )
+
     max_upload_bytes: int = Field(
         default_factory=lambda: int(os.getenv("MAX_UPLOAD_BYTES", str(50 * 1024 * 1024)))
     )
@@ -105,4 +110,3 @@ class Settings(BaseModel):
 
 
 settings = Settings()
-

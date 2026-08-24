@@ -5,6 +5,7 @@ import os
 import re
 import tempfile
 import threading
+import time
 import unicodedata
 import uuid
 from datetime import datetime, timezone
@@ -41,7 +42,6 @@ logger = logging.getLogger("EpubBackend.LibraryService")
 
 def slugify(text: str) -> str:
     """Chuyển chuỗi tiếng Việt thành slug URL an toàn"""
-    # Thay thế chữ Đ/đ trước vì Unicode NFKD không tự tách chữ Đ thành d + dấu
     text = text.replace("đ", "d").replace("Đ", "d")
     text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("utf-8")
     text = re.sub(r"[^\w\s-]", "", text).strip().lower()
@@ -87,6 +87,9 @@ class LegacyLibraryService:
 
     def __init__(self):
         self._cache: Dict[str, NovelMetadata] = {}
+        self._summaries_cache: Optional[List[NovelSummary]] = None
+        self._summaries_cached_at: float = 0.0
+        self._summaries_ttl: float = 60.0
         self._import_jobs: Dict[str, ImportJobStatus] = {}
         self._novel_locks: Dict[str, threading.Lock] = {}
         self._global_lock = threading.Lock()
@@ -197,6 +200,10 @@ class LegacyLibraryService:
         return self._cache.get(novel_id)
 
     def list_novels(self) -> List[NovelSummary]:
+        now = time.time()
+        if self._summaries_cache is not None and (now - self._summaries_cached_at) < self._summaries_ttl:
+            return self._summaries_cache
+
         summaries: Dict[str, NovelSummary] = {}
 
         # 1. Read from database if postgres is configured
@@ -206,7 +213,10 @@ class LegacyLibraryService:
                     db_novels = LibraryRepository.list_novels(session)
                     for n in db_novels:
                         summaries[n.novel_id] = n
-                    return list(summaries.values())
+                    result = list(summaries.values())
+                    self._summaries_cache = result
+                    self._summaries_cached_at = now
+                    return result
             except Exception as exc:
                 logger.warning("Failed to list novels from database: %s", exc)
 
@@ -252,7 +262,10 @@ class LegacyLibraryService:
                     updated_at=meta.updated_at,
                 )
 
-        return list(summaries.values())
+        result = list(summaries.values())
+        self._summaries_cache = result
+        self._summaries_cached_at = now
+        return result
 
     def update_novel(self, novel_id: str, req: NovelUpdateRequest) -> Optional[NovelMetadata]:
         meta = self.get_novel(novel_id)
@@ -310,6 +323,7 @@ class LegacyLibraryService:
         storage_repo.local_provider.delete_file(self._novel_meta_key(novel_id))
 
         self._cache.pop(novel_id, None)
+        self._summaries_cache = None
         return True
 
 
@@ -1285,6 +1299,8 @@ class LegacyLibraryService:
                 storage_repo.upload_json(key, data)
 
             storage_repo.local_provider.put_json(key, data)
+
+        self._summaries_cache = None
 
     def _save_raw_file(self, key: str, data: bytes, content_type: str = "application/octet-stream") -> Optional[str]:
         url = storage_repo.put_bytes(key, data, content_type=content_type)

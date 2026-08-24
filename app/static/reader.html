@@ -118,6 +118,7 @@
         .icon-button { font-size: 1.15rem; height: 42px; width: 42px; }
         .text-button { color: var(--muted); gap: 8px; padding: 9px 12px; }
         .icon-button:hover, .text-button:hover { background: var(--accent-soft); border-color: var(--line); color: var(--accent-strong); }
+        .icon-button.is-active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-strong); }
         .icon-button:active, .text-button:active { transform: translateY(1px); }
 
         .library-view { margin: 0 auto; max-width: 1320px; padding: 30px 34px 90px; }
@@ -334,6 +335,7 @@
                     </div>
                 </div>
                 <div class="reader-toolbar-right">
+                    <button class="icon-button" id="audio-toggle" type="button" aria-label="Bật/tắt đọc audio" title="Bật/tắt đọc audio">🎧</button>
                     <span class="toolbar-divider" aria-hidden="true"></span>
                     <button class="icon-button" id="settings-toggle" type="button" aria-label="Tùy chỉnh đọc" title="Tùy chỉnh đọc">Aa</button>
                     <div class="settings-wrap">
@@ -666,27 +668,40 @@
             }
 
             async function loadBooks() {
-                setStatus(`Đang mở thư viện từ ${getApiBaseUrl() || 'backend hiện tại'}...`);
-                $('book-grid').replaceChildren(makeElement('div', 'skeleton'), makeElement('div', 'skeleton'), makeElement('div', 'skeleton'));
+                const params = new URLSearchParams(window.location.search);
+                const bookId = params.get('book');
+                const chapterParam = Number(params.get('chapter')) || undefined;
+
+                // Fast path: if direct book/chapter link is opened, load book immediately without blocking on library scan
+                let directOpenPromise = null;
+                if (bookId) {
+                    directOpenPromise = openBook(bookId, chapterParam);
+                } else {
+                    setStatus(`Đang mở thư viện từ ${getApiBaseUrl() || 'backend hiện tại'}...`);
+                    $('book-grid').replaceChildren(makeElement('div', 'skeleton'), makeElement('div', 'skeleton'), makeElement('div', 'skeleton'));
+                }
+
                 try {
                     state.books = await fetchJson('/api/v1/reader/books');
                     renderBooks();
-                    setStatus(state.books.length ? 'Chọn truyện để đọc tiếp.' : '');
-                    const params = new URLSearchParams(window.location.search);
-                    const bookId = params.get('book');
-                    if (bookId && state.books.some(book => book.novel_id === bookId)) {
-                        await openBook(bookId, Number(params.get('chapter')) || undefined);
+                    if (!bookId) {
+                        setStatus(state.books.length ? 'Chọn truyện để đọc tiếp.' : '');
+                    }
+                    if (directOpenPromise) {
+                        await directOpenPromise;
                     }
                 } catch (error) {
-                    $('book-grid').replaceChildren();
-                    const retry = makeElement('button', 'book-open', 'Thử tải lại');
-                    retry.type = 'button';
-                    retry.style.maxWidth = '220px';
-                    retry.addEventListener('click', loadBooks);
-                    const empty = makeElement('div', 'empty-state');
-                    empty.append(makeElement('h2', '', 'Không mở được thư viện'), makeElement('p', '', error.message), retry);
-                    $('book-grid').append(empty);
-                    setStatus('Backend chưa phản hồi.', 'error');
+                    if (!bookId) {
+                        $('book-grid').replaceChildren();
+                        const retry = makeElement('button', 'book-open', 'Thử tải lại');
+                        retry.type = 'button';
+                        retry.style.maxWidth = '220px';
+                        retry.addEventListener('click', loadBooks);
+                        const empty = makeElement('div', 'empty-state');
+                        empty.append(makeElement('h2', '', 'Không mở được thư viện'), makeElement('p', '', error.message), retry);
+                        $('book-grid').append(empty);
+                        setStatus('Backend chưa phản hồi.', 'error');
+                    }
                 }
             }
 
@@ -897,10 +912,16 @@
             }
 
             function showLibrary() {
-                state.audio?.pause();
+                if (state.audio) {
+                    state.audio.pause();
+                    state.audio.closePlayer(false);
+                }
                 document.body.classList.remove('tts-open');
                 document.querySelector('.tts-player')?.classList.remove('is-visible');
-                if (state.activeController) state.activeController.abort();
+                if (state.activeController) {
+                    state.activeController.abort();
+                    state.activeController = null;
+                }
                 const url = new URL(window.location.href);
                 url.searchParams.delete('book');
                 url.searchParams.delete('chapter');
@@ -938,6 +959,7 @@
                 $('logout-button').addEventListener('click', async () => { await window.EpubAuth.signOut(); window.location.replace('/login'); });
                 $('toc-toggle').addEventListener('click', () => setTocOpen(!document.body.classList.contains('toc-open')));
                 $('mobile-backdrop').addEventListener('click', closeToc);
+                $('audio-toggle')?.addEventListener('click', () => state.audio?.togglePlayer());
                 $('settings-toggle').addEventListener('click', () => $('settings-panel').classList.toggle('is-open'));
                 $('font-size-control').addEventListener('input', event => {
                     state.preferences.fontSize = Number(event.target.value);
@@ -1000,7 +1022,14 @@
                     getNovelId: () => state.book?.novel_id,
                     getNextChapterIndex: () => state.chapter?.next_chapter?.chapter_index,
                     loadChapter,
-                    onStatus: (message, tone) => { if (tone === 'error') setStatus(message, tone); }
+                    onStatus: (message, tone) => { if (tone === 'error') setStatus(message, tone); },
+                    onVisibilityChange: (visible) => {
+                        const toggleBtn = $('audio-toggle');
+                        if (toggleBtn) {
+                            toggleBtn.classList.toggle('is-active', visible);
+                            toggleBtn.title = visible ? 'Tắt thanh đọc audio' : 'Bật đọc audio';
+                        }
+                    }
                 });
                 bindControls();
                 loadBooks();

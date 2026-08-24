@@ -37,7 +37,24 @@ body.tts-open { padding-bottom: var(--tts-player-height); }
 .tts-control--primary { background: var(--accent); border-color: var(--accent); color: #fff8ef; height: 52px; width: 52px; }
 .tts-control--primary:hover:not(:disabled) { background: var(--accent-strong); border-color: var(--accent-strong); }
 .tts-control:disabled { cursor: default; opacity: .4; }
-.tts-player__tools { align-items: end; display: flex; gap: 12px; justify-content: flex-end; }
+.tts-player__tools { align-items: center; display: flex; gap: 12px; justify-content: flex-end; }
+.tts-player__dismiss {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 1.05rem;
+  height: 34px;
+  justify-content: center;
+  margin-left: 4px;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease;
+  width: 34px;
+}
+.tts-player__dismiss:hover { background: var(--accent-soft); border-color: var(--line); color: var(--ink); }
+.tts-player__dismiss:active { transform: translateY(1px); }
 .tts-speed-label { color: var(--muted); display: flex; flex-direction: column; font-size: .64rem; gap: 4px; }
 .tts-speed { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; color: var(--ink); font-size: .78rem; padding: 6px 8px; }
 .tts-progress { bottom: 0; height: 3px; left: 0; position: absolute; right: 0; }
@@ -47,21 +64,27 @@ body.tts-open { padding-bottom: var(--tts-player-height); }
 
 .tts-dialog-backdrop { align-items: center; background: rgba(20, 18, 16, .42); display: none; inset: 0; justify-content: center; padding: 20px; position: fixed; z-index: 90; }
 .tts-dialog-backdrop.is-open { display: flex; }
-.tts-dialog { background: var(--surface-strong); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 24px 80px rgba(25, 17, 12, .25); display: flex; flex-direction: column; max-height: min(720px, calc(100vh - 40px)); max-width: 620px; overflow: hidden; width: 100%; }
+.tts-dialog { background: var(--surface-strong); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 24px 80px rgba(25, 17, 12, .25); display: flex; flex-direction: column; max-height: min(720px, calc(100vh - 40px)); max-width: 640px; overflow: hidden; width: 100%; }
 .tts-dialog__head { align-items: start; border-bottom: 1px solid var(--line); display: flex; gap: 18px; justify-content: space-between; padding: 22px 24px 18px; }
 .tts-dialog__head h2 { font-family: var(--serif); font-size: 1.65rem; font-weight: 500; margin: 0 0 5px; }
-.tts-dialog__head p { color: var(--muted); font-size: .78rem; line-height: 1.55; margin: 0; max-width: 430px; }
+.tts-dialog__head p { color: var(--muted); font-size: .78rem; line-height: 1.55; margin: 0; max-width: 470px; }
 .tts-dialog__close { background: transparent; border: 1px solid transparent; border-radius: 50%; cursor: pointer; font-size: 1.3rem; height: 36px; width: 36px; }
 .tts-dialog__close:hover { background: var(--accent-soft); border-color: var(--line); }
 .tts-voice-list { display: grid; gap: 8px; overflow: auto; padding: 16px; }
-.tts-voice-row { align-items: center; background: var(--tts-elevated); border: 1px solid var(--line); border-radius: 9px; display: flex; gap: 14px; justify-content: space-between; padding: 12px 13px; }
+.tts-voice-row { align-items: center; background: var(--tts-elevated); border: 1px solid var(--line); border-radius: 9px; display: flex; gap: 14px; justify-content: space-between; padding: 12px 14px; }
 .tts-voice-row.is-active { border-color: var(--accent); box-shadow: inset 3px 0 var(--accent); }
 .tts-voice-copy { min-width: 0; }
 .tts-voice-name { color: var(--ink); font-family: var(--serif); font-size: 1rem; overflow-wrap: anywhere; }
 .tts-voice-meta { color: var(--muted); font-size: .68rem; line-height: 1.45; margin-top: 4px; }
-.tts-voice-action { background: var(--surface-strong); border: 1px solid var(--line); border-radius: 6px; color: var(--ink); cursor: pointer; flex: 0 0 auto; font-size: .72rem; min-width: 82px; padding: 8px 10px; }
-.tts-voice-action:hover:not(:disabled) { background: var(--accent-soft); border-color: var(--accent); }
+.tts-voice-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.tts-voice-action { background: var(--surface-strong); border: 1px solid var(--line); border-radius: 6px; color: var(--ink); cursor: pointer; flex: 0 0 auto; font-size: .72rem; font-weight: 600; padding: 7px 11px; transition: background 150ms ease, border-color 150ms ease, color 150ms ease; }
+.tts-voice-action:hover:not(:disabled) { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-strong); }
 .tts-voice-action:disabled { cursor: wait; opacity: .55; }
+.tts-voice-badge { background: color-mix(in srgb, var(--accent) 12%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent); border-radius: 6px; color: var(--accent); font-size: .72rem; font-weight: 700; padding: 6px 9px; white-space: nowrap; }
+.tts-voice-action--select { background: var(--surface-strong); border-color: var(--accent); color: var(--accent); }
+.tts-voice-action--select:hover { background: var(--accent); border-color: var(--accent); color: #fff8ef; }
+.tts-voice-action--delete { background: transparent; border-color: color-mix(in srgb, #d94b4b 28%, transparent); color: #c93b3b; }
+.tts-voice-action--delete:hover { background: color-mix(in srgb, #d94b4b 12%, transparent); border-color: #c93b3b; color: #a82323; }
 .tts-voice-progress { background: var(--line); border-radius: 99px; height: 4px; margin-top: 7px; overflow: hidden; width: min(230px, 100%); }
 .tts-voice-progress span { background: var(--accent); display: block; height: 100%; transition: width 100ms ease; }
 .tts-dialog__foot { border-top: 1px solid var(--line); color: var(--muted); font-size: .68rem; line-height: 1.5; padding: 13px 18px; }
@@ -75,5 +98,5 @@ body.tts-open { padding-bottom: var(--tts-player-height); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tts-player, .tts-sentence, .tts-progress > span, .tts-voice-progress span { transition: none; }
+  .tts-player, .tts-sentence, .tts-progress > span, .tts-voice-progress span, .tts-player__dismiss, .tts-voice-action { transition: none; }
 }

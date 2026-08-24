@@ -9,20 +9,24 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from app.api import api_v1_router
 from app.api.auth import router as auth_router
+from app.config import settings
 from app.modules.translation.api import recover_pending_translation_jobs
 from app.modules.library.application.facade import library_service
+from app.modules.library.seed import seed_demo_novel_if_empty
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     recover_pending_translation_jobs()
     library_service.recover_import_jobs()
+    if settings.seed_demo_data and settings.app_env.lower() in {"development", "dev", "local", "test"}:
+        seed_demo_novel_if_empty()
     yield
 
 app = FastAPI(
     title="EpubBackend API",
     version="2.0.0",
-    description="Backend dá»‹ch truyá»‡n thuáº§n Viá»‡t (v2) há»— trá»£ EPUB, HTML vÃ  TXT vá»›i Claude API & Gemini API Structured Outputs.",
+    description="Backend dịch truyện thuần Việt (v2) hỗ trợ EPUB, HTML và TXT với Claude API & Gemini API Structured Outputs.",
     lifespan=lifespan,
 )
 
@@ -43,7 +47,6 @@ if os.path.isdir(reader_assets_dir):
     app.mount("/reader-assets", StaticFiles(directory=reader_assets_dir), name="reader-assets")
 
 
-
 @app.get("/login", response_class=HTMLResponse)
 def read_login_ui():
     login_path = os.path.join(os.path.dirname(__file__), "static", "login.html")
@@ -54,7 +57,7 @@ def read_login_ui():
 
 @app.get("/", response_class=HTMLResponse)
 def read_root_ui():
-    """Phá»¥c vá»¥ mÃ n hÃ¬nh Web UI Test cÆ¡ báº£n cho ngÆ°á»i dÃ¹ng (Paste Text & Upload File)"""
+    """Phục vụ màn hình Web UI Test cơ bản cho người dùng (Paste Text & Upload File)"""
     index_path = os.path.join(os.path.dirname(__file__), "static", "index.html")
     if os.path.exists(index_path):
         with open(index_path, "r", encoding="utf-8") as f:
@@ -70,5 +73,3 @@ def read_reader_ui():
         with open(reader_path, "r", encoding="utf-8") as f:
             return f.read()
     return "<h1>Reader UI unavailable</h1>"
-
-

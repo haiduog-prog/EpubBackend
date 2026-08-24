@@ -890,8 +890,10 @@ class StorageRepository:
                     raise exc
                 logger.debug("Public R2 fallback miss (%s): %s", object_name, exc)
 
+        # Fallback to local provider if cloud providers missed or offline
         if active_provider != self.local_provider:
             return self.local_provider.get_bytes(object_name, raise_on_error=raise_on_error)
+
         return None
 
     def upload_file(self, file_path: str, object_name: str, content_type: Optional[str] = None) -> Optional[str]:

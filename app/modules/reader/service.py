@@ -1,4 +1,5 @@
 import re
+import time
 from typing import List, Optional, Sequence
 
 from app.modules.library.application.facade import library_service
@@ -30,8 +31,15 @@ class ReaderService:
 
     def __init__(self, library=library_service):
         self._library = library
+        self._books_cache: Optional[List[ReaderBookSummary]] = None
+        self._books_cached_at: float = 0.0
+        self._books_ttl: float = 60.0
 
     def list_books(self) -> List[ReaderBookSummary]:
+        now = time.time()
+        if self._books_cache is not None and (now - self._books_cached_at) < self._books_ttl:
+            return self._books_cache
+
         books: List[ReaderBookSummary] = []
         for summary in self._library.list_novels():
             metadata = self._library.get_novel(summary.novel_id)
@@ -41,6 +49,8 @@ class ReaderService:
             if not readable:
                 continue
             books.append(self._to_book_summary(metadata, len(readable)))
+        self._books_cache = books
+        self._books_cached_at = now
         return books
 
     def get_book(self, novel_id: str) -> ReaderBookDetail:

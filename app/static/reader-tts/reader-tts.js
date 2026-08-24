@@ -30,7 +30,11 @@
     function underThousand(number) {
       const n = Math.max(0, Math.floor(Number(number)));
       if (n < 10) return digits[n];
-      if (n < 20) return n === 15 ? 'mười lăm' : `mười ${digits[n - 10]}`;
+      if (n < 20) {
+        if (n === 10) return 'mười';
+        if (n === 15) return 'mười lăm';
+        return `mười ${digits[n - 10]}`;
+      }
       if (n < 100) {
         const ten = Math.floor(n / 10); const unit = n % 10;
         if (!unit) return `${digits[ten]} mươi`;
@@ -38,9 +42,32 @@
         return `${digits[ten]} mươi ${unitWord}`;
       }
       const hundred = Math.floor(n / 100); const rest = n % 100;
-      if (!rest) return `${digits[hundred]} trăm`;
-      return `${digits[hundred]} trăm ${rest < 10 ? `lẻ ${digits[rest]}` : underThousand(rest)}`;
+      const hundredWord = `${digits[hundred]} trăm`;
+      if (!rest) return hundredWord;
+      if (rest < 10) return `${hundredWord} lẻ ${digits[rest]}`;
+      if (rest === 10) return `${hundredWord} mười`;
+      if (rest === 15) return `${hundredWord} mười lăm`;
+      if (rest < 20) return `${hundredWord} mười ${digits[rest - 10]}`;
+      const ten = Math.floor(rest / 10); const unit = rest % 10;
+      const unitWord = unit === 1 ? 'mốt' : unit === 4 ? 'tư' : unit === 5 ? 'lăm' : digits[unit];
+      return !unit ? `${hundredWord} ${digits[ten]} mươi` : `${hundredWord} ${digits[ten]} mươi ${unitWord}`;
     }
+
+    function groupToWords(group, isLeading) {
+      if (isLeading) return underThousand(group);
+      if (!group) return '';
+      if (group < 10) return `không trăm lẻ ${digits[group]}`;
+      if (group === 10) return 'không trăm mười';
+      if (group === 15) return 'không trăm mười lăm';
+      if (group < 20) return `không trăm mười ${digits[group - 10]}`;
+      if (group < 100) {
+        const ten = Math.floor(group / 10); const unit = group % 10;
+        const unitWord = unit === 1 ? 'mốt' : unit === 4 ? 'tư' : unit === 5 ? 'lăm' : digits[unit];
+        return !unit ? `không trăm ${digits[ten]} mươi` : `không trăm ${digits[ten]} mươi ${unitWord}`;
+      }
+      return underThousand(group);
+    }
+
     function numberToWords(raw) {
       const normalized = String(raw).replace(/^0+(?=\d)/, '');
       const n = Number(normalized);
@@ -52,22 +79,29 @@
       let groupIndex = 0;
       while (rest > 0) { groups.push(rest % 1000); rest = Math.floor(rest / 1000); groupIndex += 1; }
       const output = [];
+      let isLeading = true;
       for (let index = groups.length - 1; index >= 0; index -= 1) {
         const group = groups[index];
-        if (!group) continue;
-        output.push(underThousand(group));
-        if (units[index]) output.push(units[index]);
+        if (!group && !isLeading) continue;
+        if (group) {
+          const phrase = groupToWords(group, isLeading);
+          if (phrase) output.push(phrase);
+          if (units[index]) output.push(units[index]);
+          isLeading = false;
+        }
       }
-      return output.join(' ');
+      return output.join(' ').replace(/\s+/g, ' ').trim();
     }
 
     text = text
       .replace(/(\d+)\s*%/g, (_, n) => `${numberToWords(n)} phần trăm`)
-      .replace(/(\d+)\s*(?:đồng|VND|vnđ|đ)\b/gi, (_, n) => `${numberToWords(n)} đồng`)
+      .replace(/(\d+)\s*(?:đồng|VND|vnđ|đ)(?![a-zA-Z0-9\u00C0-\u1EF9])/gi, (_, n) => `${numberToWords(n)} đồng`)
       .replace(/\$\s*(\d+)/g, (_, n) => `${numberToWords(n)} đô la`)
-      .replace(/(\d{1,2})[/:](\d{1,2})(?:[/:](\d{1,2}))?/g, (_, h, m, s) => `${numberToWords(h)} giờ ${numberToWords(m)} phút${s ? ` ${numberToWords(s)} giây` : ''}`)
-      .replace(/(\d{1,2})[/-](\d{1,2})[/-](\d{4})/g, (_, d, m, y) => `ngày ${numberToWords(d)} tháng ${numberToWords(m)} năm ${numberToWords(y)}`)
-      .replace(/\b(\d{1,2})[/-](\d{1,2})\b/g, (_, d, m) => `${numberToWords(d)} tháng ${numberToWords(m)}`)
+      .replace(/\b(\d{1,2}):(\d{2})(?::(\d{2}))?\b/g, (_, h, m, s) => `${numberToWords(h)} giờ ${numberToWords(m)} phút${s ? ` ${numberToWords(s)} giây` : ''}`)
+      .replace(/\b(\d{1,2})[/-](\d{1,2})[/-](\d{4})\b/g, (_, d, m, y) => `ngày ${numberToWords(d)} tháng ${numberToWords(m)} năm ${numberToWords(y)}`)
+      .replace(/(?:ngày\s+)\b([0-2]?\d|3[01])\s*-\s*(0?[1-9]|1[0-2])\b/gi, (_, d, m) => `ngày ${numberToWords(d)} tháng ${numberToWords(m)}`)
+      .replace(/(?:ngày\s+)?\b([0-2]?\d|3[01])\/(0?[1-9]|1[0-2])\b/gi, (_, d, m) => `ngày ${numberToWords(d)} tháng ${numberToWords(m)}`)
+      .replace(/(\d+)\s*-\s*(\d+)/g, '$1 - $2')
       .replace(/\b([IVXLCDM]{1,8})\b/g, (match) => {
         const values = { I: 1, V: 5, X: 10, L: 50, C: 100, D: 500, M: 1000 };
         let total = 0; let previous = 0;
@@ -264,6 +298,10 @@
 
     function selectedVoice() { return state.manifest?.voices.find(voice => voice.id === state.selectedVoiceId) || state.manifest?.voices.find(voice => voice.isDefault) || null; }
 
+    async function isInstalledSafe(voice) {
+      try { return await store.isInstalled(voice); } catch (_) { return false; }
+    }
+
     function setStatus(status, message = '') {
       state.status = status;
       player.status.textContent = message || ({ NO_VOICE: 'Chưa cài voice', LOADING_MODEL: 'Đang khởi tạo model…', GENERATING: 'Đang chuẩn bị câu đọc…', PLAYING: 'Đang phát', PAUSED: 'Đã tạm dừng', BUFFERING: 'Đang đệm câu tiếp theo…', ERROR: 'Có lỗi TTS' }[status] || '');
@@ -297,57 +335,103 @@
       return state.audioContext;
     }
 
-    function cleanupWorker() {
-      if (state.worker) state.worker.terminate();
+    function cleanupWorker(reason = new Error('TTS session đã thay đổi.')) {
+      const worker = state.worker;
+      const load = state.workerLoad;
       state.worker = null; state.workerReady = false; state.workerVoiceId = '';
-      state.pending.forEach(item => item.reject(new Error('TTS session đã thay đổi.')));
-      state.pending.clear(); state.workerLoad = null;
+      state.workerLoad = null;
+      if (load) load.reject(reason);
+      if (worker) worker.terminate();
+      state.pending.forEach(item => item.reject(reason));
+      state.pending.clear();
     }
 
     function ensureWorker() {
       if (state.worker) return state.worker;
       if (!window.Worker) throw new Error('Trình duyệt không hỗ trợ Web Worker.');
-      state.worker = new Worker(WORKER_URL, { type: 'module', name: 'reader-tts' });
-      state.worker.addEventListener('message', event => {
+      const worker = new Worker(WORKER_URL, { type: 'module', name: 'reader-tts' });
+      state.worker = worker;
+      worker.addEventListener('message', event => {
+        if (state.worker !== worker) return;
         const message = event.data || {};
         if (message.type === 'READY') {
+          const load = state.workerLoad;
+          if (!load || load.worker !== worker) return;
           state.workerReady = true;
           state.workerVoiceId = message.voiceId;
-          state.workerLoad?.resolve(); state.workerLoad = null;
+          state.workerLoad = null;
+          load.resolve();
           return;
         }
-        if (message.type === 'AUDIO' || message.type === 'ERROR') {
+        if (message.type === 'ERROR') {
+          const request = message.requestId ? state.pending.get(message.requestId) : null;
+          if (request) {
+            state.pending.delete(message.requestId);
+            request.reject(new Error(message.message || 'Không tạo được audio.'));
+            return;
+          }
+          const load = state.workerLoad;
+          if (load && load.worker === worker) {
+            state.workerLoad = null;
+            cleanupWorker(new Error(message.message || 'Không thể tải voice.'));
+            load.reject(new Error(message.message || 'Không thể tải voice.'));
+            return;
+          }
+          notify(message.message || 'TTS worker gặp lỗi.', 'error');
+          return;
+        }
+        if (message.type === 'AUDIO') {
           const request = state.pending.get(message.requestId);
           if (!request) return;
           state.pending.delete(message.requestId);
-          if (message.type === 'ERROR') request.reject(new Error(message.message || 'Không tạo được audio.'));
-          else request.resolve({ samples: new Float32Array(message.audio), sampleRate: message.sampleRate });
+          request.resolve({ samples: new Float32Array(message.audio), sampleRate: message.sampleRate });
         }
       });
-      state.worker.addEventListener('error', error => {
-        state.workerReady = false;
-        state.workerLoad?.reject(new Error(error.message || 'TTS worker bị lỗi.'));
-        state.workerLoad = null;
+      worker.addEventListener('error', error => {
+        if (state.worker !== worker) return;
+        const workerError = new Error(error.message || 'TTS worker bị lỗi.');
+        cleanupWorker(workerError);
         notify('TTS worker gặp lỗi. Hãy thử lại voice đang cài.', 'error');
       });
-      return state.worker;
+      return worker;
     }
 
     async function ensureVoiceLoaded() {
       const voice = selectedVoice();
       if (!voice) throw new Error('Chưa có voice trong manifest.');
-      if (!(await store.isInstalled(voice))) throw new Error(`Voice ${voice.displayName} chưa được tải. Bấm “Tải giọng” để cài.`);
+      if (!(await store.isInstalled(voice))) throw new Error('Voice ' + voice.displayName + ' chưa được tải. Bấm “Tải giọng” để cài.');
       if (state.workerReady && state.workerVoiceId === voice.id) return voice;
+      if (state.workerLoad) {
+        if (state.workerLoad.voiceId === voice.id) {
+          await state.workerLoad.promise;
+          return voice;
+        }
+        cleanupWorker();
+      }
       setStatus('LOADING_MODEL');
-      cleanupWorker();
+      if (state.worker) cleanupWorker();
       const worker = ensureWorker();
-      const [modelBuffer, configResponse] = await Promise.all([
-        store.getBuffer(voice),
-        fetch(state.manifest.configUrl, { cache: 'force-cache' }).then(response => { if (!response.ok) throw new Error('Không tải được Piper config.'); return response.json(); })
-      ]);
-      const loaded = new Promise((resolve, reject) => { state.workerLoad = { resolve, reject }; });
-      worker.postMessage({ type: 'LOAD', voiceId: voice.id, modelBuffer, config: configResponse }, [modelBuffer]);
-      try { await loaded; } catch (error) { cleanupWorker(); throw error; }
+      let resolveReady; let rejectReady;
+      const ready = new Promise((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
+      const load = { voiceId: voice.id, worker, promise: ready, resolve: resolveReady, reject: rejectReady };
+      state.workerLoad = load;
+      (async () => {
+        try {
+          const [modelBuffer, configResponse] = await Promise.all([
+            store.getBuffer(voice),
+            fetch(state.manifest.configUrl, { cache: 'force-cache' }).then(response => { if (!response.ok) throw new Error('Không tải được Piper config.'); return response.json(); })
+          ]);
+          if (state.worker !== worker || state.workerLoad !== load) {
+            rejectReady(new Error('TTS session đã thay đổi.'));
+            return;
+          }
+          worker.postMessage({ type: 'LOAD', voiceId: voice.id, modelBuffer, config: configResponse }, [modelBuffer]);
+        } catch (error) {
+          if (state.workerLoad === load) cleanupWorker(error);
+          else rejectReady(error);
+        }
+      })();
+      await ready;
       return voice;
     }
 
@@ -374,6 +458,7 @@
 
     function clearPlayback({ preserveCursor = true } = {}) {
       state.token += 1;
+      state.nextChapterPending = false;
       stopSources();
       state.requested.clear(); state.prepared.clear(); state.playhead = 0; state.lastScheduled = -1; state.active = null;
       if (!preserveCursor) { state.cursor = 0; state.pausedIndex = 0; state.pausedOffset = 0; }
@@ -401,9 +486,11 @@
         const start = Math.max(context.currentTime + 0.06, state.playhead || context.currentTime + 0.06);
         const source = context.createBufferSource();
         source.buffer = prepared.buffer;
-        source.playbackRate.value = state.speed;
+        source.playbackRate.value = 1.0;
         source.connect(context.destination);
-        const entry = { index: nextIndex, source, buffer: prepared.buffer, offset: prepared.offset || 0, start, token };
+        const rawOffset = prepared.offset || 0;
+        const safeOffset = Math.min(Math.max(0, rawOffset), Math.max(0, prepared.buffer.duration - 0.05));
+        const entry = { index: nextIndex, source, buffer: prepared.buffer, offset: safeOffset, start, token };
         state.scheduled.set(nextIndex, entry);
         source.onended = () => {
           if (entry.token !== state.token) return;
@@ -422,13 +509,33 @@
             pump(token);
           }
         };
-        source.start(start, entry.offset);
+        let started = false;
+        try {
+          source.start(start, entry.offset);
+          started = true;
+        } catch (_) {
+          try {
+            source.start(start, 0);
+            started = true;
+          } catch (e) {
+            console.error('Audio start error:', e);
+          }
+        }
+
+        if (!started) {
+          state.scheduled.delete(entry.index);
+          clearPlayback({ preserveCursor: true });
+          setStatus('ERROR', 'Không thể phát audio.');
+          notify('Không thể phát audio trên thiết bị này.', 'error');
+          return;
+        }
+
         const delay = Math.max(0, (start - context.currentTime) * 1000);
         window.setTimeout(() => {
           if (entry.token !== state.token || !state.scheduled.has(entry.index)) return;
           state.active = entry; state.cursor = entry.index; state.pausedOffset = 0; highlight(entry.index); setStatus('PLAYING');
         }, delay);
-        state.playhead = start + Math.max(0, (prepared.buffer.duration - entry.offset) / state.speed);
+        state.playhead = start + Math.max(0, prepared.buffer.duration - entry.offset);
         state.lastScheduled = nextIndex;
         nextIndex += 1;
       }
@@ -449,14 +556,18 @@
           schedulePrepared(token);
         }).catch(async error => {
           state.requested.delete(index);
-          if (token !== state.token) return;
+          if (token !== state.token || !state.playing) return;
           const fallback = state.manifest?.voices.find(item => item.isDefault);
-          if (fallback && state.selectedVoiceId !== fallback.id && await store.isInstalled(fallback)) {
+          let fallbackInstalled = false;
+          if (fallback && state.selectedVoiceId !== fallback.id) fallbackInstalled = await isInstalledSafe(fallback);
+          if (token !== state.token || !state.playing) return;
+          if (fallbackInstalled) {
             state.selectedVoiceId = fallback.id; saveSelectedVoice(fallback.id); player.voice.textContent = fallback.displayName;
             notify('Voice đang chọn lỗi; đã chuyển về ' + fallback.displayName + '.', 'error');
             clearPlayback(); play(); return;
           }
-          state.playing = false; setStatus('ERROR', error.message || 'Không tạo được audio.');
+          clearPlayback({ preserveCursor: true });
+          setStatus('ERROR', error.message || 'Không tạo được audio.');
           notify(error.message || 'Không tạo được audio.', 'error');
         });
       }
@@ -466,36 +577,47 @@
 
     async function play() {
       if (!state.sentences.length) { notify('Chương hiện tại chưa có câu để đọc.', 'error'); return; }
+      const wasPaused = state.paused;
+      const opToken = ++state.token;
+      state.playing = true; state.paused = false; state.status = 'GENERATING';
       try {
         const voice = await ensureVoiceLoaded();
+        if (opToken !== state.token || !state.playing) return;
         const context = ensureAudioContext();
         await context.resume();
-        const wasPaused = state.paused;
+        if (opToken !== state.token || !state.playing) return;
+
         state.selectedVoiceId = voice.id; saveSelectedVoice(voice.id);
-        state.playing = true; state.paused = false; state.status = 'GENERATING';
         if (state.lastScheduled < 0) {
           state.cursor = wasPaused ? state.pausedIndex : Math.min(state.cursor, state.sentences.length - 1);
           state.lastScheduled = state.cursor - 1;
           state.prepared.clear(); state.requested.clear(); state.playhead = 0;
         }
-        setStatus('GENERATING'); pump(state.token);
+        setStatus('GENERATING'); pump(opToken);
         renderVoiceList();
       } catch (error) {
+        if (opToken !== state.token || !state.playing) return;
         const fallback = state.manifest?.voices.find(item => item.isDefault);
-        if (fallback && state.selectedVoiceId !== fallback.id && await store.isInstalled(fallback)) {
+        let fallbackInstalled = false;
+        if (fallback && state.selectedVoiceId !== fallback.id) fallbackInstalled = await isInstalledSafe(fallback);
+        if (opToken !== state.token || !state.playing) return;
+        if (fallbackInstalled) {
           state.selectedVoiceId = fallback.id; saveSelectedVoice(fallback.id); player.voice.textContent = fallback.displayName;
           notify('Voice đang chọn lỗi; đã chuyển về ' + fallback.displayName + '.', 'error');
           return play();
         }
-        state.playing = false; setStatus('ERROR', error.message); notify(error.message, 'error'); openManager();
+        clearPlayback({ preserveCursor: true });
+        setStatus('ERROR', error.message); notify(error.message, 'error'); openManager();
       }
     }
 
     function pause() {
       if (!state.playing) return;
+      ++state.token;
+      state.nextChapterPending = false;
       const context = ensureAudioContext();
       const entry = state.active;
-      if (entry) state.pausedOffset = Math.max(0, (context.currentTime - entry.start) * state.speed + entry.offset);
+      if (entry) state.pausedOffset = Math.max(0, context.currentTime - entry.start + entry.offset);
       state.pausedIndex = entry?.index ?? state.cursor;
       saveProgress(state.pausedOffset);
       state.paused = true; state.playing = false;
@@ -503,34 +625,122 @@
       setStatus('PAUSED'); highlight(state.pausedIndex);
     }
 
-    function restartAt(index, offset = 0) {
-      state.token += 1; stopSources(); state.requested.clear(); state.prepared.clear(); state.playhead = 0; state.lastScheduled = -1; state.active = null;
-      state.cursor = Math.max(0, Math.min(index, state.sentences.length - 1)); state.pausedIndex = state.cursor; state.pausedOffset = offset; state.lastScheduled = state.cursor - 1; state.playing = true; state.paused = false; setStatus('GENERATING'); pump(state.token);
+    async function restartAt(index, offset = 0) {
+      if (!state.sentences.length) return;
+      const opToken = ++state.token;
+      stopSources();
+      state.requested.clear();
+      state.prepared.clear();
+      state.playhead = 0;
+      state.active = null;
+      state.cursor = Math.max(0, Math.min(index, state.sentences.length - 1));
+      state.pausedIndex = state.cursor;
+      state.pausedOffset = offset;
+      state.lastScheduled = state.cursor - 1;
+      state.playing = true;
+      state.paused = false;
+      setStatus('GENERATING');
+      highlight(state.cursor);
+
+      try {
+        const voice = await ensureVoiceLoaded();
+        if (opToken !== state.token || !state.playing) return;
+        const context = ensureAudioContext();
+        await context.resume();
+        if (opToken !== state.token || !state.playing) return;
+
+        state.selectedVoiceId = voice.id;
+        saveSelectedVoice(voice.id);
+        saveProgress(offset);
+        pump(opToken);
+        renderVoiceList();
+      } catch (error) {
+        if (opToken !== state.token) return;
+        const fallback = state.manifest?.voices.find(item => item.isDefault);
+        let fallbackInstalled = false;
+        if (fallback && state.selectedVoiceId !== fallback.id) fallbackInstalled = await isInstalledSafe(fallback);
+        if (opToken !== state.token) return;
+        if (fallbackInstalled) {
+          state.selectedVoiceId = fallback.id; saveSelectedVoice(fallback.id); player.voice.textContent = fallback.displayName;
+          notify('Voice đang chọn lỗi; đã chuyển về ' + fallback.displayName + '.', 'error');
+          return restartAt(index, offset);
+        }
+        clearPlayback({ preserveCursor: true });
+        setStatus('ERROR', error.message); notify(error.message, 'error'); openManager();
+      }
     }
 
     function previous() {
       if (!state.sentences.length) return;
       const index = state.active?.index ?? state.cursor;
-      if (state.active && state.pausedOffset > 2) restartAt(index, 0);
+      const context = state.audioContext;
+      const elapsed = (state.active && context) ? Math.max(0, context.currentTime - state.active.start) : state.pausedOffset;
+      if (state.active && elapsed > 2) restartAt(index, 0);
       else restartAt(Math.max(0, index - 1), 0);
-      saveProgress(0);
     }
 
     function next() {
       if (!state.sentences.length) return;
       const index = state.active?.index ?? state.cursor;
       if (index >= state.sentences.length - 1) { handleChapterEnd(); return; }
-      restartAt(index + 1, 0); saveProgress(0);
+      restartAt(index + 1, 0);
     }
 
     function handleChapterEnd() {
       const nextIndex = options.getNextChapterIndex?.();
       if (!nextIndex || !options.loadChapter) { setStatus('READY', 'Đã hết chương'); return; }
       state.nextChapterPending = true;
+      const opToken = ++state.token;
       setStatus('BUFFERING', 'Đang mở chương tiếp theo…');
       Promise.resolve(options.loadChapter(nextIndex, { skipRestore: true, fromAudio: true })).then(ok => {
-        if (!ok) { state.nextChapterPending = false; setStatus('ERROR', 'Không mở được chương tiếp theo.'); notify('Không mở được chương tiếp theo. Bạn có thể bấm thử lại.', 'error'); }
+        if (opToken !== state.token || !state.nextChapterPending) return;
+        if (!ok) {
+          state.nextChapterPending = false;
+          setStatus('ERROR', 'Không mở được chương tiếp theo.');
+          notify('Không mở được chương tiếp theo. Bạn có thể bấm thử lại.', 'error');
+        }
+      }).catch(error => {
+        if (opToken !== state.token || !state.nextChapterPending) return;
+        state.nextChapterPending = false;
+        setStatus('ERROR', error?.message || 'Không mở được chương tiếp theo.');
       });
+    }
+
+    function isTtsDisabled() {
+      try { return localStorage.getItem('reader.tts.disabled') === 'true'; } catch (_) { return false; }
+    }
+
+    function setTtsDisabled(disabled) {
+      try { localStorage.setItem('reader.tts.disabled', disabled ? 'true' : 'false'); } catch (_) { /* private mode */ }
+    }
+
+    function closePlayer(userAction = true) {
+      if (state.playing) pause();
+      state.nextChapterPending = false;
+      document.body.classList.remove('tts-open');
+      player.player.classList.remove('is-visible');
+      document.querySelectorAll('.tts-sentence.is-speaking').forEach(node => node.classList.remove('is-speaking'));
+      if (userAction) {
+        setTtsDisabled(true);
+        notify('Đã tắt thanh đọc audio.', '');
+      }
+      if (typeof options.onVisibilityChange === 'function') options.onVisibilityChange(false);
+    }
+
+    function showPlayer(autoPlay = false) {
+      setTtsDisabled(false);
+      document.body.classList.add('tts-open');
+      player.player.classList.add('is-visible');
+      if (typeof options.onVisibilityChange === 'function') options.onVisibilityChange(true);
+      if (autoPlay) play();
+    }
+
+    function togglePlayer() {
+      if (player.player.classList.contains('is-visible')) {
+        closePlayer(true);
+      } else {
+        showPlayer(false);
+      }
     }
 
     function onChapterLoading() {
@@ -542,12 +752,25 @@
       const oldChapter = state.currentChapterIndex;
       state.currentChapterIndex = chapterIndex;
       state.sentences = segmentText(rawText);
-      document.body.classList.add('tts-open');
-      player.player.classList.add('is-visible');
+      if (!isTtsDisabled() || wasPending) {
+        document.body.classList.add('tts-open');
+        player.player.classList.add('is-visible');
+        if (typeof options.onVisibilityChange === 'function') options.onVisibilityChange(true);
+      } else {
+        document.body.classList.remove('tts-open');
+        player.player.classList.remove('is-visible');
+        if (typeof options.onVisibilityChange === 'function') options.onVisibilityChange(false);
+      }
       state.nextChapterPending = false;
       const saved = readProgress();
       if (wasPending) { state.cursor = 0; state.pausedOffset = 0; }
-      else if (saved?.chapterIndex === chapterIndex) { state.cursor = Math.min(Number(saved.sentenceIndex) || 0, Math.max(0, state.sentences.length - 1)); state.pausedIndex = state.cursor; state.pausedOffset = Number(saved.offsetSeconds) || 0; state.speed = Math.max(.75, Math.min(1.5, Number(saved.speed) || state.speed)); player.speed.value = String(state.speed); }
+      else if (saved?.chapterIndex === chapterIndex) {
+        state.cursor = Math.min(Number(saved.sentenceIndex) || 0, Math.max(0, state.sentences.length - 1));
+        state.pausedIndex = state.cursor;
+        state.pausedOffset = Number(saved.offsetSeconds) || 0;
+        state.speed = Math.max(.75, Math.min(1.5, Number(saved.speed) || state.speed));
+        player.speed.value = String(state.speed);
+      }
       else state.cursor = 0;
       player.counter.textContent = state.sentences.length ? `Câu ${state.cursor + 1} / ${state.sentences.length}` : 'Không có câu';
       if (oldChapter !== null && oldChapter !== chapterIndex) clearPlayback({ preserveCursor: true });
@@ -564,20 +787,67 @@
     }
 
     async function downloadVoice(voice, row) {
-      const button = row.querySelector('.tts-voice-action'); const progress = row.querySelector('.tts-voice-progress span');
-      button.disabled = true; button.textContent = 'Đang tải…';
+      const button = row.querySelector('.tts-voice-action--download') || row.querySelector('.tts-voice-action');
+      const progress = row.querySelector('.tts-voice-progress span');
+      if (button) { button.disabled = true; button.textContent = 'Đang tải…'; }
       try {
         await store.download(voice, { protectedId: state.workerVoiceId, onProgress: (ratio, received, total) => { progress.style.width = `${Math.round(ratio * 100)}%`; row.querySelector('.tts-voice-meta').textContent = `${formatBytes(received)} / ${formatBytes(total)} · ${voice.source === 'r2' ? 'Cloudflare R2' : 'Hugging Face'}`; } });
-        notify(`${voice.displayName} đã được cài.`, ''); renderVoiceList();
-      } catch (error) { button.disabled = false; button.textContent = 'Thử lại'; notify(error.message, 'error'); }
+        notify(`${voice.displayName} đã được cài.`, ''); await renderVoiceList();
+      } catch (error) { if (button) { button.disabled = false; button.textContent = 'Thử lại'; } notify(error.message, 'error'); }
+    }
+
+    async function deleteVoice(voice, row) {
+      const deleteBtn = row.querySelector('.tts-voice-action--delete');
+      if (deleteBtn) {
+        deleteBtn.disabled = true;
+        deleteBtn.textContent = 'Đang xóa…';
+      }
+      try {
+        if (state.playing && state.workerVoiceId === voice.id) {
+          pause();
+        }
+        if (state.workerVoiceId === voice.id) {
+          cleanupWorker();
+        }
+        await store.remove(voice);
+        if (state.selectedVoiceId === voice.id) {
+          const installed = await store.installed(state.manifest?.voices || []);
+          const nextVoice = installed.find(v => v.isDefault) || installed[0] || state.manifest?.voices.find(v => v.isDefault);
+          state.selectedVoiceId = nextVoice?.id || '';
+          saveSelectedVoice(state.selectedVoiceId);
+          player.voice.textContent = nextVoice?.displayName || 'Chưa chọn voice';
+          if (!installed.length) {
+            setStatus('NO_VOICE', 'Chưa cài voice');
+          } else {
+            setStatus('READY', `Voice: ${nextVoice?.displayName}`);
+          }
+        }
+        notify(`Đã xóa voice ${voice.displayName}.`, '');
+        await renderVoiceList();
+      } catch (error) {
+        notify(`Lỗi khi xóa voice: ${error.message}`, 'error');
+        await renderVoiceList();
+      }
     }
 
     async function renderVoiceList() {
       if (!state.manifest) return;
       player.voiceList.replaceChildren();
-      const installed = new Set((await store.installed(state.manifest.voices)).map(voice => voice.id));
+      const installedList = await store.installed(state.manifest.voices);
+      const installedMap = new Map(installedList.map(v => [v.id, v]));
+      let totalInstalledBytes = 0;
+      installedList.forEach(v => { totalInstalledBytes += (v.sizeBytes || 0); });
+
+      if (player.summary) {
+        if (installedList.length > 0) {
+          player.summary.textContent = `Đã tải ${installedList.length}/${MAX_INSTALLED} voice (${formatBytes(totalInstalledBytes)}) · Tải hoặc xóa voice để quản lý bộ nhớ thiết bị.`;
+        } else {
+          player.summary.textContent = `Chưa có voice nào được tải. Hãy bấm "Tải giọng" để nghe trực tiếp trong trình duyệt (tối đa ${MAX_INSTALLED} voice).`;
+        }
+      }
+
       state.manifest.voices.forEach(voice => {
-        const row = $uiVoiceRow(voice, installed.has(voice.id));
+        const row = $uiVoiceRow(voice, installedMap.has(voice.id));
         player.voiceList.append(row);
       });
     }
@@ -585,13 +855,37 @@
     function openManager() { managerOpen = true; player.backdrop.classList.add('is-open'); player.backdrop.setAttribute('aria-hidden', 'false'); renderVoiceList(); }
     function closeManager() { managerOpen = false; player.backdrop.classList.remove('is-open'); player.backdrop.setAttribute('aria-hidden', 'true'); }
 
-    function $uiVoiceRow(voice, installed) {
-      const row = $voiceRowBase(voice);
-      const action = row.querySelector('.tts-voice-action');
-      if (!installed) action.textContent = 'Tải giọng';
-      else if (state.selectedVoiceId === voice.id) { action.textContent = 'Đang dùng'; action.disabled = true; row.classList.add('is-active'); }
-      else action.textContent = 'Chọn';
-      action.addEventListener('click', () => installed ? selectVoice(voice) : downloadVoice(voice, row));
+    function $uiVoiceRow(voice, isInstalled) {
+      const row = $voiceRowBase(voice, isInstalled);
+      const actions = row.querySelector('.tts-voice-actions');
+      const isSelected = isInstalled && state.selectedVoiceId === voice.id;
+
+      if (!isInstalled) {
+        const downloadBtn = $('button', 'tts-voice-action tts-voice-action--download', 'Tải giọng');
+        downloadBtn.type = 'button';
+        downloadBtn.addEventListener('click', () => downloadVoice(voice, row));
+        actions.append(downloadBtn);
+      } else {
+        if (isSelected) {
+          const activeBadge = $('span', 'tts-voice-badge', '✓ Đang dùng');
+          actions.append(activeBadge);
+        } else {
+          const selectBtn = $('button', 'tts-voice-action tts-voice-action--select', 'Chọn');
+          selectBtn.type = 'button';
+          selectBtn.addEventListener('click', () => selectVoice(voice));
+          actions.append(selectBtn);
+        }
+
+        const deleteBtn = $('button', 'tts-voice-action tts-voice-action--delete', 'Xóa');
+        deleteBtn.type = 'button';
+        deleteBtn.title = `Xóa voice ${voice.displayName}`;
+        deleteBtn.setAttribute('aria-label', `Xóa voice ${voice.displayName}`);
+        deleteBtn.addEventListener('click', () => deleteVoice(voice, row));
+        actions.append(deleteBtn);
+        row.classList.add('is-installed');
+        if (isSelected) row.classList.add('is-active');
+      }
+
       return row;
     }
 
@@ -602,21 +896,24 @@
       player.nextButton.addEventListener('click', next);
       player.voiceButton.addEventListener('click', openManager);
       player.speed.addEventListener('change', () => { state.speed = Math.max(.75, Math.min(1.5, Number(player.speed.value) || 1)); saveProgress(state.pausedOffset); if (state.playing) { pause(); play(); } });
+      player.dismissButton.addEventListener('click', () => closePlayer(true));
       player.closeButton.addEventListener('click', closeManager);
       player.backdrop.addEventListener('click', event => { if (event.target === player.backdrop) closeManager(); });
       document.addEventListener('keydown', event => { if (event.key === 'Escape' && managerOpen) closeManager(); });
       setStatus('NO_VOICE');
     }
 
-    function $voiceRowBase(voice) {
+    function $voiceRowBase(voice, isInstalled) {
       const row = $('div', 'tts-voice-row');
       const copy = $('div', 'tts-voice-copy');
       copy.append($('div', 'tts-voice-name', `${voice.displayName}${voice.isDefault ? ' · Mặc định' : ''}`));
-      const meta = $('div', 'tts-voice-meta', `${formatBytes(voice.sizeBytes)} · ${voice.source === 'r2' ? 'Cloudflare R2' : 'Hugging Face'}`);
+      const metaText = `${formatBytes(voice.sizeBytes)} · ${voice.source === 'r2' ? 'Cloudflare R2' : 'Hugging Face'}${isInstalled ? ' · Đã tải' : ''}`;
+      const meta = $('div', 'tts-voice-meta', metaText);
       const progress = $('div', 'tts-voice-progress'); progress.append($('span'));
       copy.append(meta, progress);
-      const action = $('button', 'tts-voice-action'); action.type = 'button';
-      row.append(copy, action); return row;
+      const actions = $('div', 'tts-voice-actions');
+      row.append(copy, actions);
+      return row;
     }
 
     async function init() {
@@ -633,7 +930,22 @@
     }
 
     init();
-    return { onChapterLoading, onChapterRendered, onChapterFailed, openManager, play, pause, previous, next, isPlaying: () => state.playing };
+    return {
+      onChapterLoading,
+      onChapterRendered,
+      onChapterFailed,
+      openManager,
+      closeManager,
+      play,
+      pause,
+      previous,
+      next,
+      togglePlayer,
+      closePlayer,
+      showPlayer,
+      isPlaying: () => state.playing,
+      isVisible: () => player.player.classList.contains('is-visible')
+    };
   }
 
   function createPlayerUi() {
@@ -651,33 +963,27 @@
     [.75, 1, 1.25, 1.5].forEach(value => { const option = $('option', '', `${value}x`); option.value = String(value); if (value === 1) option.selected = true; speed.append(option); }); speedLabel.append(speed);
     const voiceButton = $('button', 'text-button', 'Tải giọng'); voiceButton.type = 'button'; voiceButton.setAttribute('aria-label', 'Mở quản lý voice');
     const counter = $('span', 'tts-player__status', 'Chưa có chương');
-    tools.append(speedLabel, counter, voiceButton);
+    const dismissButton = $('button', 'tts-player__dismiss', '✕'); dismissButton.type = 'button'; dismissButton.title = 'Tắt thanh phát audio'; dismissButton.setAttribute('aria-label', 'Tắt thanh phát audio');
+    tools.append(speedLabel, counter, voiceButton, dismissButton);
     const progress = $('div', 'tts-progress'); progress.setAttribute('aria-hidden', 'true'); progress.append($('span'));
     player.append(brand, controls, tools, progress);
 
     const backdrop = $('div', 'tts-dialog-backdrop'); backdrop.setAttribute('aria-hidden', 'true');
     const dialog = $('section', 'tts-dialog'); dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true'); dialog.setAttribute('aria-labelledby', 'tts-dialog-title');
-    const head = $('header', 'tts-dialog__head'); const heading = $('div'); heading.append($('h2', '', 'Voice tiếng Việt'), $('p', '', 'Tải từng giọng về thiết bị để tổng hợp trực tiếp trong trình duyệt. Tối đa ba voice được giữ lại; voice ít dùng nhất sẽ tự bị dọn.'));
+    const head = $('header', 'tts-dialog__head'); const heading = $('div');
+    const summary = $('p', '', 'Tải từng giọng về thiết bị để tổng hợp trực tiếp trong trình duyệt. Tối đa ba voice được giữ lại; voice ít dùng nhất sẽ tự bị dọn.');
+    heading.append($('h2', '', 'Voice tiếng Việt'), summary);
     const closeButton = $('button', 'tts-dialog__close', '×'); closeButton.type = 'button'; closeButton.setAttribute('aria-label', 'Đóng quản lý voice'); head.append(heading, closeButton);
     const title = heading.querySelector('h2'); title.id = 'tts-dialog-title';
     const voiceList = $('div', 'tts-voice-list'); voiceList.setAttribute('aria-live', 'polite');
     const foot = $('div', 'tts-dialog__foot', 'Nguồn voice: doof-ferb/nghitts-copy · Sử dụng cá nhân/phi thương mại. Minh Quang ưu tiên từ Cloudflare R2.');
     dialog.append(head, voiceList, foot); backdrop.append(dialog);
-    return { player, backdrop, voiceList, voice: brand.querySelector('.tts-player__voice'), status: brand.querySelector('.tts-player__status'), playButton, prevButton, nextButton, speed, voiceButton, counter, closeButton };
+    return { player, backdrop, voiceList, voice: brand.querySelector('.tts-player__voice'), status: brand.querySelector('.tts-player__status'), playButton, prevButton, nextButton, speed, voiceButton, counter, dismissButton, closeButton, summary };
   }
 
   function $ui() {
     const ui = createPlayerUi();
     return ui;
-  }
-
-  function $voiceRowBase(voice) {
-    const row = $('div', 'tts-voice-row');
-    const copy = $('div', 'tts-voice-copy');
-    copy.append($('div', 'tts-voice-name', `${voice.displayName}${voice.isDefault ? ' · Mặc định' : ''}`));
-    copy.append($('div', 'tts-voice-meta', `${formatBytes(voice.sizeBytes)} · ${voice.source === 'r2' ? 'Cloudflare R2' : 'Hugging Face'}`));
-    const progress = $('div', 'tts-voice-progress'); progress.append($('span')); copy.append(progress);
-    const action = $('button', 'tts-voice-action'); action.type = 'button'; row.append(copy, action); return row;
   }
 
   window.ReaderTts = { createReaderAudioController, normalizeVietnameseText, segmentText };

@@ -1,3 +1,4 @@
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -31,7 +32,7 @@ def test_prompt_json_examples_survive_formatting():
 
 
 @pytest.mark.asyncio
-async def test_gemini_fallback_runs_sync_sdk_call_off_event_loop():
+async def test_gemini_fallback_uses_native_async_sdk_call():
     provider = object.__new__(GeminiProvider)
     provider.default_model = "preferred-model"
     provider.working_model = None
@@ -39,12 +40,60 @@ async def test_gemini_fallback_runs_sync_sdk_call_off_event_loop():
 
     calls = []
 
-    def generate_content(**kwargs):
+    async def generate_content(**kwargs):
         calls.append(kwargs["model"])
         return SimpleNamespace(text="ok")
 
-    provider.client = SimpleNamespace(models=SimpleNamespace(generate_content=generate_content))
+    provider.client = SimpleNamespace(
+        aio=SimpleNamespace(models=SimpleNamespace(generate_content=generate_content))
+    )
     response = await provider._call_with_fallback("text", object())
 
     assert response.text == "ok"
     assert calls == ["preferred-model"]
+
+
+@pytest.mark.asyncio
+async def test_gemini_native_async_call_is_cancelled_by_deadline():
+    provider = object.__new__(GeminiProvider)
+    provider.default_model = "preferred-model"
+    provider.working_model = None
+    provider.failed_models = set()
+
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    async def generate_content(**kwargs):
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+
+    provider.client = SimpleNamespace(
+        aio=SimpleNamespace(models=SimpleNamespace(generate_content=generate_content))
+    )
+
+    with pytest.raises(asyncio.TimeoutError):
+        await asyncio.wait_for(provider._call_with_fallback("text", object()), timeout=0.01)
+
+    assert started.is_set()
+    assert cancelled.is_set()
+
+
+def test_gemini_configures_sdk_request_timeout_in_milliseconds(monkeypatch):
+    captured = {}
+
+    def fake_client(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace()
+
+    monkeypatch.setattr("app.llm.gemini_provider.genai.Client", fake_client)
+
+    GeminiProvider(
+        api_key="dummy",
+        model="preferred-model",
+        request_timeout_seconds=45.0,
+    )
+
+    assert captured["http_options"].timeout == 45_000

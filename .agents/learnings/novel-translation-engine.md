@@ -17,6 +17,11 @@
 - **Chi tiết**: Tái sử dụng HTTP client với `httpx.Limits(max_keepalive_connections=20, max_connections=50)` trong `SupabaseStorageProvider`. Chủ động giải phóng DOM `BeautifulSoup.decompose()`, `del raw_sections` và kích hoạt `gc.collect()` định kỳ mỗi 20 chương khi nạp file EPUB lớn (500-2000 chương), giữ RAM server luôn < 180MB trên Render Free (512MB limit).
 - **Files liên quan**: `app/infrastructure/storage/legacy_storage.py`, `app/modules/library/legacy_service.py`
 
+### Cancellation-safe Native Async LLM Calls
+- **Ngày**: 2026-08-25
+- **Chi tiết**: Timeout ở coroutine chỉ đáng tin khi provider dùng native async I/O. Gemini nhận timeout tại SDK/HTTP boundary qua `types.HttpOptions` và gọi `client.aio.models.generate_content`, để cancellation dừng request thay vì bỏ lại thread nền.
+- **Files liên quan**: `app/llm/gemini_provider.py`, `app/llm/factory.py`, `app/modules/library/legacy_service.py`
+
 ### Deterministic Book Bible Delta Merging (Code-level Upsert)
 - **Ngày**: 2026-08-10
 - **Chi tiết**: Không bắt LLM tái sinh toàn bộ Book Bible JSON để tránh trôi key và tốn token. LLM trích xuất delta (`BookBibleDelta`), code Python tự upsert `new_characters`, append `address_terms` cho nhân vật cũ, upsert địa danh và thuật ngữ.
@@ -133,11 +138,18 @@
 - **Files liên quan**: `app/modules/library/legacy_service.py`
 
 ### Stale Import Job Status Freeze across Multi-Worker Deployments
-- **Ngày**: 2026-08-24
-- **Vấn đề**: Giao diện Web hiển thị tiến trình import EPUB bị đóng băng ở 5% suốt 30 phút dù server vẫn phản hồi 200 OK.
-- **Root cause**: Background thread chỉ cập nhật tiến độ trên đối tượng in-memory `ImportJobStatus` mà không lưu định kỳ vào PostgreSQL. Khi client poll status, các worker process khác đọc từ database (nơi còn lưu 5% ban đầu) và trả về cache cũ.
-- **Fix**: Đồng bộ `_persist_import_job` vào PostgreSQL định kỳ mỗi 10 chương và tại các mốc xử lý chính (10%, 12%, 90%, 100%), đồng thời nâng cấp `get_import_job` chống kẹt stale cache.
-- **Files liên quan**: `app/modules/library/legacy_service.py`
+- **Ngày**: 2026-08-25
+- **Vấn đề**: Job đã `completed/failed` trong worker có thể bị hàng PostgreSQL cũ `processing` ghi đè khi poll, khiến UI quay lại trạng thái đang chạy.
+- **Root cause**: Hàm merge chỉ ưu tiên memory khi trạng thái còn `processing`; lỗi persist cuối bị nuốt nên terminal state không có tính đơn điệu.
+- **Fix**: Hợp nhất memory/DB theo quy tắc terminal-first rồi mới so progress; trạng thái terminal retry ghi DB hữu hạn với exponential backoff và luôn được giữ trong memory.
+- **Files liên quan**: `app/modules/library/legacy_service.py`, `tests/test_import_job_resilience.py`
+
+### Ineffective asyncio Timeout around Gemini to_thread
+- **Ngày**: 2026-08-25
+- **Vấn đề**: Auto-scan đặt timeout 45 giây nhưng worker vẫn có thể kẹt ở 90% cho đến khi Gemini SDK trả về.
+- **Root cause**: `asyncio.wait_for` không dừng thread sinh bởi `asyncio.to_thread`; `asyncio.run` còn chờ default executor khi đóng event loop.
+- **Fix**: Dùng `client.aio.models.generate_content`, cấu hình `HttpOptions.timeout` theo milliseconds, truyền cancellation vào HTTP coroutine và đóng async client trong `finally`.
+- **Files liên quan**: `app/llm/gemini_provider.py`, `app/llm/factory.py`, `app/modules/library/legacy_service.py`, `tests/test_llm_adapters.py`
 
 ### Reader Cover Duplicate Prefix (novels/novels/) in Supabase Storage URLs
 - **Ngày**: 2026-08-24
@@ -155,6 +167,14 @@
   2. Implement 4 phương thức: `extract_book_bible_delta`, `translate_prose_chunk`, `translate_html_json`, `qa_check_chunk`.
   3. Đăng ký provider mới trong `create_llm_client` tại `app/llm/factory.py`.
 - **Files liên quan**: `app/llm/base.py`, `app/llm/factory.py`
+
+### Thêm hard timeout cho tác vụ LLM nền
+- **Ngày**: 2026-08-25
+- **Bước thực hiện**:
+  1. Truyền deadline từ service qua factory vào provider.
+  2. Chuyển SDK call sang native async và cấu hình timeout tại HTTP boundary.
+  3. Dùng `asyncio.wait_for` làm deadline tổng, đóng client trong `finally`, rồi test bằng fake coroutine nhận cancellation.
+- **Files liên quan**: `app/llm/factory.py`, `app/llm/gemini_provider.py`, `app/modules/library/legacy_service.py`, `tests/test_llm_adapters.py`
 
 ### Khởi Chạy Server & Web UI Test
 - **Ngày**: 2026-08-10
@@ -197,6 +217,11 @@
 - **Chi tiết**: Tác vụ import EPUB chạy trên daemon background thread, trích xuất ảnh bìa và tách từng chương lưu vào R2 đồng thời cập nhật `ImportJobStatus` (`current_chapter`, `total_chapters`, `progress_percentage`, `current_step`). Web UI poll endpoint `GET /api/v1/library/import-jobs/{job_id}` mỗi 600ms để cập nhật giao diện người dùng.
 - **Files liên quan**: `app/services/library_service.py`, `app/schemas/library.py`, `app/static/index.html`
 
+### Monotonic Import Job State Resolution
+- **Ngày**: 2026-08-25
+- **Chi tiết**: Khi cùng một job tồn tại trong memory và database, terminal state (`completed`/`failed`) luôn thắng non-terminal state; nếu cả hai đang chạy thì chọn progress cao hơn. Persist terminal dùng bounded retry, còn checkpoint thường chỉ thử một lần để tránh làm chậm import.
+- **Files liên quan**: `app/modules/library/legacy_service.py`, `tests/test_import_job_resilience.py`
+
 ### Conservative evidence-group review
 - **Ngày**: 2026-08-17
 - **Chi tiết**: Candidate không được duyệt chỉ vì nhiều lần gọi cùng model trên cùng chapter. Một evidence group là một edition lineage + chapter fingerprint; cần tối thiểu hai group độc lập và confidence đủ cao. Candidate chưa duyệt không xuất hiện trong shared snapshot.
@@ -212,7 +237,7 @@
 - **Chi tiết**: Sử dụng `types.GenerateContentConfig` với `response_mime_type="application/json"` và `response_schema=PydanticModel` để ép Gemini API trả về JSON chuẩn theo Pydantic schema mà không cần regex parse.
 - **Ví dụ code**:
   ```python
-  response = self.client.models.generate_content(
+  response = await self.client.aio.models.generate_content(
       model=model_name,
       contents=prompt,
       config=types.GenerateContentConfig(

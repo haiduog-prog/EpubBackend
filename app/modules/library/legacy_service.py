@@ -39,6 +39,10 @@ from app.modules.translation.application.facade import TranslationPipelineServic
 from app.modules.book_bible.application.facade import BookBibleService
 
 logger = logging.getLogger("EpubBackend.LibraryService")
+AUTO_SCAN_TIMEOUT_SECONDS = 45.0
+_IMPORT_JOB_TERMINAL_STATUSES = frozenset({"completed", "failed"})
+_IMPORT_JOB_TERMINAL_PERSIST_ATTEMPTS = 3
+_IMPORT_JOB_TERMINAL_RETRY_BACKOFF_SECONDS = 0.1
 
 
 def slugify(text: str) -> str:
@@ -558,24 +562,37 @@ class LegacyLibraryService:
         if not meta.chapters:
             raise ValueError(f"Bộ truyện '{novel_id}' chưa có chương nào để quét nhân vật.")
 
-        llm_client = create_llm_client(provider=provider, api_key=api_key, model=model)
-        bible = storage_repo.get_bible(novel_id) or BookBible(novel_id=novel_id)
+        llm_client = create_llm_client(
+            provider=provider,
+            api_key=api_key,
+            model=model,
+            request_timeout_seconds=AUTO_SCAN_TIMEOUT_SECONDS,
+        )
+        try:
+            bible = storage_repo.get_bible(novel_id) or BookBible(novel_id=novel_id)
 
-        chapters_to_scan = meta.chapters[:max_chapters]
-        for ch in chapters_to_scan:
-            content = self.get_chapter_content(novel_id, ch.chapter_index, version="original")
-            if not content:
-                content = self.get_chapter_content(novel_id, ch.chapter_index, version="translated")
-            if not content:
-                continue
+            chapters_to_scan = meta.chapters[:max_chapters]
+            for ch in chapters_to_scan:
+                content = self.get_chapter_content(novel_id, ch.chapter_index, version="original")
+                if not content:
+                    content = self.get_chapter_content(novel_id, ch.chapter_index, version="translated")
+                if not content:
+                    continue
 
-            known_names = BookBibleService.get_known_names_index(bible)
-            delta = await llm_client.extract_book_bible_delta(
-                content[:4000], known_names, model=model
-            )
-            bible = storage_repo.merge_bible_delta(novel_id, delta, default_novel_id=novel_id)
+                known_names = BookBibleService.get_known_names_index(bible)
+                delta = await llm_client.extract_book_bible_delta(
+                    content[:4000], known_names, model=model
+                )
+                bible = storage_repo.merge_bible_delta(novel_id, delta, default_novel_id=novel_id)
 
-        return bible
+            return bible
+        finally:
+            close_client = getattr(llm_client, "aclose", None)
+            if callable(close_client):
+                try:
+                    await close_client()
+                except Exception as close_err:
+                    logger.warning("Failed to close LLM client after character scan: %s", close_err)
 
     def get_novel_bible(self, novel_id: str) -> BookBible:
         return storage_repo.get_bible(novel_id) or BookBible(novel_id=novel_id)
@@ -1144,15 +1161,61 @@ class LegacyLibraryService:
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
 
+    @staticmethod
+    def _select_import_job(
+        mem_job: Optional[ImportJobStatus],
+        db_job: Optional[ImportJobStatus],
+    ) -> Optional[ImportJobStatus]:
+        if mem_job is None:
+            return db_job
+        if db_job is None:
+            return mem_job
+
+        mem_terminal = mem_job.status in _IMPORT_JOB_TERMINAL_STATUSES
+        db_terminal = db_job.status in _IMPORT_JOB_TERMINAL_STATUSES
+        if mem_terminal:
+            return mem_job
+        if db_terminal:
+            return db_job
+        if (mem_job.progress_percentage or 0) >= (db_job.progress_percentage or 0):
+            return mem_job
+        return db_job
+
     def _persist_import_job(self, job: ImportJobStatus) -> None:
         self._import_jobs[job.job_id] = job
-        if settings.structured_storage_backend in ("dual", "postgres"):
+        if settings.structured_storage_backend not in ("dual", "postgres"):
+            return
+
+        max_attempts = (
+            _IMPORT_JOB_TERMINAL_PERSIST_ATTEMPTS
+            if job.status in _IMPORT_JOB_TERMINAL_STATUSES
+            else 1
+        )
+        for attempt in range(1, max_attempts + 1):
             try:
                 with db_session() as session:
                     LibraryRepository.save_import_job(session, job)
                     session.commit()
+                return
             except Exception as exc:
-                logger.warning("Failed to persist import job %s in DB: %s", job.job_id, exc)
+                if attempt >= max_attempts:
+                    logger.warning(
+                        "Failed to persist import job %s in DB after %d attempt(s): %s",
+                        job.job_id,
+                        attempt,
+                        exc,
+                    )
+                    return
+                delay = _IMPORT_JOB_TERMINAL_RETRY_BACKOFF_SECONDS * (2 ** (attempt - 1))
+                logger.warning(
+                    "Failed to persist terminal import job %s (attempt %d/%d): %s; retrying in %.2fs",
+                    job.job_id,
+                    attempt,
+                    max_attempts,
+                    exc,
+                    delay,
+                )
+                time.sleep(delay)
 
     def get_import_job(self, job_id: str) -> Optional[ImportJobStatus]:
         mem_job = self._import_jobs.get(job_id)
@@ -1162,11 +1225,9 @@ class LegacyLibraryService:
                 with db_session() as session:
                     db_job = LibraryRepository.get_import_job(session, job_id)
                     if db_job:
-                        # Nếu mem_job trong process này có progress cao hơn DB, trả về mem_job
-                        if mem_job and mem_job.status == "processing" and (mem_job.progress_percentage or 0) >= (db_job.progress_percentage or 0):
-                            return mem_job
-                        self._import_jobs[job_id] = db_job
-                        return db_job
+                        selected_job = self._select_import_job(mem_job, db_job)
+                        self._import_jobs[job_id] = selected_job
+                        return selected_job
             except Exception as exc:
                 logger.warning("Failed to get import job from DB: %s", exc)
 
@@ -1291,7 +1352,7 @@ class LegacyLibraryService:
                                 api_key=api_key,
                                 model=model,
                             )
-                        asyncio.run(asyncio.wait_for(_scan_with_timeout(), timeout=45.0))
+                        asyncio.run(asyncio.wait_for(_scan_with_timeout(), timeout=AUTO_SCAN_TIMEOUT_SECONDS))
                     except Exception as scan_err:
                         logger.warning("Auto scan characters skipped or timed out: %s", scan_err)
 

@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 from typing import List, Optional, Dict, Any, Set
@@ -38,16 +37,29 @@ class GeminiProvider(BaseLLMClient):
     Tự động ưu tiên gemini-flash-latest, gemini-flash-lite-latest và tự động Fallback.
     """
 
-    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        model: Optional[str] = None,
+        request_timeout_seconds: Optional[float] = None,
+    ):
         raw_key = api_key or settings.gemini_api_key
         if not raw_key:
             raise ValueError("Chưa cấu hình Gemini API Key. Vui lòng tạo Key tại https://aistudio.google.com/app/apikey")
         
         self.api_key = raw_key.strip()
         self.default_model = model or settings.default_gemini_model
-        self.client = genai.Client(api_key=self.api_key)
+        if request_timeout_seconds is not None and request_timeout_seconds <= 0:
+            raise ValueError("request_timeout_seconds must be greater than 0.")
+        http_options = None
+        if request_timeout_seconds is not None:
+            http_options = types.HttpOptions(timeout=max(1, round(request_timeout_seconds * 1000)))
+        self.client = genai.Client(api_key=self.api_key, http_options=http_options)
         self.working_model: Optional[str] = None
         self.failed_models: Set[str] = set()
+
+    async def aclose(self) -> None:
+        await self.client.aio.aclose()
 
     async def _call_with_fallback(
         self,
@@ -83,8 +95,7 @@ class GeminiProvider(BaseLLMClient):
 
         for candidate_model in candidates:
             try:
-                response = await asyncio.to_thread(
-                    self.client.models.generate_content,
+                response = await self.client.aio.models.generate_content(
                     model=candidate_model,
                     contents=contents,
                     config=config,

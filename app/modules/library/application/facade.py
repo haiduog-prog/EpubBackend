@@ -67,8 +67,8 @@ class LibraryService:
     def get_character_snapshot_at_chapter(self, novel_id, chapter_index):
         return self.chapters.snapshot(novel_id, chapter_index)
 
-    def export_full_epub(self, novel_id, output_path=None):
-        return self.exports.export(novel_id, output_path)
+    def export_full_epub(self, novel_id, output_path=None, **kwargs):
+        return self.exports.export(novel_id, output_path, **kwargs)
 
     def import_epub_novel(self, epub_bytes: bytes, **kwargs):
         return self.imports.import_file(epub_bytes, **kwargs)

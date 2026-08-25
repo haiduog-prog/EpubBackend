@@ -828,7 +828,14 @@ class LegacyLibraryService:
     # ------------------------------------------------------------------
     # EPUB Export
     # ------------------------------------------------------------------
-    def export_full_epub(self, novel_id: str, output_path: Optional[str] = None) -> str:
+    def export_full_epub(
+        self,
+        novel_id: str,
+        output_path: Optional[str] = None,
+        start_chapter: Optional[int] = None,
+        end_chapter: Optional[int] = None,
+        target_chapters: Optional[str] = None,
+    ) -> str:
         meta = self.get_novel(novel_id)
         if not meta:
             raise ValueError(f"Không tìm thấy bộ truyện '{novel_id}'")
@@ -837,14 +844,38 @@ class LegacyLibraryService:
             os.makedirs(os.path.join("storage", "outputs"), exist_ok=True)
             output_path = os.path.join("storage", "outputs", f"{slugify(novel_id)}_vi.epub")
 
+        # Parse target range if specified
+        target_indexes = set()
+        if start_chapter is not None and end_chapter is not None:
+            target_indexes.update(range(min(start_chapter, end_chapter), max(start_chapter, end_chapter) + 1))
+        elif start_chapter is not None:
+            target_indexes.add(start_chapter)
+        elif end_chapter is not None:
+            target_indexes.add(end_chapter)
+        if target_chapters:
+            for part in str(target_chapters).split(","):
+                part = part.strip()
+                if "-" in part:
+                    p1, _, p2 = part.partition("-")
+                    if p1.strip().isdigit() and p2.strip().isdigit():
+                        target_indexes.update(range(int(p1.strip()), int(p2.strip()) + 1))
+                elif part.isdigit():
+                    target_indexes.add(int(part))
+
         # ---------------------------------------------------------
         # STRATEGY 1: Delta Patching if Base EPUB exists (Ultra Fast for 1000-5000+ chapters)
         # ---------------------------------------------------------
         full_key = f"novels/{novel_id}/full.epub"
-        translated_chapters = [
-            c for c in meta.chapters
-            if c.status == ChapterStatus.COMPLETED or c.r2_translated_key
-        ]
+        if target_indexes:
+            translated_chapters = [
+                c for c in meta.chapters
+                if c.chapter_index in target_indexes and (c.status == ChapterStatus.COMPLETED or c.r2_translated_key)
+            ]
+        else:
+            translated_chapters = [
+                c for c in meta.chapters
+                if c.status == ChapterStatus.COMPLETED or c.r2_translated_key
+            ]
 
         if storage_repo.file_exists(full_key):
             try:

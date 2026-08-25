@@ -9,5 +9,5 @@ class EpubExportService:
     def __init__(self, legacy: LegacyLibraryService):
         self._legacy = legacy
 
-    def export(self, novel_id: str, output_path: Optional[str] = None) -> str:
-        return self._legacy.export_full_epub(novel_id, output_path)
+    def export(self, novel_id: str, output_path: Optional[str] = None, **kwargs) -> str:
+        return self._legacy.export_full_epub(novel_id, output_path, **kwargs)

@@ -344,6 +344,9 @@ def apply_chapter_translation_endpoint(
 def export_novel_epub_endpoint(
     novel_id: str,
     force_rebuild: bool = Query(default=False, description="Bắt buộc biên dịch lại file EPUB thay vì dùng bản cache trên R2/Supabase"),
+    start_chapter: Optional[int] = Query(default=None, description="Chương bắt đầu cần cập nhật vào EPUB"),
+    end_chapter: Optional[int] = Query(default=None, description="Chương kết thúc cần cập nhật vào EPUB"),
+    target_chapters: Optional[str] = Query(default=None, description="Danh sách các chương cần cập nhật (ví dụ: 1,2,5-10)"),
 ):
     try:
         novel = library_service.get_novel(novel_id)
@@ -351,10 +354,12 @@ def export_novel_epub_endpoint(
             raise HTTPException(status_code=404, detail=f"Không tìm thấy bộ truyện '{novel_id}'")
 
         storage_key = f"novels/{novel_id}/full.epub"
+        has_specific_range = start_chapter is not None or end_chapter is not None or bool(target_chapters)
 
         # 1. If public CDN URL is configured or available on active storage provider:
         if (
             not force_rebuild
+            and not has_specific_range
             and storage_repo.active_provider_name == "supabase"
             and storage_repo.file_exists(storage_key)
         ):
@@ -363,6 +368,7 @@ def export_novel_epub_endpoint(
                 return RedirectResponse(url=cdn_url, status_code=307)
         elif (
             not force_rebuild
+            and not has_specific_range
             and (storage_repo.active_provider_name == "r2" or settings.cloudflare_r2_public_url)
             and storage_repo.file_exists_on_r2(storage_key)
         ):
@@ -373,8 +379,13 @@ def export_novel_epub_endpoint(
             )
             return RedirectResponse(url=cdn_url, status_code=307)
 
-        # 2. File does not exist on storage or force_rebuild requested -> compile full EPUB
-        output_path = library_service.export_full_epub(novel_id)
+        # 2. File does not exist on storage or force_rebuild requested -> compile / patch full EPUB
+        output_path = library_service.export_full_epub(
+            novel_id,
+            start_chapter=start_chapter,
+            end_chapter=end_chapter,
+            target_chapters=target_chapters,
+        )
 
         # 3. Cache the compiled EPUB to storage so subsequent requests hit CDN
         if storage_repo.is_blob_active:

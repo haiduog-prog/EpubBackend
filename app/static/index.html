@@ -1351,9 +1351,15 @@
                         <button class="btn" id="btn-export-epub" style="padding:0.4rem 0.8rem; font-size:0.8rem; background:#10b981;" title="Tải nhanh bản EPUB hiện có từ CDN">
                             <i class="fa-solid fa-file-arrow-down"></i> Xuất EPUB
                         </button>
-                        <button class="btn btn-secondary" id="btn-rebuild-epub" style="padding:0.4rem 0.8rem; font-size:0.8rem; border-color:rgba(99,102,241,0.4);" title="Biên dịch lại toàn bộ các chương đã dịch mới nhất vào file EPUB">
-                            <i class="fa-solid fa-arrows-rotate"></i> Biên Dịch Lại EPUB
-                        </button>
+                        <div style="display:inline-flex; align-items:center; gap:0.25rem; background:rgba(15,23,42,0.6); padding:0.2rem 0.45rem; border-radius:8px; border:1px solid rgba(99,102,241,0.35);">
+                            <span style="font-size:0.72rem; color:var(--text-sub);" title="Tùy chọn khoảng chương cần nạp vào EPUB (để trống để nạp toàn bộ các chương đã dịch)">Chương:</span>
+                            <input type="number" id="rebuild-start-ch" placeholder="Từ" min="1" style="width:46px; padding:0.2rem 0.25rem; font-size:0.75rem; background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.15); border-radius:4px; color:#fff; text-align:center; outline:none;" title="Chương bắt đầu">
+                            <span style="color:var(--text-sub); font-size:0.72rem;">-</span>
+                            <input type="number" id="rebuild-end-ch" placeholder="Đến" min="1" style="width:46px; padding:0.2rem 0.25rem; font-size:0.75rem; background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.15); border-radius:4px; color:#fff; text-align:center; outline:none;" title="Chương kết thúc">
+                            <button class="btn btn-secondary" id="btn-rebuild-epub" style="padding:0.35rem 0.75rem; font-size:0.78rem; border-color:rgba(99,102,241,0.4); background:rgba(99,102,241,0.2); color:#a5b4fc;" title="Biên dịch lại các chương vừa chọn/vừa dịch vào file EPUB (để trống để nạp tất cả)">
+                                <i class="fa-solid fa-arrows-rotate"></i> Biên Dịch Lại
+                            </button>
+                        </div>
                         <button class="btn btn-danger" id="btn-delete-novel-detail" onclick="deleteCurrentOpenNovel()" style="padding:0.4rem 0.8rem; font-size:0.8rem;" title="Xóa toàn bộ bộ truyện này khỏi Database và Storage">
                             <i class="fa-solid fa-trash"></i> Xóa Truyện
                         </button>
@@ -3733,7 +3739,14 @@
                 if (rebuildText) rebuildText.innerText = "🔄 Đang tự động biên dịch lại file full.epub mới nhất lên Cloud Storage...";
 
                 try {
+                    const completedIndexes = batchTranslateQueue.filter(q => q.status === 'completed').map(q => q.chapterIndex);
+                    const minCh = completedIndexes.length > 0 ? Math.min(...completedIndexes) : null;
+                    const maxCh = completedIndexes.length > 0 ? Math.max(...completedIndexes) : null;
+
                     let rebuildUrl = apiUrl(`/api/v1/library/novels/${encodeURIComponent(currentNovelId)}/export/epub?force_rebuild=true`);
+                    if (minCh !== null && maxCh !== null) {
+                        rebuildUrl += `&start_chapter=${minCh}&end_chapter=${maxCh}`;
+                    }
                     if (window.EpubAuth && typeof window.EpubAuth.getAccessToken === 'function') {
                         try {
                             const tok = await window.EpubAuth.getAccessToken();
@@ -3742,7 +3755,7 @@
                     }
                     const rebuildRes = await fetch(rebuildUrl);
                     if (rebuildRes.ok) {
-                        if (rebuildText) rebuildText.innerHTML = "🎉 <strong>Thành công:</strong> Đã cập nhật file full.epub mới nhất lên Cloud Storage!";
+                        if (rebuildText) rebuildText.innerHTML = `🎉 <strong>Thành công:</strong> Đã cập nhật ${completedIndexes.length} chương vừa dịch vào file full.epub trên Cloud Storage!`;
                         document.getElementById('btn-batch-download-epub').style.display = 'inline-block';
                     } else {
                         const err = await rebuildRes.json().catch(() => ({ detail: `HTTP ${rebuildRes.status}` }));
@@ -3802,17 +3815,27 @@
             }
         }
 
-        async function exportNovelEpub(novelId, forceRebuild = false) {
+        async function exportNovelEpub(novelId, forceRebuild = false, startCh = null, endCh = null) {
             const btnId = forceRebuild ? 'btn-rebuild-epub' : 'btn-export-epub';
             const btn = document.getElementById(btnId);
             const originalHtml = btn ? btn.innerHTML : '';
             if (btn) {
-                btn.innerHTML = `<i class="fa-solid fa-spinner spinner"></i> ${forceRebuild ? 'Đang biên dịch lại...' : 'Đang tải EPUB...'}`;
+                btn.innerHTML = `<i class="fa-solid fa-spinner spinner"></i> ${forceRebuild ? 'Đang cập nhật...' : 'Đang tải EPUB...'}`;
                 btn.disabled = true;
             }
 
             try {
-                const queryParam = forceRebuild ? '?force_rebuild=true' : '?force_rebuild=false';
+                let queryParam = forceRebuild ? '?force_rebuild=true' : '?force_rebuild=false';
+
+                const inputStart = startCh !== null ? startCh : (document.getElementById('rebuild-start-ch') ? document.getElementById('rebuild-start-ch').value.trim() : '');
+                const inputEnd = endCh !== null ? endCh : (document.getElementById('rebuild-end-ch') ? document.getElementById('rebuild-end-ch').value.trim() : '');
+                if (forceRebuild && inputStart && !isNaN(Number(inputStart))) {
+                    queryParam += `&start_chapter=${encodeURIComponent(inputStart)}`;
+                }
+                if (forceRebuild && inputEnd && !isNaN(Number(inputEnd))) {
+                    queryParam += `&end_chapter=${encodeURIComponent(inputEnd)}`;
+                }
+
                 let url = apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/export/epub${queryParam}`);
                 if (window.EpubAuth && typeof window.EpubAuth.getAccessToken === 'function') {
                     try {

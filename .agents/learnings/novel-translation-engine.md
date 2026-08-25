@@ -7,6 +7,11 @@
 
 ## Architecture
 
+### Resilient Enrichment Boundary (Safe Delta Extraction)
+- **Ngày**: 2026-08-25
+- **Chi tiết**: Phân lập hoàn toàn các bước bổ trợ (enrichment) như trích xuất nhân vật/thuật ngữ mới (BookBibleDelta) khỏi luồng dịch văn bản chính. Nếu LLM sinh dữ liệu JSON lỗi hoặc timeout ở bước delta, hệ thống ghi log warning và tiếp tục tiến trình dịch văn bản chương bằng Book Bible hiện có thay vì dừng hoặc ném lỗi HTTP 400.
+- **Files liên quan**: pp/llm/gemini_provider.py, pp/modules/library/legacy_service.py, pp/modules/translation/legacy_pipeline.py
+
 ### Quick Chapter Selection & Shift-Click for Retranslation
 - **Ngày**: 2026-08-25
 - **Chi tiết**: Bổ sung bộ công cụ chọn nhanh chương trên bảng danh sách:
@@ -101,6 +106,22 @@
 ---
 
 ## Bugs & Solutions
+
+### False 'Vừa xong' Timestamp Caused by Pydantic Dynamic Default Factory
+- **Ngày**: 2026-08-25
+- **Vấn đề**: Toàn bộ các chương trong danh sách (kể cả chương chưa dịch hoặc bị lỗi) đều hiển thị ngày dịch là 'Vừa xong'.
+- **Root cause**: Trường updated_at trong model ChapterItem dùng default_factory=lambda: datetime.now().isoformat(), dẫn đến mỗi khi gọi API đọc danh sách chương, Pydantic tự động sinh thời gian của giây hiện tại (0s chênh lệch).
+- **Fix**: Đổi mặc định updated_at: Optional[str] = None và chỉ hiển thị ngày dịch trên UI khi chương có trạng thái completed kèm giá trị updated_at thực tế.
+- **Files liên quan**: pp/modules/library/schemas.py, pp/modules/library/persistence/legacy_repository.py, pp/static/index.html
+
+### Gemini Flash-Lite JSON Validation Error (json_invalid) on BookBibleDelta Extraction
+- **Ngày**: 2026-08-25
+- **Vấn đề**: Dịch chương bằng gemini-flash-lite bị lỗi HTTP 400 'Invalid JSON: key must be a string at line 11 column 5 for BookBibleDelta'.
+- **Root cause**: Model lite sinh JSON có trailing commas hoặc unquoted key, trong khi API gọi chưa kích hoạt 
+esponse_schema=BookBibleDelta để ép kiểu ràng buộc.
+- **Fix**: Truyền 
+esponse_schema vào 	ypes.GenerateContentConfig, bổ sung regex dọn dẹp trailing commas trong _clean_json_str, và bọc fallback trả về BookBibleDelta() rỗng để không làm gián đoạn luồng dịch chính.
+- **Files liên quan**: pp/llm/gemini_provider.py, pp/modules/library/legacy_service.py
 
 ### 401 Unauthorized on Direct Window Navigation for Protected File Export
 - **Ngày**: 2026-08-25

@@ -1291,9 +1291,12 @@
                             <p id="detail-novel-desc" style="font-size:0.85rem; color:#cbd5e1; margin-top:0.3rem; max-height:60px; overflow-y:auto; line-height:1.4;">-</p>
                         </div>
                     </div>
-                    <div style="display:flex; gap:0.5rem; align-items:center;">
-                        <button class="btn" id="btn-export-epub" style="padding:0.4rem 0.8rem; font-size:0.8rem; background:#10b981;">
+                    <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
+                        <button class="btn" id="btn-export-epub" style="padding:0.4rem 0.8rem; font-size:0.8rem; background:#10b981;" title="Tải nhanh bản EPUB hiện có từ CDN">
                             <i class="fa-solid fa-file-arrow-down"></i> Xuất EPUB
+                        </button>
+                        <button class="btn btn-secondary" id="btn-rebuild-epub" style="padding:0.4rem 0.8rem; font-size:0.8rem; border-color:rgba(99,102,241,0.4);" title="Biên dịch lại toàn bộ các chương đã dịch mới nhất vào file EPUB">
+                            <i class="fa-solid fa-arrows-rotate"></i> Biên Dịch Lại EPUB
                         </button>
                         <button class="btn btn-danger" id="btn-delete-novel-detail" onclick="deleteCurrentOpenNovel()" style="padding:0.4rem 0.8rem; font-size:0.8rem;" title="Xóa toàn bộ bộ truyện này khỏi Database và Storage">
                             <i class="fa-solid fa-trash"></i> Xóa Truyện
@@ -2409,8 +2412,10 @@
                 // Genres
                 document.getElementById('detail-novel-genres').innerHTML = (novel.genre || []).map(g => `<span class="tag" style="font-size:0.75rem;">${escapeHtml(g)}</span>`).join('');
 
-                // Export EPUB button handler
-                document.getElementById('btn-export-epub').onclick = () => exportNovelEpub(novelId);
+                // Export EPUB button handlers
+                document.getElementById('btn-export-epub').onclick = () => exportNovelEpub(novelId, false);
+                const btnRebuild = document.getElementById('btn-rebuild-epub');
+                if (btnRebuild) btnRebuild.onclick = () => exportNovelEpub(novelId, true);
 
                 // Default next chapter index
                 document.getElementById('add-chapter-index').value = (novel.chapters.length + 1);
@@ -2918,23 +2923,25 @@
             }
         }
 
-        function exportNovelEpub(novelId) {
-            const btn = document.getElementById('btn-export-epub');
+        function exportNovelEpub(novelId, forceRebuild = false) {
+            const btnId = forceRebuild ? 'btn-rebuild-epub' : 'btn-export-epub';
+            const btn = document.getElementById(btnId);
             const originalHtml = btn ? btn.innerHTML : '';
             if (btn) {
-                btn.innerHTML = '<i class="fa-solid fa-spinner spinner"></i> Đang tải EPUB...';
+                btn.innerHTML = `<i class="fa-solid fa-spinner spinner"></i> ${forceRebuild ? 'Đang biên dịch lại...' : 'Đang tải EPUB...'}`;
                 btn.disabled = true;
             }
 
+            const queryParam = forceRebuild ? '?force_rebuild=true' : '';
             // Route through backend endpoint: redirects to CDN if cached on R2, or compiles & serves on demand
-            window.location.href = apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/export/epub`);
+            window.location.href = apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/export/epub${queryParam}`);
 
             setTimeout(() => {
                 if (btn) {
                     btn.innerHTML = originalHtml;
                     btn.disabled = false;
                 }
-            }, 1500);
+            }, 3000);
         }
 
         async function deleteNovel(novelId) {

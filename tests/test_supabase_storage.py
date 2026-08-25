@@ -197,3 +197,40 @@ def test_supabase_provider_client_pooling_and_close(monkeypatch):
     # Closing provider cleans up client
     provider.close()
     assert provider._client is None
+
+
+def test_supabase_provider_get_public_url_deduplication():
+    # 1. Default (no public_url override)
+    provider_default = SupabaseStorageProvider(
+        base_url="https://xyz.supabase.co",
+        api_key="test-key",
+        bucket="novels",
+        public_url="",
+    )
+    url1 = provider_default.get_public_url("novels/van-thu-chien-than/full.epub")
+    assert url1 == "https://xyz.supabase.co/storage/v1/object/public/novels/novels/van-thu-chien-than/full.epub"
+
+    # 2. Key with duplicate novels/ prefix
+    url2 = provider_default.get_public_url("novels/novels/van-thu-chien-than/full.epub")
+    assert url2 == "https://xyz.supabase.co/storage/v1/object/public/novels/novels/van-thu-chien-than/full.epub"
+
+    # 3. Public URL set with trailing /novels
+    provider_custom = SupabaseStorageProvider(
+        base_url="https://xyz.supabase.co",
+        api_key="test-key",
+        bucket="novels",
+        public_url="https://xyz.supabase.co/storage/v1/object/public/novels",
+    )
+    url3 = provider_custom.get_public_url("novels/van-thu-chien-than/full.epub")
+    assert url3 == "https://xyz.supabase.co/storage/v1/object/public/novels/novels/van-thu-chien-than/full.epub"
+
+    # 4. Public URL set with duplicate /novels/novels
+    provider_redundant = SupabaseStorageProvider(
+        base_url="https://xyz.supabase.co",
+        api_key="test-key",
+        bucket="novels",
+        public_url="https://xyz.supabase.co/storage/v1/object/public/novels/novels",
+    )
+    url4 = provider_redundant.get_public_url("novels/van-thu-chien-than/full.epub")
+    assert url4 == "https://xyz.supabase.co/storage/v1/object/public/novels/novels/van-thu-chien-than/full.epub"
+

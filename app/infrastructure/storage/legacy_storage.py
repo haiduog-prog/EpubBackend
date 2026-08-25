@@ -127,8 +127,23 @@ class SupabaseStorageProvider(BaseStorageProvider):
 
     def get_public_url(self, object_name: str) -> str:
         clean_key = object_name.lstrip("/")
+        bucket = self.bucket or "novels"
+        while clean_key.startswith(f"{bucket}/{bucket}/"):
+            clean_key = clean_key[len(f"{bucket}/"):]
+
         if self.public_url:
-            return f"{self.public_url}/{clean_key}"
+            base = self.public_url.rstrip("/")
+            # Normalize trailing duplicate bucket folders in public_url (e.g. ".../novels/novels")
+            while base.endswith(f"/{bucket}/{bucket}"):
+                base = base[:-len(f"/{bucket}")]
+            combined = f"{base}/{clean_key}"
+            # Deduplicate 3+ consecutive occurrences of the bucket segment
+            triple_bucket = f"/object/public/{bucket}/{bucket}/{bucket}/"
+            double_bucket = f"/object/public/{bucket}/{bucket}/"
+            while triple_bucket in combined:
+                combined = combined.replace(triple_bucket, double_bucket)
+            return combined
+
         if self.base_url and self.bucket:
             return f"{self.base_url}/storage/v1/object/public/{self.bucket}/{clean_key}"
         return f"/storage/{clean_key}"

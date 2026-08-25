@@ -7,6 +7,15 @@
 
 ## Architecture
 
+### Quick Chapter Selection & Shift-Click for Retranslation
+- **Ngày**: 2026-08-25
+- **Chi tiết**: Bổ sung bộ công cụ chọn nhanh chương trên bảng danh sách:
+  1. Nút [Đã dịch (Dịch lại)]: Chọn toàn bộ các chương đã dịch để dịch lại hàng loạt chỉ với 1 click.
+  2. Chọn theo dải Từ A đến B với tùy chọn [Đã dịch] để lọc nhanh các chương đã dịch trong một khoảng nhất định.
+  3. Tính năng Shift + Click: Nhấp vào checkbox chương A, giữ Shift nhấp checkbox chương B để chọn toàn bộ dải từ A đến B tức thì.
+- **Files liên quan**: pp/static/index.html
+
+
 ### Precision Range Delta EPUB Rebuild (start_chapter & end_chapter)
 - **Ngày**: 2026-08-25
 - **Chi tiết**: Hỗ trợ tham số start_chapter và end_chapter (hoặc 	arget_chapters) trên cả API /export/epub lẫn Web UI. Cho phép người dùng hoặc tiến trình batch translation chỉ định chính xác dải chương vừa dịch (ví dụ từ chương 20 đến 50) để nạp vào file ull.epub thay vì phải quét toàn bộ. Tốc độ nạp chỉ mất 0.5 - 1 giây.

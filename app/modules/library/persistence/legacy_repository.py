@@ -29,7 +29,7 @@ class LibraryRepository:
             word_count=model.word_count,
             original_text_preview=model.original_text_preview,
             translated_text_preview=model.translated_text_preview,
-            updated_at=model.updated_at.isoformat() if model.updated_at else datetime.now(timezone.utc).isoformat(),
+            updated_at=model.updated_at.isoformat() if model.updated_at else None,
             r2_original_key=model.original_r2_key or '',
             r2_translated_key=model.translated_r2_key or '',
             r2_translated_url=model.translated_r2_url,

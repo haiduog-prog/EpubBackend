@@ -3012,7 +3012,7 @@
                             : `<button class="btn chapter-translate-btn" data-novel-id="${escapeHtml(novelId)}" data-chapter-index="${ch.chapter_index}" style="padding:0.25rem 0.6rem; font-size:0.75rem;"><i class="fa-solid fa-bolt"></i> Dịch ngay</button>`;
 
                         const isChecked = selectedChapterIndexes.has(ch.chapter_index);
-                        const formattedDate = (ch.status === 'completed' || ch.r2_translated_key || ch.updated_at)
+                        const formattedDate = (ch.status === 'completed' && ch.updated_at)
                             ? `<span style="font-size:0.78rem; color:#cbd5e1; white-space:nowrap;" title="${escapeHtml(ch.updated_at || '')}"><i class="fa-regular fa-calendar-check" style="color:#818cf8; margin-right:3px;"></i>${formatDateFriendly(ch.updated_at)}</span>`
                             : `<span style="font-size:0.75rem; color:#64748b;">--</span>`;
 

@@ -25,7 +25,7 @@ class ChapterItem(BaseModel):
     word_count: int = 0
     original_text_preview: str = ""
     translated_text_preview: str = ""
-    updated_at: str = Field(default_factory=lambda: datetime.now().isoformat())
+    updated_at: Optional[str] = Field(default=None, description="Thời điểm dịch/cập nhật chương gần nhất (ISO 8601)")
     r2_original_key: str = ""
     r2_translated_key: str = ""
     r2_translated_url: Optional[str] = None

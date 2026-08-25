@@ -616,11 +616,14 @@ class LegacyLibraryService:
 
             # Trích xuất delta & cập nhật bible nếu không ở chế độ preview_only
             known_names = BookBibleService.get_known_names_index(bible)
-            delta = await llm_client.extract_book_bible_delta(
-                orig_content[:3000], known_names, model=model
-            )
-            if not preview_only:
-                bible = storage_repo.merge_bible_delta(novel_id, delta, default_novel_id=novel_id)
+            try:
+                delta = await llm_client.extract_book_bible_delta(
+                    orig_content[:3000], known_names, model=model
+                )
+                if not preview_only and delta:
+                    bible = storage_repo.merge_bible_delta(novel_id, delta, default_novel_id=novel_id)
+            except Exception as bible_err:
+                logger.warning("Trích xuất Book Bible delta chương %d thất bại (tiếp tục dịch): %s", chapter_index, bible_err)
 
             # Dịch nội dung chương
             filtered_bible = BookBibleService.filter_bible_for_text(bible, orig_content)
@@ -732,11 +735,15 @@ class LegacyLibraryService:
                 if not content:
                     continue
 
-                known_names = BookBibleService.get_known_names_index(bible)
-                delta = await llm_client.extract_book_bible_delta(
-                    content[:4000], known_names, model=model
-                )
-                bible = storage_repo.merge_bible_delta(novel_id, delta, default_novel_id=novel_id)
+                try:
+                    known_names = BookBibleService.get_known_names_index(bible)
+                    delta = await llm_client.extract_book_bible_delta(
+                        content[:4000], known_names, model=model
+                    )
+                    if delta:
+                        bible = storage_repo.merge_bible_delta(novel_id, delta, default_novel_id=novel_id)
+                except Exception as delta_err:
+                    logger.warning("Bỏ qua trích xuất nhân vật chương %d do lỗi: %s", ch.chapter_index, delta_err)
 
             return bible
         finally:

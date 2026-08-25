@@ -445,11 +445,13 @@ class LegacyLibraryService:
 
                 for actual_index, ch_title, full_text in canonical_chapters:
                     result_map[actual_index] = full_text
-                    # Save to both folders so both original and translated are cached
+                    # Save to storage only if missing, to avoid overwriting existing/updated chapters
                     ch_key = f"novels/{novel_id}/{folder}/ch_{actual_index:04d}.txt"
-                    self._save_raw_file(ch_key, full_text.encode("utf-8"), content_type="text/plain; charset=utf-8")
+                    if not storage_repo.file_exists(ch_key):
+                        self._save_raw_file(ch_key, full_text.encode("utf-8"), content_type="text/plain; charset=utf-8")
                     other_key = f"novels/{novel_id}/{other_folder}/ch_{actual_index:04d}.txt"
-                    self._save_raw_file(other_key, full_text.encode("utf-8"), content_type="text/plain; charset=utf-8")
+                    if not storage_repo.file_exists(other_key):
+                        self._save_raw_file(other_key, full_text.encode("utf-8"), content_type="text/plain; charset=utf-8")
                 return result_map
             finally:
                 if os.path.exists(tmp_epub_path):

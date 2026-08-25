@@ -9,7 +9,7 @@ from functools import lru_cache
 from typing import Any, Dict, Optional
 
 import jwt
-from fastapi import Header, HTTPException
+from fastapi import Header, HTTPException, Query
 
 from app.config import settings
 
@@ -65,22 +65,37 @@ def _decode_access_token(token: str) -> AuthUser:
     return AuthUser(user_id=user_id, claims=dict(claims))
 
 
-def get_current_user(authorization: Optional[str] = Header(default=None)) -> AuthUser:
+def get_current_user(
+    authorization: Optional[str] = Header(default=None),
+    token: Optional[str] = Query(default=None),
+    access_token: Optional[str] = Query(default=None),
+) -> AuthUser:
     value = authorization.strip() if isinstance(authorization, str) else ""
+    if not value and (token or access_token):
+        param_token = (token or access_token or "").strip()
+        if param_token:
+            value = f"Bearer {param_token}"
     if not value:
         app_env = os.getenv("APP_ENV", settings.app_env).lower()
         required = settings.auth_required or app_env not in {"development", "dev", "local", "test"}
         if not required:
             return AuthUser(user_id="local-development-user", claims={"sub": "local-development-user"})
         raise _unauthorized()
-    scheme, _, token = value.partition(" ")
-    if scheme.lower() != "bearer" or not token.strip():
+    scheme, _, token_val = value.partition(" ")
+    if scheme.lower() != "bearer" or not token_val.strip():
         raise _unauthorized()
-    return _decode_access_token(token.strip())
+    return _decode_access_token(token_val.strip())
 
 
-def get_optional_current_user(authorization: Optional[str] = Header(default=None)) -> Optional[AuthUser]:
-    return None if not isinstance(authorization, str) or not authorization.strip() else get_current_user(authorization)
+def get_optional_current_user(
+    authorization: Optional[str] = Header(default=None),
+    token: Optional[str] = Query(default=None),
+    access_token: Optional[str] = Query(default=None),
+) -> Optional[AuthUser]:
+    try:
+        return get_current_user(authorization=authorization, token=token, access_token=access_token)
+    except HTTPException:
+        return None
 
 
 __all__ = ["AuthUser", "get_current_user", "get_optional_current_user"]

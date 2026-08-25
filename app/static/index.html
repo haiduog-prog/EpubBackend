@@ -1340,8 +1340,9 @@
                         </div>
                         <div style="display:flex; flex-direction:column; gap:0.25rem;">
                             <h2 id="detail-novel-title" style="font-size:1.25rem; font-weight:700;">-</h2>
-                            <div style="font-size:0.82rem; color:var(--text-sub);">
-                                <span id="detail-novel-author">Tác giả: -</span> | <span id="detail-novel-orig">Gốc: -</span>
+                            <div style="font-size:0.82rem; color:var(--text-sub); display:flex; gap:0.6rem; align-items:center; flex-wrap:wrap;">
+                                <span><span id="detail-novel-author">Tác giả: -</span> | <span id="detail-novel-orig">Gốc: -</span></span>
+                                <span id="detail-novel-updated" style="font-size:0.75rem; color:#a5b4fc; background:rgba(99,102,241,0.15); padding:0.15rem 0.5rem; border-radius:6px; border:1px solid rgba(99,102,241,0.3); display:inline-flex; align-items:center; gap:0.3rem;"><i class="fa-regular fa-clock"></i> Dịch gần nhất: --</span>
                             </div>
                             <div id="detail-novel-genres" style="display:flex; gap:0.3rem; flex-wrap:wrap; margin-top:0.15rem;"></div>
                             <p id="detail-novel-desc" style="font-size:0.82rem; color:#cbd5e1; margin-top:0.2rem; max-height:48px; overflow-y:auto; line-height:1.4;">-</p>
@@ -1433,15 +1434,16 @@
                                 <th style="padding:0.65rem 0.6rem; width:40px; text-align:center;">
                                     <input type="checkbox" id="check-all-chapters" onchange="toggleSelectAllChapters(this.checked)" title="Chọn/Bỏ chọn tất cả">
                                 </th>
-                                <th style="padding:0.65rem 0.6rem; width:60px;">STT</th>
+                                <th style="padding:0.65rem 0.6rem; width:55px;">STT</th>
                                 <th style="padding:0.65rem 0.6rem;">Tiêu Đề</th>
-                                <th style="padding:0.65rem 0.6rem; width:85px;">Số Từ</th>
-                                <th style="padding:0.65rem 0.6rem; width:120px;">Trạng Thái</th>
-                                <th style="padding:0.65rem 0.6rem; text-align:right; width:150px;">Thao Tác</th>
+                                <th style="padding:0.65rem 0.6rem; width:75px;">Số Từ</th>
+                                <th style="padding:0.65rem 0.6rem; width:105px;">Trạng Thái</th>
+                                <th style="padding:0.65rem 0.6rem; width:135px;">Ngày Dịch</th>
+                                <th style="padding:0.65rem 0.6rem; text-align:right; width:145px;">Thao Tác</th>
                             </tr>
                         </thead>
                         <tbody id="detail-chapters-tbody">
-                            <tr><td colspan="6" style="padding:1.5rem; text-align:center; color:var(--text-sub);">Chưa có chương nào</td></tr>
+                            <tr><td colspan="7" style="padding:1.5rem; text-align:center; color:var(--text-sub);">Chưa có chương nào</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -2826,6 +2828,32 @@
             }
         }
 
+        function formatDateFriendly(isoString) {
+            if (!isoString) return '--';
+            try {
+                const date = new Date(isoString);
+                if (isNaN(date.getTime())) return '--';
+
+                const now = new Date();
+                const diffMs = now.getTime() - date.getTime();
+                const diffSecs = Math.floor(diffMs / 1000);
+                const diffMins = Math.floor(diffSecs / 60);
+                const diffHours = Math.floor(diffMins / 60);
+                const diffDays = Math.floor(diffHours / 24);
+
+                const timeStr = date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+                const dateStr = date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+                if (diffSecs < 60) return "Vừa xong";
+                if (diffMins < 60) return `${diffMins} phút trước`;
+                if (diffHours < 24 && date.getDate() === now.getDate()) return `Hôm nay ${timeStr}`;
+                if (diffDays === 1) return `Hôm qua ${timeStr}`;
+                return `${dateStr} ${timeStr}`;
+            } catch (_) {
+                return '--';
+            }
+        }
+
         async function loadLibraryNovels(forceRefresh = false) {
             const grid = document.getElementById('library-novels-grid');
             if (forceRefresh) {
@@ -2873,7 +2901,10 @@
                                 <div class="novel-progress-bar">
                                     <div class="novel-progress-fill" style="width:${pct}%"></div>
                                 </div>
-                                <div style="display:flex; gap:0.5rem; margin-top:0.75rem;">
+                                <div style="font-size:0.74rem; color:#94a3b8; margin-top:0.35rem; display:flex; align-items:center; gap:0.3rem;">
+                                    <i class="fa-regular fa-clock" style="color:#818cf8;"></i> Dịch gần nhất: <span style="color:#cbd5e1; font-weight:500;">${formatDateFriendly(n.updated_at)}</span>
+                                </div>
+                                <div style="display:flex; gap:0.5rem; margin-top:0.65rem;">
                                     <button class="btn novel-open-btn" data-novel-id="${escapeHtml(n.novel_id)}" style="flex:1; padding:0.4rem 0.6rem; font-size:0.8rem;">
                                         <i class="fa-solid fa-folder-open"></i> Quản Lý & Dịch
                                     </button>
@@ -2906,7 +2937,7 @@
 
             if (forceRefresh || !currentNovelData || currentNovelData.novel_id !== novelId) {
                 document.getElementById('detail-novel-title').innerText = 'Đang tải...';
-                document.getElementById('detail-chapters-tbody').innerHTML = '<tr><td colspan="6" style="padding:1.5rem; text-align:center; color:var(--text-sub);"><i class="fa-solid fa-spinner spinner"></i> Đang tải danh sách chương...</td></tr>';
+                document.getElementById('detail-chapters-tbody').innerHTML = '<tr><td colspan="7" style="padding:1.5rem; text-align:center; color:var(--text-sub);"><i class="fa-solid fa-spinner spinner"></i> Đang tải danh sách chương...</td></tr>';
             }
 
             try {
@@ -2918,6 +2949,11 @@
                 document.getElementById('detail-novel-orig').innerText = `Gốc: ${novel.original_title || '-'}`;
                 document.getElementById('detail-novel-desc').innerText = novel.description || 'Chưa có mô tả.';
                 document.getElementById('detail-chapter-count').innerText = novel.chapters.length;
+
+                const updatedEl = document.getElementById('detail-novel-updated');
+                if (updatedEl) {
+                    updatedEl.innerHTML = `<i class="fa-regular fa-clock"></i> Dịch gần nhất: <strong style="color:#fff;">${formatDateFriendly(novel.updated_at)}</strong>`;
+                }
 
                 // Cover
                 const coverBox = document.getElementById('detail-cover-box');
@@ -2963,7 +2999,7 @@
 
                 // Render Chapters Table
                 if (novel.chapters.length === 0) {
-                    document.getElementById('detail-chapters-tbody').innerHTML = '<tr><td colspan="6" style="padding:1.5rem; text-align:center; color:var(--text-sub);">Chưa có chương nào trong kho. Hãy thêm chương mới ở khung phía trên!</td></tr>';
+                    document.getElementById('detail-chapters-tbody').innerHTML = '<tr><td colspan="7" style="padding:1.5rem; text-align:center; color:var(--text-sub);">Chưa có chương nào trong kho. Hãy thêm chương mới ở khung phía trên!</td></tr>';
                 } else {
                     document.getElementById('detail-chapters-tbody').innerHTML = novel.chapters.map(ch => {
                         let statusBadge = '<span style="color:#94a3b8;"><i class="fa-regular fa-clock"></i> Chưa dịch</span>';
@@ -2976,6 +3012,9 @@
                             : `<button class="btn chapter-translate-btn" data-novel-id="${escapeHtml(novelId)}" data-chapter-index="${ch.chapter_index}" style="padding:0.25rem 0.6rem; font-size:0.75rem;"><i class="fa-solid fa-bolt"></i> Dịch ngay</button>`;
 
                         const isChecked = selectedChapterIndexes.has(ch.chapter_index);
+                        const formattedDate = (ch.status === 'completed' || ch.r2_translated_key || ch.updated_at)
+                            ? `<span style="font-size:0.78rem; color:#cbd5e1; white-space:nowrap;" title="${escapeHtml(ch.updated_at || '')}"><i class="fa-regular fa-calendar-check" style="color:#818cf8; margin-right:3px;"></i>${formatDateFriendly(ch.updated_at)}</span>`
+                            : `<span style="font-size:0.75rem; color:#64748b;">--</span>`;
 
                         return `<tr style="border-bottom:1px solid rgba(255,255,255,0.05); ${isChecked ? 'background:rgba(99,102,241,0.08);' : ''}">
                             <td style="padding:0.6rem; text-align:center;">
@@ -2985,6 +3024,7 @@
                             <td style="padding:0.6rem; font-weight:600;">${escapeHtml(ch.chapter_title)}</td>
                             <td style="padding:0.6rem; color:var(--text-sub);">${ch.word_count} từ</td>
                             <td style="padding:0.6rem;">${statusBadge}</td>
+                            <td style="padding:0.6rem;">${formattedDate}</td>
                             <td style="padding:0.6rem; text-align:right; display:flex; gap:0.4rem; justify-content:flex-end;">
                                 <button class="btn btn-secondary chapter-reader-btn" data-novel-id="${escapeHtml(novelId)}" data-chapter-index="${ch.chapter_index}" style="padding:0.25rem 0.6rem; font-size:0.75rem;">
                                     <i class="fa-solid fa-eye"></i> Đọc

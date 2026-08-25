@@ -876,11 +876,21 @@ class LegacyLibraryService:
         )
         book.add_item(default_css)
 
+        # Tải song song nội dung các chương qua Connection Pool để tăng tốc độ gấp 10x-20x
+        from concurrent.futures import ThreadPoolExecutor
+
+        def _fetch_chapter_text(ch):
+            txt = self.get_chapter_content(novel_id, ch.chapter_index, version="translated")
+            if not txt:
+                txt = self.get_chapter_content(novel_id, ch.chapter_index, version="original")
+            return ch.chapter_index, txt
+
+        with ThreadPoolExecutor(max_workers=25) as executor:
+            chapter_texts = dict(executor.map(_fetch_chapter_text, meta.chapters))
+
         epub_chapters = []
         for ch in meta.chapters:
-            content = self.get_chapter_content(novel_id, ch.chapter_index, version="translated")
-            if not content:
-                content = self.get_chapter_content(novel_id, ch.chapter_index, version="original")
+            content = chapter_texts.get(ch.chapter_index)
             if content:
                 from html import escape
 

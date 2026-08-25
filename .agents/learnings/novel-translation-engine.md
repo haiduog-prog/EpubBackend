@@ -37,6 +37,11 @@
 - **Chi tiết**: Tích hợp cache đa tầng: (1) Client-side `apiCache` với TTL theo loại dữ liệu (60s danh sách/chi tiết, 120s bible/snapshot, 300s nội dung chương), (2) `coverBlobCache` lưu ObjectURL ảnh bìa trong RAM loại bỏ hoàn toàn request trùng, (3) Tự động xóa cache tương ứng khi mutate (tạo/xóa truyện, dịch chương, áp dụng bản dịch, duyệt sự kiện), (4) Nút `[🔄 Làm Mới]` với `forceRefresh=true` vượt qua cache.
 - **Files liên quan**: `app/static/index.html`, `app/modules/library/api.py`, `app/modules/reader/api.py`
 
+### Seamless Modal API Key Interception & Memory-Only Credential Flow
+- **Ngày**: 2026-08-25
+- **Chi tiết**: Thay vì chặn người dùng bằng `alert()` trình duyệt khi thiếu API key, hệ thống áp dụng `ensureApiKey(callback)`: nếu thiếu key, hiển thị modal popup chuyên dụng (`modal-quick-apikey` với `z-index: 1200`) cho phép nhập/dán key, chọn provider/model và tiếp tục hành động ngay khi lưu. Để đảm bảo an toàn, API key chỉ được giữ trong runtime DOM/memory session (`syncAllApiKeyInputs`) mà không lưu vào `localStorage.setItem('epub_api_key')`.
+- **Files liên quan**: `app/static/index.html`, `tests/test_module_boundaries.py`
+
 ### Deterministic Book Bible Delta Merging (Code-level Upsert)
 - **Ngày**: 2026-08-10
 - **Chi tiết**: Không bắt LLM tái sinh toàn bộ Book Bible JSON để tránh trôi key và tốn token. LLM trích xuất delta (`BookBibleDelta`), code Python tự upsert `new_characters`, append `address_terms` cho nhân vật cũ, upsert địa danh và thuật ngữ.
@@ -51,8 +56,6 @@
 - **Ngày**: 2026-08-10
 - **Chi tiết**: Đưa Quy tắc dịch + Book Bible JSON lên ĐẦU trong System Message và đánh dấu `cache_control: {"type": "ephemeral"}`. Đưa `previous_context` và `text_to_translate` xuống CUỐI User Message để giữ prefix hash ổn định cho Prompt Caching hit.
 - **Files liên quan**: `app/prompts/templates.py`, `app/llm/anthropic_provider.py`
-
----
 
 ### Shared Chapter-aware Character Book Bible
 - **Ngày**: 2026-08-17
@@ -78,6 +81,22 @@
 
 ## Bugs & Solutions
 
+### 401 Unauthorized on Direct Window Navigation for Protected File Export
+- **Ngày**: 2026-08-25
+- **Vấn đề**: Gọi xuất hoặc biên dịch lại EPUB (`/api/v1/library/novels/{id}/export/epub?force_rebuild=true`) trả về `401 Unauthorized`.
+- **Root cause**: Frontend dùng `window.location.href = ...` để tải file; điều hướng cấp trình duyệt này không gửi header `Authorization: Bearer <token>` của Supabase session.
+- **Fix**:
+  1. Nâng cấp `get_current_user` trong `app/auth.py` hỗ trợ nhận access token qua cả Header lẫn Query Parameters (`?token=...` hoặc `?access_token=...`).
+  2. Chuyển hàm `exportNovelEpub` trên Web UI sang dùng `fetch()` (tự động gắn Bearer Token qua `authFetch`), nhận `blob()` và tạo `URL.createObjectURL` để kích hoạt download.
+- **Files liên quan**: `app/auth.py`, `app/static/index.html`, `app/modules/library/api.py`
+
+### Modal Invisibility Caused by Unclosed Parent Modal DIV Tag
+- **Ngày**: 2026-08-25
+- **Vấn đề**: Bấm nút dịch nhưng không có phản hồi gì trên màn hình (không thấy popup API key hiện ra).
+- **Root cause**: Thiếu thẻ đóng `</div>` của modal xác nhận phía trên khiến modal cấu hình API key bị nằm lồng bên trong modal cha có style `display: none`.
+- **Fix**: Sửa đóng mở thẻ `</div>` chuẩn xác và thiết lập `z-index: 1200` cho modal con để luôn hiển thị nổi bật trên backdrop.
+- **Files liên quan**: `app/static/index.html`
+
 ### EPUB Manifest KeyError on Missing/Mismatched Assets (cover.png)
 - **Ngày**: 2026-08-21
 - **Vấn đề**: Nhập truyện EPUB bị sập tiến trình với lỗi `KeyError: "There is no item named 'OEBPS/Images/cover.png' in the archive"`.
@@ -102,8 +121,6 @@
 - **Root cause**: Key free tier bị giới hạn daily quota trên từng model đơn lẻ.
 - **Fix**: Triển khai chuỗi fallback tự động (`gemini-1.5-flash-latest`, `gemini-1.5-flash-002`, `gemini-1.5-flash`, `gemini-2.0-flash-exp`, `gemini-2.0-flash-lite`, `gemini-1.5-pro`). Nếu tất cả đều hết quota, báo lỗi hướng dẫn người dùng tạo Key mới hoặc dùng Claude.
 - **Files liên quan**: `app/llm/gemini_provider.py`
-
----
 
 ### Retry tạo event trùng
 - **Ngày**: 2026-08-17
@@ -132,7 +149,7 @@
 ### Non-ASCII UTF-8 Filename trong FileResponse Header
 - **Ngày**: 2026-08-17
 - **Vấn đề**: Tên truyện tiếng Việt (như *Cổ Chân Nhân.epub*) khiến trình duyệt mobile hoặc Starlette lỗi header `Content-Disposition`.
-- **Fix**: Mã hóa RFC 5987: `headers={"Content-Disposition": f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(utf8_name)}"}`.
+- **Fix**: Mã hóa RFC 5987: `headers={"Content-Disposition": f"attachment; filename="{ascii_name}"; filename*=UTF-8''{quote(utf8_name)}"}`.
 - **Files liên quan**: `app/api/v1/library.py`
 
 ### Entity Duplication & CJK Resolution in Book Bible Snapshot
@@ -140,7 +157,7 @@
 - **Vấn đề**: Xuất hiện 2 dòng cho cùng một nhân vật (ví dụ: `Tốn Bác (损伯)` và `Tốn Bác`) trên Mobile App do LLM trích xuất `original_name` không đồng nhất giữa các chương (lúc chữ Hán `损伯`, lúc phiên âm tiếng Việt `Tốn Bác`).
 - **Root cause**: Backend chỉ so khớp theo `original_name` nguyên bản, dẫn đến 2 `character_id` khác nhau. Khi trả snapshot, backend trả cả 2 thực thể.
 - **Fix**: 
-  1. Thêm `vi_map` và kiểm tra chữ Hán CJK `[\u4e00-\u9fff]` trong `BookBibleService.merge_delta` để so khớp đa tiêu chí (`original_name`, `vi_name`, `aliases`) và nâng cấp tên nguyên tác chữ Hán.
+  1. Thêm `vi_map` và kiểm tra chữ Hán CJK `[一-鿿]` trong `BookBibleService.merge_delta` để so khớp đa tiêu chí (`original_name`, `vi_name`, `aliases`) và nâng cấp tên nguyên tác chữ Hán.
   2. Bổ sung `_merge_duplicate_snapshots` trong `CharacterProfileService.snapshot` để gom nhóm và gộp thực thể trùng lặp trước khi gửi về client.
   3. Cập nhật `PROMPT_1_EXTRACT_BOOK_BIBLE_DELTA` ràng buộc AI trích xuất đúng tên chữ Hán vào `original_name` và tên thuần Việt vào `vi_name`.
 - **Files liên quan**: `app/services/book_bible_service.py`, `app/services/character_profile_service.py`, `app/prompts/templates.py`, `tests/test_entity_resolution.py`
@@ -173,7 +190,19 @@
 - **Fix**: Chuẩn hóa logic trích xuất relative storage key, loại bỏ tiền tố `novels/` dư thừa và bổ sung fallback tìm theo các định dạng ảnh phổ biến (`.png`, `.jpeg`, `.webp`).
 - **Files liên quan**: `app/modules/reader/api.py`
 
+---
+
 ## How-To
+
+### Tải File Binary / Export Được Bảo Vệ Bằng Supabase Auth trên Frontend
+- **Ngày**: 2026-08-25
+- **Bước thực hiện**:
+  1. Gửi request `fetch()` tới backend API (được đính kèm header `Authorization: Bearer ...` tự động qua `window.fetch` / `authFetch`).
+  2. Kiểm tra `response.ok`, trích xuất `const blob = await response.blob()`.
+  3. Lấy tên file từ header `Content-Disposition` (hỗ trợ RFC 5987 `filename*=UTF-8''...`).
+  4. Tạo thẻ `<a>` ảo với `href = URL.createObjectURL(blob)`, đặt `a.download = filename` và gọi `a.click()`.
+  5. Thu hồi Object URL bằng `URL.revokeObjectURL(blobUrl)` sau khi tải xong.
+- **Files liên quan**: `app/static/index.html`, `app/auth.py`
 
 ### Thực hiện Dịch Hàng Loạt & Tự Động Rebuild EPUB trên Web UI
 - **Ngày**: 2026-08-25
@@ -220,7 +249,7 @@
 - **Ngày**: 2026-08-17
 - **Bước thực hiện**:
   1. Chạy backend `uvicorn app.main:app --host 127.0.0.1 --port 8000`.
-  2. Chạy `tools\cloudflared.exe tunnel --url http://127.0.0.1:8000` (hoặc chạy file `start_tunnel.bat`).
+  2. Chạy `tools/cloudflared.exe tunnel --url http://127.0.0.1:8000` (hoặc chạy file `start_tunnel.bat`).
   3. Lấy URL `https://*.trycloudflare.com` gán vào `BASE_URL` trong mã nguồn Mobile App.
 - **Files liên quan**: `tools/cloudflared.exe`, `start_tunnel.bat`
 
@@ -242,6 +271,8 @@
   3. Dùng App Check/attestation thay static token khi phát hành rộng.
   4. Giữ token trống chỉ cho local development.
 - **Files liên quan**: `app/api/v1/character_profiles.py`
+
+---
 
 ## Patterns
 
@@ -302,5 +333,3 @@
 - **Ngày**: 2026-08-24
 - **Chi tiết**: Khi spawn daemon thread (`threading.Thread`), luôn truyền dữ liệu thô / payload qua `args=(...)` thay vì dựa vào biến bao ngoài (closure variable), nhằm tránh lỗi `UnboundLocalError` khi dùng `del` trong luồng. Toàn bộ thân hàm của thread (kể cả tạo file tạm) phải nằm gọn trong `try...except...finally` để mọi ngoại lệ được bắt, log chi tiết và cập nhật `job.status = 'failed'`.
 - **Files liên quan**: `app/modules/library/legacy_service.py`
-
-

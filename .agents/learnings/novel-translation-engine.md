@@ -7,6 +7,12 @@
 
 ## Architecture
 
+### Ultra-Fast Delta Patching for Large EPUBs (1,000 - 5,000+ Chapters)
+- **Ngày**: 2026-08-25
+- **Chi tiết**: Để tránh tải hàng ngàn file txt lẻ qua Supabase Storage gây nghẽn mạng và chạm rate limit, export_full_epub áp dụng chiến lược Delta Patching: nạp trực tiếp file base ull.epub từ storage (1 request), sau đó chỉ tải song song các chương ĐÃ DỊCH (ví dụ 50/4000 chương = 50 requests), cập nhật nội dung HTML của các chương này vào reading spine của EPUB rồi ghi đè file xuất. Giảm tới 98.7% số lượng request và hoàn thành trong ~2 giây.
+- **Files liên quan**: pp/modules/library/legacy_service.py, pp/modules/library/api.py
+
+
 ### Clean Architecture & Provider Decoupling
 - **Ngày**: 2026-08-10
 - **Chi tiết**: Tách biệt LLM Client qua Abstract Class `BaseLLMClient` (`app/llm/base.py`). Các provider (`AnthropicProvider`, `GeminiProvider`) triển khai độc lập và được tạo qua `LLMFactory`. Giúp mở rộng LLM provider mới mà không ảnh hưởng tầng API hay Business logic.

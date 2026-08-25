@@ -496,6 +496,18 @@ class LegacyLibraryService:
 
         orig_content = self.get_chapter_content(novel_id, chapter_index, version="original")
         if not orig_content or not orig_content.strip():
+            # Fallback: If novel was imported as translated or raw text is in translated version
+            trans_content = self.get_chapter_content(novel_id, chapter_index, version="translated")
+            if trans_content and trans_content.strip():
+                orig_content = trans_content
+                # Save to original version so both versions are tracked
+                orig_key = self._chapter_key(novel_id, chapter_index, is_translated=False)
+                self._save_raw_file(orig_key, trans_content.encode("utf-8"), content_type="text/plain; charset=utf-8")
+                chapter.r2_original_key = orig_key
+                chapter.original_text_preview = (trans_content[:150] + "...") if len(trans_content) > 150 else trans_content
+                chapter.word_count = len(trans_content.split())
+
+        if not orig_content or not orig_content.strip():
             raise ValueError(f"Nội dung chương gốc {chapter_index} đang trống.")
 
         chapter.status = ChapterStatus.TRANSLATING

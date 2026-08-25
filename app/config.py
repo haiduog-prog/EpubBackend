@@ -55,10 +55,10 @@ class Settings(BaseModel):
 
     # Model defaults
     default_provider: str = Field(default="gemini")
-    default_translation_model: str = Field(default="gemini-2.5-flash")
-    default_extraction_model: str = Field(default="gemini-2.5-flash")
-    default_qa_model: str = Field(default="gemini-2.5-flash")
-    default_gemini_model: str = Field(default="gemini-2.5-flash")
+    default_translation_model: str = Field(default="gemini-flash-latest")
+    default_extraction_model: str = Field(default="gemini-flash-latest")
+    default_qa_model: str = Field(default="gemini-flash-latest")
+    default_gemini_model: str = Field(default="gemini-flash-latest")
     default_anthropic_model: str = Field(
         default_factory=lambda: os.getenv("ANTHROPIC_MODEL", "claude-3-5-haiku-latest")
     )

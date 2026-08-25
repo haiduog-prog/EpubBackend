@@ -78,7 +78,9 @@ class GeminiProvider(BaseLLMClient):
             "gemini-2.0-flash-exp": "gemini-flash-latest",
             "gemini-1.5-pro": "gemini-pro-latest",
             "gemini-1.5-pro-latest": "gemini-pro-latest",
-            "gemini-2.0-flash-lite": "gemini-flash-lite-latest"
+            "gemini-2.0-flash-lite": "gemini-flash-lite-latest",
+            "gemini-2.5-flash": "gemini-flash-latest",
+            "gemini-2.5-pro": "gemini-pro-latest",
         }
         if target_model in legacy_map:
             target_model = legacy_map[target_model]
@@ -89,7 +91,7 @@ class GeminiProvider(BaseLLMClient):
             candidates.append(self.working_model)
         if target_model and target_model not in candidates and target_model not in self.failed_models:
             candidates.append(target_model)
-        for m in ["gemini-2.5-flash", "gemini-flash-latest", "gemini-2.5-pro", "gemini-flash-lite-latest", "gemini-pro-latest"]:
+        for m in ["gemini-flash-latest", "gemini-flash-lite-latest", "gemini-pro-latest", "gemini-2.5-flash", "gemini-2.5-pro"]:
             if m not in candidates and m not in self.failed_models:
                 candidates.append(m)
 

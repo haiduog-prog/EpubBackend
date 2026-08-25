@@ -626,6 +626,47 @@ def test_bulk_delete_novels_endpoint():
     assert library_service.get_novel(id2) is None
 
 
+@pytest.mark.anyio
+async def test_translate_chapter_fallback_when_original_is_empty(monkeypatch):
+    from unittest.mock import AsyncMock, MagicMock
+    from app.schemas.book_bible import BookBibleDelta
+
+    service = LibraryService()
+    novel_id = f"translate-fallback-{uuid.uuid4().hex[:6]}"
+
+    epub_bytes = _create_mock_epub(
+        "Truyện Dịch Lại Fallback",
+        [("Chương 1: Khởi đầu", "Đây là nội dung chương 1 đã dịch trước đó dài trên ba mươi ký tự...")],
+    )
+    meta = service.import_epub_novel(epub_bytes, is_translated=True, novel_id=novel_id)
+    assert meta.total_chapters == 1
+
+    # Verify original is empty and translated has text
+    assert service.get_chapter_content(novel_id, 1, version="original") is None
+    assert service.get_chapter_content(novel_id, 1, version="translated") is not None
+
+    # Mock LLM client
+    mock_llm = MagicMock()
+    mock_llm.extract_book_bible_delta = AsyncMock(return_value=BookBibleDelta())
+    mock_llm.translate_prose_chunk = AsyncMock(return_value="Bản dịch mới sau khi dịch lại chương 1.")
+
+    monkeypatch.setattr("app.modules.library.legacy_service.create_llm_client", lambda **kwargs: mock_llm)
+
+    # Translate chapter 1
+    chapter = await service.translate_chapter(novel_id, 1)
+
+    assert chapter.status == ChapterStatus.COMPLETED
+    assert chapter.r2_original_key != ""
+    assert "Bản dịch mới" in chapter.translated_text_preview
+
+    # Verify original has been populated from fallback and translated has new text
+    assert service.get_chapter_content(novel_id, 1, version="original") is not None
+    assert service.get_chapter_content(novel_id, 1, version="translated") == "Bản dịch mới sau khi dịch lại chương 1."
+
+    service.delete_novel(novel_id)
+
+
+
 
 
 

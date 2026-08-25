@@ -697,7 +697,60 @@
             }
             .retranslate-pane.hide-on-mobile {
                 display: none;
-            }
+        /* Batch Translate & Selection Styling */
+        .batch-action-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.95));
+            border: 1px solid rgba(99, 102, 241, 0.35);
+            border-radius: 12px;
+            margin-top: 0.6rem;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .batch-progress-card {
+            background: rgba(15, 23, 42, 0.7);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 1.25rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        .batch-progress-bar-track {
+            width: 100%;
+            height: 12px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            overflow: hidden;
+            position: relative;
+        }
+        .batch-progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #6366f1, #10b981);
+            border-radius: 6px;
+            transition: width 0.4s ease;
+            box-shadow: 0 0 12px rgba(16, 185, 129, 0.5);
+        }
+        .batch-queue-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+        .batch-queue-table th, .batch-queue-table td {
+            padding: 0.55rem 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .chapter-row-checkbox, #check-all-chapters {
+            width: 17px;
+            height: 17px;
+            accent-color: #6366f1;
+            cursor: pointer;
         }
     </style>
 </head>
@@ -1321,23 +1374,78 @@
                     </form>
                 </div>
 
+                <!-- Chapters Table Header & Selection Controls -->
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; margin-top:0.75rem; margin-bottom:0.4rem;">
+                    <div style="display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap;">
+                        <h4 style="font-size:0.95rem; font-weight:600; color:#e2e8f0; margin:0;">
+                            <i class="fa-solid fa-list-ol"></i> Danh Sách Chương (<span id="detail-chapter-count">0</span>)
+                        </h4>
+                        <span id="selected-chapters-badge" class="tag" style="display:none; background:rgba(99,102,241,0.25); border:1px solid rgba(99,102,241,0.4); color:#c7d2fe; font-size:0.78rem;">
+                            Đã chọn: <strong id="selected-chapters-count">0</strong> chương
+                        </span>
+                    </div>
+
+                    <!-- Quick Selection Tools -->
+                    <div style="display:flex; align-items:center; gap:0.4rem; flex-wrap:wrap; font-size:0.8rem;">
+                        <button type="button" class="btn btn-secondary" onclick="selectAllChapters()" style="padding:0.25rem 0.55rem; font-size:0.75rem;">
+                            <i class="fa-solid fa-check-double"></i> Chọn tất cả
+                        </button>
+                        <button type="button" class="btn btn-secondary" onclick="selectUntranslatedChapters()" style="padding:0.25rem 0.55rem; font-size:0.75rem; color:#38bdf8;">
+                            <i class="fa-solid fa-filter"></i> Chọn chưa dịch
+                        </button>
+                        <button type="button" class="btn btn-secondary" onclick="clearSelectedChapters()" style="padding:0.25rem 0.55rem; font-size:0.75rem;">
+                            <i class="fa-solid fa-xmark"></i> Bỏ chọn
+                        </button>
+                        <div style="display:inline-flex; align-items:center; gap:0.25rem; background:rgba(15,23,42,0.8); border:1px solid var(--card-border); padding:0.15rem 0.4rem; border-radius:6px;">
+                            <span style="color:var(--text-sub); font-size:0.75rem;">Từ:</span>
+                            <input type="number" id="select-range-from" min="1" placeholder="1" style="width:45px; background:transparent; border:none; color:#fff; font-size:0.75rem; text-align:center; outline:none;">
+                            <span style="color:var(--text-sub); font-size:0.75rem;">đến:</span>
+                            <input type="number" id="select-range-to" min="1" placeholder="10" style="width:45px; background:transparent; border:none; color:#fff; font-size:0.75rem; text-align:center; outline:none;">
+                            <button type="button" class="btn" onclick="selectRangeChapters()" style="padding:0.15rem 0.4rem; font-size:0.72rem;">Chọn</button>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Chapters Table -->
-                <h4 style="font-size:0.95rem; font-weight:600; color:#e2e8f0; margin-top:0.5rem;"><i class="fa-solid fa-list-ol"></i> Danh Sách Chương (<span id="detail-chapter-count">0</span>)</h4>
                 <div style="max-height:300px; overflow-y:auto; border:1px solid var(--card-border); border-radius:10px;">
                     <table style="width:100%; border-collapse:collapse; text-align:left; font-size:0.85rem;">
                         <thead style="position:sticky; top:0; background:#0f172a; border-bottom:1px solid var(--card-border); color:var(--text-sub);">
                             <tr>
-                                <th style="padding:0.6rem;">STT</th>
+                                <th style="padding:0.6rem; width:40px; text-align:center;">
+                                    <input type="checkbox" id="check-all-chapters" onchange="toggleSelectAllChapters(this.checked)" title="Chọn/Bỏ chọn tất cả">
+                                </th>
+                                <th style="padding:0.6rem; width:60px;">STT</th>
                                 <th style="padding:0.6rem;">Tiêu Đề</th>
-                                <th style="padding:0.6rem;">Số Từ</th>
-                                <th style="padding:0.6rem;">Trạng Thái</th>
-                                <th style="padding:0.6rem; text-align:right;">Thao Tác</th>
+                                <th style="padding:0.6rem; width:80px;">Số Từ</th>
+                                <th style="padding:0.6rem; width:120px;">Trạng Thái</th>
+                                <th style="padding:0.6rem; text-align:right; width:140px;">Thao Tác</th>
                             </tr>
                         </thead>
                         <tbody id="detail-chapters-tbody">
-                            <tr><td colspan="5" style="padding:1.5rem; text-align:center; color:var(--text-sub);">Chưa có chương nào</td></tr>
+                            <tr><td colspan="6" style="padding:1.5rem; text-align:center; color:var(--text-sub);">Chưa có chương nào</td></tr>
                         </tbody>
                     </table>
+                </div>
+
+                <!-- Batch Action Bar (Visible when selectedCount > 0) -->
+                <div id="batch-translate-action-bar" class="batch-action-bar" style="display:none;">
+                    <div style="display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap;">
+                        <span style="font-size:0.88rem; font-weight:700; color:#c7d2fe;">
+                            <i class="fa-solid fa-list-check"></i> Đang chọn <strong id="batch-bar-count">0</strong> chương
+                        </span>
+                        <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.82rem; color:#cbd5e1; cursor:pointer; background:rgba(255,255,255,0.05); padding:0.3rem 0.6rem; border-radius:6px; border:1px solid rgba(255,255,255,0.1);">
+                            <input type="checkbox" id="batch-auto-rebuild-checkbox" checked style="accent-color:#10b981; width:15px; height:15px; cursor:pointer;">
+                            <span>Tự động <strong>[🔄 Biên Dịch Lại EPUB]</strong> sau khi dịch xong</span>
+                        </label>
+                    </div>
+                    <div style="display:flex; gap:0.5rem; align-items:center;">
+                        <button type="button" class="btn btn-secondary" onclick="clearSelectedChapters()" style="padding:0.45rem 0.8rem; font-size:0.8rem;">
+                            Hủy chọn
+                        </button>
+                        <button type="button" class="btn" id="btn-start-batch-translate" onclick="startBatchTranslation()" style="background:linear-gradient(135deg, #6366f1, #8b5cf6); color:#fff; border:none; padding:0.45rem 1.2rem; font-size:0.82rem; font-weight:600; box-shadow:0 0 15px rgba(99,102,241,0.4);">
+                            <i class="fa-solid fa-bolt"></i> ⚡ Dịch <span id="batch-btn-count">0</span> Chương Đã Chọn
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Book Bible & Character Progression Section -->
@@ -1523,6 +1631,83 @@
             </div>
         </div>
 
+        <!-- MODAL: BATCH TRANSLATE PROGRESS -->
+        <div id="modal-batch-translate-progress" class="modal">
+            <div class="modal-content" style="max-width:850px; width:95vw; max-height:90vh; display:flex; flex-direction:column; gap:1rem; padding:1.5rem;">
+                <!-- Header -->
+                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--card-border); padding-bottom:0.75rem;">
+                    <div style="display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap;">
+                        <h3 id="batch-modal-title" style="font-size:1.15rem; font-weight:700; color:#f8fafc; margin:0;">
+                            <i class="fa-solid fa-bolt" style="color:var(--accent);"></i> Tiến Trình Dịch Hàng Loạt
+                        </h3>
+                        <span id="batch-provider-badge" class="tag" style="background:rgba(99,102,241,0.2); border:1px solid rgba(99,102,241,0.4); color:#a5b4fc; font-size:0.78rem;">
+                            <i class="fa-solid fa-robot"></i> Gemini
+                        </span>
+                        <span id="batch-timer-badge" class="tag" style="background:rgba(245,158,11,0.15); border:1px solid rgba(245,158,11,0.3); color:#fbbf24; font-size:0.78rem;">
+                            <i class="fa-regular fa-clock"></i> 00:00s
+                        </span>
+                    </div>
+                    <button id="btn-batch-close-x" onclick="closeBatchTranslateModal()" style="background:none; border:none; color:var(--text-sub); font-size:1.3rem; cursor:pointer;" title="Đóng">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+
+                <!-- Progress Bar Card -->
+                <div class="batch-progress-card">
+                    <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.9rem;">
+                        <span id="batch-progress-status-text" style="font-weight:600; color:#f1f5f9;">
+                            <i class="fa-solid fa-spinner spinner"></i> Đang khởi tạo hàng đợi dịch...
+                        </span>
+                        <span id="batch-progress-stats" style="font-weight:700; color:#10b981;">
+                            0 / 0 chương (0%)
+                        </span>
+                    </div>
+                    <div class="batch-progress-bar-track">
+                        <div id="batch-progress-bar-fill" class="batch-progress-bar-fill" style="width:0%;"></div>
+                    </div>
+                    <div id="batch-rebuild-status-box" style="display:none; padding:0.6rem 0.85rem; background:rgba(16,185,129,0.15); border:1px solid rgba(16,185,129,0.3); border-radius:8px; font-size:0.85rem; color:#34d399; align-items:center; gap:0.5rem;">
+                        <i class="fa-solid fa-arrows-rotate spinner"></i>
+                        <span id="batch-rebuild-status-text">Đang tự động biên dịch lại file full.epub mới...</span>
+                    </div>
+                </div>
+
+                <!-- Queue Chapter List Table -->
+                <div style="flex:1; overflow-y:auto; border:1px solid var(--card-border); border-radius:10px; min-height:180px; max-height:40vh;">
+                    <table class="batch-queue-table">
+                        <thead style="position:sticky; top:0; background:#0f172a; border-bottom:1px solid var(--card-border); color:var(--text-sub);">
+                            <tr>
+                                <th style="width:60px;">STT</th>
+                                <th>Tiêu Đề Chương</th>
+                                <th style="width:140px;">Trạng Thái</th>
+                                <th style="width:100px; text-align:right;">Thời Gian</th>
+                            </tr>
+                        </thead>
+                        <tbody id="batch-queue-tbody">
+                            <!-- Populated dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Footer Action Controls -->
+                <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--card-border); padding-top:0.85rem; flex-wrap:wrap; gap:0.75rem;">
+                    <div id="batch-footer-info" style="font-size:0.82rem; color:var(--text-sub);">
+                        AI đang dịch tuần tự và tự động cập nhật Book Bible cho từng chương.
+                    </div>
+                    <div style="display:flex; gap:0.6rem; align-items:center;">
+                        <button type="button" class="btn btn-danger" id="btn-batch-abort" onclick="abortBatchTranslation()" style="padding:0.5rem 1.1rem; font-size:0.85rem;">
+                            <i class="fa-solid fa-stop"></i> Dừng Dịch
+                        </button>
+                        <button type="button" class="btn" id="btn-batch-download-epub" onclick="downloadCompiledEpubNow()" style="display:none; padding:0.5rem 1.1rem; font-size:0.85rem; background:#10b981; color:#fff; border:none; box-shadow:0 0 15px rgba(16,185,129,0.35);">
+                            <i class="fa-solid fa-file-arrow-down"></i> Tải File EPUB Mới
+                        </button>
+                        <button type="button" class="btn btn-secondary" id="btn-batch-done-close" onclick="closeBatchTranslateModal()" style="display:none; padding:0.5rem 1.2rem; font-size:0.85rem;">
+                            Hoàn Tất & Đóng
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- MODAL: CONFIRM DELETE NOVEL -->
         <div id="modal-confirm-delete" class="modal">
             <div class="modal-content" style="max-width:480px; border:1px solid rgba(239,68,68,0.4); box-shadow:0 0 35px rgba(239,68,68,0.25);">
@@ -1560,6 +1745,11 @@
         let currentRetranslateData = null;
         let retranslateTimerInterval = null;
         let retranslateSeconds = 0;
+        let selectedChapterIndexes = new Set();
+        let batchTranslateQueue = [];
+        let batchTranslateRunning = false;
+        let batchTimerInterval = null;
+        let batchSeconds = 0;
 
         const MODEL_MAP = {
             gemini: [
@@ -2421,9 +2611,17 @@
                 document.getElementById('add-chapter-index').value = (novel.chapters.length + 1);
                 document.getElementById('add-chapter-title').value = `Chương ${novel.chapters.length + 1}: `;
 
+                // Reset chapter selection
+                selectedChapterIndexes.clear();
+                const checkAll = document.getElementById('check-all-chapters');
+                if (checkAll) {
+                    checkAll.checked = false;
+                    checkAll.indeterminate = false;
+                }
+
                 // Render Chapters Table
                 if (novel.chapters.length === 0) {
-                    document.getElementById('detail-chapters-tbody').innerHTML = '<tr><td colspan="5" style="padding:1.5rem; text-align:center; color:var(--text-sub);">Chưa có chương nào trong kho. Hãy thêm chương mới ở khung phía trên!</td></tr>';
+                    document.getElementById('detail-chapters-tbody').innerHTML = '<tr><td colspan="6" style="padding:1.5rem; text-align:center; color:var(--text-sub);">Chưa có chương nào trong kho. Hãy thêm chương mới ở khung phía trên!</td></tr>';
                 } else {
                     document.getElementById('detail-chapters-tbody').innerHTML = novel.chapters.map(ch => {
                         let statusBadge = '<span style="color:#94a3b8;"><i class="fa-regular fa-clock"></i> Chưa dịch</span>';
@@ -2435,7 +2633,12 @@
                             ? `<button class="btn btn-secondary chapter-translate-btn" data-novel-id="${escapeHtml(novelId)}" data-chapter-index="${ch.chapter_index}" style="padding:0.25rem 0.6rem; font-size:0.75rem;"><i class="fa-solid fa-rotate-right"></i> Dịch lại</button>`
                             : `<button class="btn chapter-translate-btn" data-novel-id="${escapeHtml(novelId)}" data-chapter-index="${ch.chapter_index}" style="padding:0.25rem 0.6rem; font-size:0.75rem;"><i class="fa-solid fa-bolt"></i> Dịch ngay</button>`;
 
-                        return `<tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                        const isChecked = selectedChapterIndexes.has(ch.chapter_index);
+
+                        return `<tr style="border-bottom:1px solid rgba(255,255,255,0.05); ${isChecked ? 'background:rgba(99,102,241,0.08);' : ''}">
+                            <td style="padding:0.6rem; text-align:center;">
+                                <input type="checkbox" class="chapter-row-checkbox" data-chapter-index="${ch.chapter_index}" ${isChecked ? 'checked' : ''} onchange="onChapterCheckboxChanged(${ch.chapter_index}, this.checked)">
+                            </td>
                             <td style="padding:0.6rem; font-weight:600; color:#c7d2fe;">#${ch.chapter_index}</td>
                             <td style="padding:0.6rem; font-weight:600;">${escapeHtml(ch.chapter_title)}</td>
                             <td style="padding:0.6rem; color:var(--text-sub);">${ch.word_count} từ</td>
@@ -2462,6 +2665,8 @@
                         ));
                     });
                 }
+
+                updateSelectedChaptersUI();
 
                 // Load Book Bible characters
                 loadNovelBible(novelId);
@@ -2892,6 +3097,318 @@
                 document.execCommand('copy');
                 showToast("Đã sao chép nội dung!", "info");
             });
+        }
+
+        // ==========================================
+        // MULTI-CHAPTER SELECTION & BATCH TRANSLATE
+        // ==========================================
+        function onChapterCheckboxChanged(chapterIndex, isChecked) {
+            if (isChecked) {
+                selectedChapterIndexes.add(chapterIndex);
+            } else {
+                selectedChapterIndexes.delete(chapterIndex);
+            }
+            updateSelectedChaptersUI();
+        }
+
+        function updateSelectedChaptersUI() {
+            const count = selectedChapterIndexes.size;
+            const badge = document.getElementById('selected-chapters-badge');
+            const countSpan = document.getElementById('selected-chapters-count');
+            const actionBar = document.getElementById('batch-translate-action-bar');
+            const barCount = document.getElementById('batch-bar-count');
+            const btnCount = document.getElementById('batch-btn-count');
+            const checkAll = document.getElementById('check-all-chapters');
+
+            if (countSpan) countSpan.innerText = count;
+            if (barCount) barCount.innerText = count;
+            if (btnCount) btnCount.innerText = count;
+
+            if (count > 0) {
+                if (badge) badge.style.display = 'inline-flex';
+                if (actionBar) actionBar.style.display = 'flex';
+            } else {
+                if (badge) badge.style.display = 'none';
+                if (actionBar) actionBar.style.display = 'none';
+            }
+
+            // Sync individual checkboxes and highlight row
+            document.querySelectorAll('.chapter-row-checkbox').forEach(cb => {
+                const idx = Number(cb.dataset.chapterIndex);
+                cb.checked = selectedChapterIndexes.has(idx);
+                const tr = cb.closest('tr');
+                if (tr) {
+                    tr.style.background = cb.checked ? 'rgba(99,102,241,0.08)' : '';
+                }
+            });
+
+            // Sync master checkbox
+            if (checkAll && currentNovelData && currentNovelData.chapters) {
+                const total = currentNovelData.chapters.length;
+                checkAll.checked = (total > 0 && count === total);
+                checkAll.indeterminate = (count > 0 && count < total);
+            }
+        }
+
+        function toggleSelectAllChapters(checked) {
+            if (!currentNovelData || !currentNovelData.chapters) return;
+            if (checked) {
+                currentNovelData.chapters.forEach(ch => selectedChapterIndexes.add(ch.chapter_index));
+            } else {
+                selectedChapterIndexes.clear();
+            }
+            updateSelectedChaptersUI();
+        }
+
+        function selectAllChapters() {
+            toggleSelectAllChapters(true);
+        }
+
+        function selectUntranslatedChapters() {
+            if (!currentNovelData || !currentNovelData.chapters) return;
+            selectedChapterIndexes.clear();
+            currentNovelData.chapters.forEach(ch => {
+                if (ch.status !== 'completed') {
+                    selectedChapterIndexes.add(ch.chapter_index);
+                }
+            });
+            if (selectedChapterIndexes.size === 0) {
+                showToast("Tất cả các chương đã được dịch xong!", "info");
+            }
+            updateSelectedChaptersUI();
+        }
+
+        function clearSelectedChapters() {
+            selectedChapterIndexes.clear();
+            updateSelectedChaptersUI();
+        }
+
+        function selectRangeChapters() {
+            if (!currentNovelData || !currentNovelData.chapters) return;
+            const fromVal = parseInt(document.getElementById('select-range-from').value, 10);
+            const toVal = parseInt(document.getElementById('select-range-to').value, 10);
+            if (isNaN(fromVal) || isNaN(toVal) || fromVal < 1 || toVal < fromVal) {
+                alert("Vui lòng nhập khoảng chương hợp lệ (Từ nhỏ đến lớn)!");
+                return;
+            }
+            currentNovelData.chapters.forEach(ch => {
+                if (ch.chapter_index >= fromVal && ch.chapter_index <= toVal) {
+                    selectedChapterIndexes.add(ch.chapter_index);
+                }
+            });
+            updateSelectedChaptersUI();
+        }
+
+        function startBatchTimer() {
+            clearInterval(batchTimerInterval);
+            batchSeconds = 0;
+            const updateDisplay = () => {
+                const mins = String(Math.floor(batchSeconds / 60)).padStart(2, '0');
+                const secs = String(batchSeconds % 60).padStart(2, '0');
+                const timeBadge = document.getElementById('batch-timer-badge');
+                if (timeBadge) timeBadge.innerHTML = `<i class="fa-regular fa-clock"></i> ${mins}:${secs}s`;
+                batchSeconds++;
+            };
+            updateDisplay();
+            batchTimerInterval = setInterval(updateDisplay, 1000);
+        }
+
+        function stopBatchTimer() {
+            clearInterval(batchTimerInterval);
+            batchTimerInterval = null;
+        }
+
+        function closeBatchTranslateModal() {
+            stopBatchTimer();
+            batchTranslateRunning = false;
+            closeModal('modal-batch-translate-progress');
+            if (currentNovelId) {
+                openNovelDetail(currentNovelId);
+            }
+        }
+
+        function abortBatchTranslation() {
+            if (!batchTranslateRunning) return;
+            batchTranslateRunning = false;
+            stopBatchTimer();
+            document.getElementById('batch-progress-status-text').innerHTML = '<span style="color:#ef4444;"><i class="fa-solid fa-hand"></i> Đã tạm dừng hàng đợi dịch.</span>';
+            document.getElementById('btn-batch-abort').style.display = 'none';
+            document.getElementById('btn-batch-done-close').style.display = 'inline-block';
+            showToast("Đã dừng hàng đợi dịch.", "info");
+        }
+
+        async function startBatchTranslation() {
+            const apiKey = document.getElementById('api-key-input').value.trim();
+            const provider = document.getElementById('api-provider').value;
+            const model = document.getElementById('api-model').value;
+
+            if (!apiKey) {
+                alert("Vui lòng nhập API Key ở thanh cấu hình phía trên trước khi dịch!");
+                document.getElementById('api-key-input').focus();
+                return;
+            }
+
+            if (!currentNovelData || selectedChapterIndexes.size === 0) {
+                alert("Vui lòng chọn ít nhất 1 chương để dịch!");
+                return;
+            }
+
+            const sortedIndexes = Array.from(selectedChapterIndexes).sort((a, b) => a - b);
+            batchTranslateQueue = sortedIndexes.map(idx => {
+                const ch = currentNovelData.chapters.find(c => c.chapter_index === idx);
+                return {
+                    chapterIndex: idx,
+                    chapterTitle: ch ? ch.chapter_title : `Chương ${idx}`,
+                    status: 'pending',
+                    wordCount: 0,
+                    error: null,
+                    durationSeconds: 0
+                };
+            });
+
+            // UI Init
+            document.getElementById('batch-modal-title').innerHTML = `<i class="fa-solid fa-bolt" style="color:var(--accent);"></i> Tiến Trình Dịch Hàng Loạt (${batchTranslateQueue.length} chương)`;
+            document.getElementById('batch-provider-badge').innerHTML = `<i class="fa-solid fa-robot"></i> ${escapeHtml(provider.toUpperCase())} (${escapeHtml(model || 'Default')})`;
+            document.getElementById('btn-batch-abort').style.display = 'inline-block';
+            document.getElementById('btn-batch-done-close').style.display = 'none';
+            document.getElementById('btn-batch-download-epub').style.display = 'none';
+            document.getElementById('batch-rebuild-status-box').style.display = 'none';
+
+            renderBatchQueueTable();
+            updateBatchProgressBar(0, batchTranslateQueue.length);
+
+            document.getElementById('modal-batch-translate-progress').classList.add('active');
+            startBatchTimer();
+            batchTranslateRunning = true;
+
+            await runBatchTranslateQueueLoop(apiKey, provider, model);
+        }
+
+        function renderBatchQueueTable() {
+            const tbody = document.getElementById('batch-queue-tbody');
+            if (!tbody) return;
+            tbody.innerHTML = batchTranslateQueue.map(item => {
+                let badgeHtml = '<span style="color:#94a3b8;"><i class="fa-regular fa-clock"></i> Đang chờ</span>';
+                if (item.status === 'translating') {
+                    badgeHtml = '<span style="color:#f59e0b; font-weight:600;"><i class="fa-solid fa-spinner spinner"></i> Đang dịch...</span>';
+                } else if (item.status === 'completed') {
+                    badgeHtml = `<span style="color:#10b981; font-weight:600;"><i class="fa-solid fa-circle-check"></i> Xong (${item.wordCount} từ)</span>`;
+                } else if (item.status === 'failed') {
+                    badgeHtml = `<span style="color:#ef4444; font-weight:600;" title="${escapeHtml(item.error || '')}"><i class="fa-solid fa-triangle-exclamation"></i> Lỗi</span>`;
+                }
+
+                const durationText = item.durationSeconds > 0 ? `${item.durationSeconds}s` : '-';
+
+                return `<tr id="batch-row-${item.chapterIndex}" style="border-bottom:1px solid rgba(255,255,255,0.05); ${item.status === 'translating' ? 'background:rgba(99,102,241,0.1);' : ''}">
+                    <td style="padding:0.55rem 0.75rem; font-weight:600; color:#c7d2fe;">#${item.chapterIndex}</td>
+                    <td style="padding:0.55rem 0.75rem; font-weight:600;">${escapeHtml(item.chapterTitle)}</td>
+                    <td style="padding:0.55rem 0.75rem;">${badgeHtml}</td>
+                    <td style="padding:0.55rem 0.75rem; text-align:right; color:var(--text-sub);">${durationText}</td>
+                </tr>`;
+            }).join('');
+        }
+
+        function updateBatchProgressBar(completedCount, totalCount) {
+            const percent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+            const fill = document.getElementById('batch-progress-bar-fill');
+            const stats = document.getElementById('batch-progress-stats');
+            if (fill) fill.style.width = `${percent}%`;
+            if (stats) stats.innerText = `${completedCount} / ${totalCount} chương (${percent}%)`;
+        }
+
+        async function runBatchTranslateQueueLoop(apiKey, provider, model) {
+            const total = batchTranslateQueue.length;
+            let completed = 0;
+
+            for (let i = 0; i < total; i++) {
+                if (!batchTranslateRunning) break;
+
+                const item = batchTranslateQueue[i];
+                item.status = 'translating';
+                renderBatchQueueTable();
+
+                const statusText = document.getElementById('batch-progress-status-text');
+                if (statusText) {
+                    statusText.innerHTML = `<i class="fa-solid fa-spinner spinner" style="color:var(--accent);"></i> Đang dịch <strong>Chương ${item.chapterIndex}</strong>: ${escapeHtml(item.chapterTitle)}...`;
+                }
+
+                const rowEl = document.getElementById(`batch-row-${item.chapterIndex}`);
+                if (rowEl) rowEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+                const startItemTime = Date.now();
+
+                try {
+                    const res = await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(currentNovelId)}/chapters/${item.chapterIndex}/translate`), {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-API-Key': apiKey,
+                            'X-Provider': provider,
+                            'X-Model': model
+                        },
+                        body: JSON.stringify({
+                            api_key: apiKey,
+                            provider: provider,
+                            model: model,
+                            preview_only: false
+                        })
+                    });
+
+                    if (!res.ok) {
+                        const err = await res.json();
+                        throw new Error(err.detail || `Lỗi HTTP ${res.status}`);
+                    }
+
+                    const chData = await res.json();
+                    item.status = 'completed';
+                    item.wordCount = chData.word_count || 0;
+                    item.durationSeconds = Math.round((Date.now() - startItemTime) / 1000);
+                    completed++;
+
+                } catch (err) {
+                    item.status = 'failed';
+                    item.error = err.message;
+                    item.durationSeconds = Math.round((Date.now() - startItemTime) / 1000);
+                }
+
+                updateBatchProgressBar(completed, total);
+                renderBatchQueueTable();
+            }
+
+            stopBatchTimer();
+
+            if (!batchTranslateRunning) return;
+
+            // Check if Auto Rebuild EPUB is requested
+            const autoRebuild = document.getElementById('batch-auto-rebuild-checkbox') && document.getElementById('batch-auto-rebuild-checkbox').checked;
+
+            if (autoRebuild && completed > 0) {
+                const rebuildBox = document.getElementById('batch-rebuild-status-box');
+                const rebuildText = document.getElementById('batch-rebuild-status-text');
+                if (rebuildBox) rebuildBox.style.display = 'flex';
+                if (rebuildText) rebuildText.innerText = "🔄 Đang tự động biên dịch lại file full.epub mới nhất lên Cloud Storage...";
+
+                try {
+                    const rebuildRes = await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(currentNovelId)}/export/epub?force_rebuild=true`));
+                    if (rebuildRes.ok) {
+                        if (rebuildText) rebuildText.innerHTML = "🎉 <strong>Thành công:</strong> Đã cập nhật file full.epub mới nhất lên Cloud Storage!";
+                        document.getElementById('btn-batch-download-epub').style.display = 'inline-block';
+                    }
+                } catch (rebuildErr) {
+                    console.error("Auto rebuild failed", rebuildErr);
+                    if (rebuildText) rebuildText.innerText = "⚠️ Dịch xong nhưng không thể tự động rebuild EPUB: " + rebuildErr.message;
+                }
+            }
+
+            document.getElementById('batch-progress-status-text').innerHTML = `<span style="color:#10b981; font-weight:700;"><i class="fa-solid fa-circle-check"></i> Đã hoàn thành dịch ${completed}/${total} chương!</span>`;
+            document.getElementById('btn-batch-abort').style.display = 'none';
+            document.getElementById('btn-batch-done-close').style.display = 'inline-block';
+            showToast(`✓ Đã hoàn thành dịch ${completed} chương!`, "success");
+        }
+
+        function downloadCompiledEpubNow() {
+            if (!currentNovelId) return;
+            exportNovelEpub(currentNovelId, false);
         }
 
         async function openChapterReader(novelId, chapterIndex) {

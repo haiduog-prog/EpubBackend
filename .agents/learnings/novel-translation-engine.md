@@ -7,6 +7,11 @@
 
 ## Architecture
 
+### Fast Timeout & Global Circuit Breaker for LLM Fallbacks
+- **Ngày**: 2026-08-25
+- **Chi tiết**: Khi Google server bị quá tải (503 High Demand), nó giữ kết nối treo từ 2-4 phút trước khi nhả lỗi. Giải pháp: Áp dụng syncio.wait_for giới hạn 15s cho từng candidate model. Nếu timeout hoặc dính 503/429, model đó tự động đưa vào _GLOBAL_MODEL_COOLDOWNS (tạm khóa 10 phút), các chương tiếp theo sẽ tự động bỏ qua model này và gọi thẳng gemini-flash-lite (chỉ mất 10s/chương).
+- **Files liên quan**: pp/llm/gemini_provider.py, pp/static/index.html
+
 ### Resilient Enrichment Boundary (Safe Delta Extraction)
 - **Ngày**: 2026-08-25
 - **Chi tiết**: Phân lập hoàn toàn các bước bổ trợ (enrichment) như trích xuất nhân vật/thuật ngữ mới (BookBibleDelta) khỏi luồng dịch văn bản chính. Nếu LLM sinh dữ liệu JSON lỗi hoặc timeout ở bước delta, hệ thống ghi log warning và tiếp tục tiến trình dịch văn bản chương bằng Book Bible hiện có thay vì dừng hoặc ném lỗi HTTP 400.

@@ -406,6 +406,53 @@ class LegacyLibraryService:
         self._cache[novel_id] = meta
         return chapter_item
 
+    def _extract_and_cache_chapters_from_epub_storage(
+        self,
+        novel_id: str,
+        is_translated: bool = True,
+    ) -> bool:
+        """
+        On-demand self-healing: Nếu storage thiếu các file txt chương (ch_*.txt),
+        tải file full.epub từ storage, trích xuất lại toàn bộ các chương và lưu vào storage.
+        """
+        epub_candidates = [
+            f"novels/{novel_id}/full.epub",
+        ]
+        epub_bytes = None
+        for key in epub_candidates:
+            epub_bytes = storage_repo.get_bytes(key)
+            if epub_bytes:
+                break
+
+        if not epub_bytes:
+            return False
+
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".epub", delete=False) as tmp_epub:
+                tmp_epub.write(epub_bytes)
+                tmp_epub_path = tmp_epub.name
+
+            try:
+                book = read_epub_safe(tmp_epub_path)
+                raw_sections = self._extract_raw_chapters_from_epub(book)
+                if not raw_sections:
+                    return False
+                canonical_chapters = self._assign_canonical_chapter_indices(raw_sections, start_chapter_index=1)
+                folder = "translated" if is_translated else "original"
+                for actual_index, ch_title, full_text in canonical_chapters:
+                    ch_key = f"novels/{novel_id}/{folder}/ch_{actual_index:04d}.txt"
+                    self._save_raw_file(ch_key, full_text.encode("utf-8"), content_type="text/plain; charset=utf-8")
+                return True
+            finally:
+                if os.path.exists(tmp_epub_path):
+                    try:
+                        os.remove(tmp_epub_path)
+                    except Exception:
+                        pass
+        except Exception as exc:
+            logger.warning("Không thể tự động trích xuất lại chương từ full.epub cho '%s': %s", novel_id, exc)
+            return False
+
     def get_chapter_content(
         self,
         novel_id: str,
@@ -421,6 +468,15 @@ class LegacyLibraryService:
                 return data_bytes.decode("utf-8")
             except Exception:
                 return data_bytes.decode("latin1", errors="ignore")
+
+        # Self-healing fallback: trích xuất từ full.epub nếu file ch_*.txt bị thiếu trên storage
+        if self._extract_and_cache_chapters_from_epub_storage(novel_id, is_translated=is_trans):
+            data_bytes = storage_repo.get_bytes(key)
+            if data_bytes is not None:
+                try:
+                    return data_bytes.decode("utf-8")
+                except Exception:
+                    return data_bytes.decode("latin1", errors="ignore")
 
         return None
 
@@ -509,6 +565,9 @@ class LegacyLibraryService:
 
         if not orig_content or not orig_content.strip():
             raise ValueError(f"Nội dung chương gốc {chapter_index} đang trống.")
+
+        if not chapter.r2_original_key:
+            chapter.r2_original_key = self._chapter_key(novel_id, chapter_index, is_translated=False)
 
         chapter.status = ChapterStatus.TRANSLATING
         self._save_metadata(meta)

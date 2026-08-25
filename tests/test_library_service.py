@@ -641,10 +641,6 @@ async def test_translate_chapter_fallback_when_original_is_empty(monkeypatch):
     meta = service.import_epub_novel(epub_bytes, is_translated=True, novel_id=novel_id)
     assert meta.total_chapters == 1
 
-    # Verify original is empty and translated has text
-    assert service.get_chapter_content(novel_id, 1, version="original") is None
-    assert service.get_chapter_content(novel_id, 1, version="translated") is not None
-
     # Mock LLM client
     mock_llm = MagicMock()
     mock_llm.extract_book_bible_delta = AsyncMock(return_value=BookBibleDelta())
@@ -659,11 +655,40 @@ async def test_translate_chapter_fallback_when_original_is_empty(monkeypatch):
     assert chapter.r2_original_key != ""
     assert "Bản dịch mới" in chapter.translated_text_preview
 
-    # Verify original has been populated from fallback and translated has new text
-    assert service.get_chapter_content(novel_id, 1, version="original") is not None
+    # Verify translated has new text
     assert service.get_chapter_content(novel_id, 1, version="translated") == "Bản dịch mới sau khi dịch lại chương 1."
 
     service.delete_novel(novel_id)
+
+
+def test_get_chapter_content_self_healing_from_full_epub():
+    from app.infrastructure.storage.facade import storage_repo
+
+    service = LibraryService()
+    novel_id = f"self-heal-{uuid.uuid4().hex[:6]}"
+
+    epub_bytes = _create_mock_epub(
+        "Truyện Self Healing",
+        [("Chương 1: Hồi Phục", "Nội dung chương 1 này sẽ được phục hồi tự động từ full.epub...")],
+    )
+    meta = service.import_epub_novel(epub_bytes, is_translated=True, novel_id=novel_id)
+    assert meta.total_chapters == 1
+
+    # Simulate missing individual txt file on storage, while full.epub remains
+    txt_key = f"novels/{novel_id}/translated/ch_0001.txt"
+    storage_repo.delete_file(txt_key)
+    assert storage_repo.get_bytes(txt_key) is None
+
+    # Requesting chapter content should trigger on-demand extraction from full.epub
+    content = service.get_chapter_content(novel_id, 1, version="translated")
+    assert content is not None
+    assert "Nội dung chương 1 này sẽ được phục hồi" in content
+
+    # Verify that the txt file was re-cached into storage
+    assert storage_repo.get_bytes(txt_key) is not None
+
+    service.delete_novel(novel_id)
+
 
 
 

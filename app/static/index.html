@@ -1817,7 +1817,7 @@
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="/static/auth.js"></script>
+    <script src="/static/auth.js?v=20260825_final"></script>
     <script>
         let currentFile = null;
         let activePollInterval = null;
@@ -3733,10 +3733,20 @@
                 if (rebuildText) rebuildText.innerText = "🔄 Đang tự động biên dịch lại file full.epub mới nhất lên Cloud Storage...";
 
                 try {
-                    const rebuildRes = await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(currentNovelId)}/export/epub?force_rebuild=true`));
+                    let rebuildUrl = apiUrl(`/api/v1/library/novels/${encodeURIComponent(currentNovelId)}/export/epub?force_rebuild=true`);
+                    if (window.EpubAuth && typeof window.EpubAuth.getAccessToken === 'function') {
+                        try {
+                            const tok = await window.EpubAuth.getAccessToken();
+                            if (tok) rebuildUrl += `&access_token=${encodeURIComponent(tok)}`;
+                        } catch (_) {}
+                    }
+                    const rebuildRes = await fetch(rebuildUrl);
                     if (rebuildRes.ok) {
                         if (rebuildText) rebuildText.innerHTML = "🎉 <strong>Thành công:</strong> Đã cập nhật file full.epub mới nhất lên Cloud Storage!";
                         document.getElementById('btn-batch-download-epub').style.display = 'inline-block';
+                    } else {
+                        const err = await rebuildRes.json().catch(() => ({ detail: `HTTP ${rebuildRes.status}` }));
+                        if (rebuildText) rebuildText.innerText = "⚠️ Lỗi rebuild EPUB: " + (err.detail || `HTTP ${rebuildRes.status}`);
                     }
                 } catch (rebuildErr) {
                     console.error("Auto rebuild failed", rebuildErr);
@@ -3802,8 +3812,15 @@
             }
 
             try {
-                const queryParam = forceRebuild ? '?force_rebuild=true' : '';
-                const response = await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/export/epub${queryParam}`));
+                const queryParam = forceRebuild ? '?force_rebuild=true' : '?force_rebuild=false';
+                let url = apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/export/epub${queryParam}`);
+                if (window.EpubAuth && typeof window.EpubAuth.getAccessToken === 'function') {
+                    try {
+                        const tok = await window.EpubAuth.getAccessToken();
+                        if (tok) url += `&access_token=${encodeURIComponent(tok)}`;
+                    } catch (_) {}
+                }
+                const response = await fetch(url);
                 if (!response.ok) {
                     const err = await response.json().catch(() => ({ detail: `Lỗi xuất EPUB (HTTP ${response.status})` }));
                     throw new Error(err.detail || `Lỗi HTTP ${response.status}`);

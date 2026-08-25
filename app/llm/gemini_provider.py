@@ -1,6 +1,8 @@
+import asyncio
 import json
 import logging
 import re
+import time
 from typing import List, Optional, Dict, Any, Set
 from google import genai
 from google.genai import types
@@ -19,6 +21,12 @@ from app.prompts.templates import (
 from app.llm.base import BaseLLMClient
 
 logger = logging.getLogger("EpubBackend.GeminiProvider")
+
+# Global Circuit Breaker for temporarily failing/unavailable models
+# Maps model_name -> expiration_timestamp (float)
+_GLOBAL_MODEL_COOLDOWNS: Dict[str, float] = {}
+COOLDOWN_DURATION_SECONDS = 600.0  # 10 minutes cooldown for 503/429/timeout
+FAST_CANDIDATE_TIMEOUT_SECONDS = 15.0  # 15s max per candidate before triggering fast fallback
 
 
 def _clean_json_str(text: str) -> str:
@@ -42,7 +50,7 @@ def _clean_json_str(text: str) -> str:
 class GeminiProvider(BaseLLMClient):
     """
     LLM Client triển khai cho Google Gemini API (google-genai SDK).
-    Tự động ưu tiên gemini-flash-latest, gemini-flash-lite-latest và tự động Fallback.
+    Tự động ưu tiên gemini-flash-latest, gemini-flash-lite-latest kèm Fast Timeout và Circuit Breaker.
     """
 
     def __init__(
@@ -93,36 +101,85 @@ class GeminiProvider(BaseLLMClient):
         if target_model in legacy_map:
             target_model = legacy_map[target_model]
 
-        # Prepare candidates list
+        now = time.time()
+        # Filter out models currently in active global cooldown
+        def is_cooldown(m: str) -> bool:
+            return now < _GLOBAL_MODEL_COOLDOWNS.get(m, 0.0)
+
+        # Standard fallback priority
+        ordered_pool = ["gemini-flash-lite-latest", "gemini-flash-latest", "gemini-pro-latest", "gemini-2.5-flash", "gemini-2.5-pro"]
+        if target_model and target_model == "gemini-flash-latest":
+            ordered_pool = ["gemini-flash-latest", "gemini-flash-lite-latest", "gemini-pro-latest", "gemini-2.5-flash", "gemini-2.5-pro"]
+
         candidates = []
-        if self.working_model and self.working_model not in self.failed_models:
-            candidates.append(self.working_model)
-        if target_model and target_model not in candidates and target_model not in self.failed_models:
+        # 1. If preferred model requested and not on cooldown/failed
+        if target_model and target_model not in self.failed_models and not is_cooldown(target_model):
             candidates.append(target_model)
-        for m in ["gemini-flash-latest", "gemini-flash-lite-latest", "gemini-pro-latest", "gemini-2.5-flash", "gemini-2.5-pro"]:
-            if m not in candidates and m not in self.failed_models:
+        # 2. If working_model known and not on cooldown/failed
+        if self.working_model and self.working_model not in candidates and self.working_model not in self.failed_models and not is_cooldown(self.working_model):
+            candidates.append(self.working_model)
+        # 3. Add other active candidates not on cooldown
+        for m in ordered_pool:
+            if m not in candidates and m not in self.failed_models and not is_cooldown(m):
                 candidates.append(m)
+
+        # 4. If all candidates are on cooldown, try non-failed models in rescue mode
+        if not candidates:
+            logger.info("Tất cả models đều đang trong cooldown. Chuyển sang chế độ cứu hộ (thử flash-lite trước).")
+            for m in ["gemini-flash-lite-latest", "gemini-flash-latest", "gemini-pro-latest"]:
+                if m not in self.failed_models:
+                    candidates.append(m)
 
         for candidate_model in candidates:
             try:
-                response = await self.client.aio.models.generate_content(
-                    model=candidate_model,
-                    contents=contents,
-                    config=config,
+                # Fast timeout so hanging Google requests (503 spikes) don't block the user for minutes
+                response = await asyncio.wait_for(
+                    self.client.aio.models.generate_content(
+                        model=candidate_model,
+                        contents=contents,
+                        config=config,
+                    ),
+                    timeout=FAST_CANDIDATE_TIMEOUT_SECONDS
                 )
                 self.working_model = candidate_model
+                # Successful call clears cooldown for this model
+                _GLOBAL_MODEL_COOLDOWNS.pop(candidate_model, None)
                 return response
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Gemini model '%s' phản hồi quá %ds (server Google nghẽn). Tạm đưa vào cooldown %ds và tự động chuyển model tiếp theo.",
+                    candidate_model,
+                    int(FAST_CANDIDATE_TIMEOUT_SECONDS),
+                    int(COOLDOWN_DURATION_SECONDS)
+                )
+                _GLOBAL_MODEL_COOLDOWNS[candidate_model] = time.time() + COOLDOWN_DURATION_SECONDS
+                self.failed_models.add(candidate_model)
+                continue
             except Exception as e:
                 err_str = str(e)
                 logger.warning(f"Gemini model '{candidate_model}' call failed: {err_str}")
 
-                if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower():
+                if "503" in err_str or "UNAVAILABLE" in err_str or "high demand" in err_str.lower():
+                    _GLOBAL_MODEL_COOLDOWNS[candidate_model] = time.time() + COOLDOWN_DURATION_SECONDS
                     self.failed_models.add(candidate_model)
-                    logger.warning(f"Model {candidate_model} exhausted quota (429). Attempting fallback to next available model.")
+                    logger.warning(
+                        "Model %s dính 503 UNAVAILABLE (quá tải). Tạm khóa %ds và chuyển model dự phòng.",
+                        candidate_model,
+                        int(COOLDOWN_DURATION_SECONDS)
+                    )
+                    continue
+                elif "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower():
+                    _GLOBAL_MODEL_COOLDOWNS[candidate_model] = time.time() + COOLDOWN_DURATION_SECONDS
+                    self.failed_models.add(candidate_model)
+                    logger.warning(
+                        "Model %s hết quota (429). Tạm khóa %ds và chuyển model dự phòng.",
+                        candidate_model,
+                        int(COOLDOWN_DURATION_SECONDS)
+                    )
                     continue
                 elif "404" in err_str or "NOT_FOUND" in err_str or "is not found for API version" in err_str:
                     self.failed_models.add(candidate_model)
-                    logger.warning(f"Model {candidate_model} not found or unsupported. Attempting fallback.")
+                    logger.warning(f"Model {candidate_model} không tồn tại hoặc không hỗ trợ. Thử model khác.")
                     continue
                 else:
                     if len(candidates) > 1:

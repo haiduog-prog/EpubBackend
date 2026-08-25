@@ -1080,7 +1080,7 @@ class LegacyLibraryService:
                 existing_ch = existing_chapters_map.get(actual_index)
                 if existing_ch:
                     existing_key = existing_ch.r2_translated_key if is_translated else existing_ch.r2_original_key
-                    if existing_key and not force_overwrite:
+                    if existing_key and not force_overwrite and storage_repo.file_exists(existing_key):
                         skipped_count += 1
                         if job:
                             job.skipped_chapters = skipped_count

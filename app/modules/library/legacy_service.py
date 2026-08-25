@@ -837,7 +837,92 @@ class LegacyLibraryService:
             os.makedirs(os.path.join("storage", "outputs"), exist_ok=True)
             output_path = os.path.join("storage", "outputs", f"{slugify(novel_id)}_vi.epub")
 
-        # Luôn biên dịch sách EPUB hoàn chỉnh từ toàn bộ các chương đã gộp trong kho
+        # ---------------------------------------------------------
+        # STRATEGY 1: Delta Patching if Base EPUB exists (Ultra Fast for 1000-5000+ chapters)
+        # ---------------------------------------------------------
+        full_key = f"novels/{novel_id}/full.epub"
+        translated_chapters = [
+            c for c in meta.chapters
+            if c.status == ChapterStatus.COMPLETED or c.r2_translated_key
+        ]
+
+        if storage_repo.file_exists(full_key):
+            try:
+                base_bytes = storage_repo.get_bytes(full_key)
+                if base_bytes:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".epub") as tmp_base:
+                        tmp_base.write(base_bytes)
+                        tmp_base_path = tmp_base.name
+                    try:
+                        base_book = read_epub_safe(tmp_base_path)
+
+                        # Style CSS
+                        style = """
+                        @namespace epub "http://www.idpf.org/2007/ops";
+                        body { font-family: sans-serif; line-height: 1.6; margin: 5%; }
+                        h1 { text-align: center; margin-bottom: 1.5em; font-size: 1.4em; }
+                        p { text-indent: 1.5em; margin: 0.5em 0; text-align: justify; }
+                        """
+                        default_css = epub.EpubItem(
+                            uid="style_default",
+                            file_name="style/default.css",
+                            media_type="text/css",
+                            content=style.encode("utf-8"),
+                        )
+                        base_book.add_item(default_css)
+
+                        # Fetch ONLY the translated chapters in parallel (e.g. 50 out of 4000)
+                        from concurrent.futures import ThreadPoolExecutor
+                        from html import escape
+
+                        def _fetch_trans_text(ch):
+                            txt = self.get_chapter_content(novel_id, ch.chapter_index, version="translated")
+                            return ch.chapter_index, txt
+
+                        with ThreadPoolExecutor(max_workers=20) as executor:
+                            trans_texts = dict(executor.map(_fetch_trans_text, translated_chapters))
+
+                        doc_items = list(base_book.get_items_of_type(ebooklib.ITEM_DOCUMENT))
+                        doc_by_filename = {item.get_name(): item for item in doc_items}
+
+                        spine_doc_ids = [s[0] if isinstance(s, tuple) else s for s in base_book.spine if s not in ("nav", "ncx")]
+                        spine_docs = [base_book.get_item_with_id(item_id) for item_id in spine_doc_ids if base_book.get_item_with_id(item_id)]
+                        if not spine_docs:
+                            spine_docs = doc_items
+
+                        # Patch translated chapters
+                        patched_count = 0
+                        for ch in translated_chapters:
+                            txt = trans_texts.get(ch.chapter_index)
+                            if not txt:
+                                continue
+                            paragraphs = "".join(f"<p>{escape(p.strip())}</p>" for p in txt.split("\n") if p.strip())
+                            html_content = f"<h1>{escape(ch.chapter_title)}</h1>{paragraphs}"
+
+                            target_doc = None
+                            expected_name = f"ch_{ch.chapter_index:04d}.xhtml"
+                            if expected_name in doc_by_filename:
+                                target_doc = doc_by_filename[expected_name]
+                            elif 0 <= (ch.chapter_index - 1) < len(spine_docs):
+                                target_doc = spine_docs[ch.chapter_index - 1]
+
+                            if target_doc:
+                                target_doc.content = html_content.encode("utf-8")
+                                patched_count += 1
+
+                        if patched_count > 0 or len(translated_chapters) == 0:
+                            epub.write_epub(output_path, base_book)
+                            logger.info("Delta-patched %d translated chapters into base EPUB for novel '%s'", patched_count, novel_id)
+                            return output_path
+                    finally:
+                        if os.path.exists(tmp_base_path):
+                            os.unlink(tmp_base_path)
+            except Exception as patch_err:
+                logger.warning("Delta patching failed for '%s', falling back to full compile: %s", novel_id, patch_err)
+
+        # ---------------------------------------------------------
+        # STRATEGY 2: Fallback Full Compilation from all individual chapters
+        # ---------------------------------------------------------
         book = epub.EpubBook()
         book.set_identifier(f"epub-backend-{novel_id}")
         book.set_title(meta.title)

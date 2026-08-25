@@ -22,6 +22,21 @@
 - **Chi tiết**: Timeout ở coroutine chỉ đáng tin khi provider dùng native async I/O. Gemini nhận timeout tại SDK/HTTP boundary qua `types.HttpOptions` và gọi `client.aio.models.generate_content`, để cancellation dừng request thay vì bỏ lại thread nền.
 - **Files liên quan**: `app/llm/gemini_provider.py`, `app/llm/factory.py`, `app/modules/library/legacy_service.py`
 
+### Preview-only Retranslation Diff & User-controlled Application
+- **Ngày**: 2026-08-25
+- **Chi tiết**: Hỗ trợ dịch lại với `preview_only=True` mà không ghi đè storage hay cập nhật DB. API trả về `original_text`, `previous_translated_text`, và `new_translated_text` để người dùng so sánh trực quan 2 cột trên UI. Chỉ khi người dùng bấm "Áp Dụng Bản Dịch", endpoint `/apply-translation` mới commit bản dịch mới vào storage và DB.
+- **Files liên quan**: `app/modules/library/api.py`, `app/modules/library/schemas.py`, `app/modules/library/legacy_service.py`, `app/static/index.html`
+
+### Multi-chapter Batch Translation & Automatic EPUB Force Rebuild
+- **Ngày**: 2026-08-25
+- **Chi tiết**: Cho phép chọn nhiều chương linh hoạt (tất cả, chưa dịch, dải A-B) và dịch hàng loạt qua hàng đợi tuần tự có thanh tiến trình, badge trạng thái và hỗ trợ tạm dừng an toàn. Sau khi hoàn thành, tự động kích hoạt `export/epub?force_rebuild=true` để biên dịch lại EPUB full mới nhất và đẩy đè lên Cloud Storage/R2.
+- **Files liên quan**: `app/static/index.html`, `app/modules/library/api.py`, `app/modules/library/legacy_service.py`
+
+### Multi-tier Web UI Caching & Intelligent Invalidation
+- **Ngày**: 2026-08-25
+- **Chi tiết**: Tích hợp cache đa tầng: (1) Client-side `apiCache` với TTL theo loại dữ liệu (60s danh sách/chi tiết, 120s bible/snapshot, 300s nội dung chương), (2) `coverBlobCache` lưu ObjectURL ảnh bìa trong RAM loại bỏ hoàn toàn request trùng, (3) Tự động xóa cache tương ứng khi mutate (tạo/xóa truyện, dịch chương, áp dụng bản dịch, duyệt sự kiện), (4) Nút `[🔄 Làm Mới]` với `forceRefresh=true` vượt qua cache.
+- **Files liên quan**: `app/static/index.html`, `app/modules/library/api.py`, `app/modules/reader/api.py`
+
 ### Deterministic Book Bible Delta Merging (Code-level Upsert)
 - **Ngày**: 2026-08-10
 - **Chi tiết**: Không bắt LLM tái sinh toàn bộ Book Bible JSON để tránh trôi key và tốn token. LLM trích xuất delta (`BookBibleDelta`), code Python tự upsert `new_characters`, append `address_terms` cho nhân vật cũ, upsert địa danh và thuật ngữ.
@@ -160,6 +175,24 @@
 
 ## How-To
 
+### Thực hiện Dịch Hàng Loạt & Tự Động Rebuild EPUB trên Web UI
+- **Ngày**: 2026-08-25
+- **Bước thực hiện**:
+  1. Tại modal chi tiết bộ truyện, chọn các chương cần dịch (bằng checkbox từng dòng, nút "Chọn chưa dịch", hoặc nhập khoảng từ A đến B).
+  2. Bật checkbox `[x] Tự động [🔄 Biên Dịch Lại EPUB] sau khi dịch xong` trên thanh công cụ nổi.
+  3. Bấm `[⚡ Dịch X Chương Đã Chọn]`, theo dõi tiến trình và trạng thái từng chương trong bảng live queue.
+  4. Sau khi hoàn tất hàng đợi, hệ thống tự động gọi `/export/epub?force_rebuild=true` để làm mới `full.epub` trên Cloud Storage và hiển thị nút tải về.
+- **Files liên quan**: `app/static/index.html`, `app/modules/library/api.py`
+
+### Bổ sung Cache và Cơ Chế Invalidation cho API Mới trên Web UI
+- **Ngày**: 2026-08-25
+- **Bước thực hiện**:
+  1. Thêm endpoint GET trên FastAPI kèm header `Response.headers["Cache-Control"] = "private, max-age=..."`.
+  2. Trên Web UI JS, gọi request qua `fetchWithCache(apiUrl(url), options, ttlMs, forceRefresh)`.
+  3. Trong các action mutate (POST/PUT/DELETE), gọi `apiCache.invalidatePattern(urlPattern)` để xóa cache tương ứng.
+  4. Gắn cờ `forceRefresh = true` vào các nút Làm Mới giao diện để chủ động ép tải lại dữ liệu từ server.
+- **Files liên quan**: `app/static/index.html`, `app/modules/library/api.py`
+
 ### Thêm LLM Provider Mới
 - **Ngày**: 2026-08-10
 - **Bước thực hiện**:
@@ -211,6 +244,16 @@
 - **Files liên quan**: `app/api/v1/character_profiles.py`
 
 ## Patterns
+
+### Preview-before-Commit Translation Pattern
+- **Ngày**: 2026-08-25
+- **Chi tiết**: Endpoint dịch hỗ trợ cờ `preview_only: bool`. Nếu `True`, backend chạy pipeline dịch nhưng không ghi đè file lưu trữ hay cập nhật database, mà trả về `ChapterTranslatePreviewResponse` để UI hiển thị so sánh song song giữa bản dịch cũ và bản dịch mới. Chỉ khi người dùng xác nhận áp dụng, request `ChapterApplyTranslationRequest` mới được gửi để lưu kết quả.
+- **Files liên quan**: `app/modules/library/schemas.py`, `app/modules/library/legacy_service.py`, `app/modules/library/api.py`, `app/static/index.html`
+
+### In-Memory ObjectURL Asset Caching Pattern
+- **Ngày**: 2026-08-25
+- **Chi tiết**: Đối với các tài nguyên media/ảnh bìa tải qua luồng xác thực (`authFetch`), lưu kết quả dưới dạng `Blob ObjectURL` trong `Map` bộ nhớ RAM của trình duyệt (`coverBlobCache`). Mọi lần render sau đó kiểm tra cache trước khi tạo network request mới, giúp giảm tải 100% network traffic khi cuộn trang hoặc chuyển tab.
+- **Files liên quan**: `app/static/index.html`
 
 ### Asynchronous EPUB Import & Live Progress Polling
 - **Ngày**: 2026-08-17

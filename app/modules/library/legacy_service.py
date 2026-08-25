@@ -410,10 +410,11 @@ class LegacyLibraryService:
         self,
         novel_id: str,
         is_translated: bool = True,
-    ) -> bool:
+    ) -> Dict[int, str]:
         """
         On-demand self-healing: Nếu storage thiếu các file txt chương (ch_*.txt),
-        tải file full.epub từ storage, trích xuất lại toàn bộ các chương và lưu vào storage.
+        tải file full.epub từ storage, trích xuất lại toàn bộ các chương, lưu vào storage
+        và trả về dict {chapter_index: full_text}.
         """
         epub_candidates = [
             f"novels/{novel_id}/full.epub",
@@ -425,7 +426,7 @@ class LegacyLibraryService:
                 break
 
         if not epub_bytes:
-            return False
+            return {}
 
         try:
             with tempfile.NamedTemporaryFile(suffix=".epub", delete=False) as tmp_epub:
@@ -436,13 +437,20 @@ class LegacyLibraryService:
                 book = read_epub_safe(tmp_epub_path)
                 raw_sections = self._extract_raw_chapters_from_epub(book)
                 if not raw_sections:
-                    return False
+                    return {}
                 canonical_chapters = self._assign_canonical_chapter_indices(raw_sections, start_chapter_index=1)
+                result_map: Dict[int, str] = {}
                 folder = "translated" if is_translated else "original"
+                other_folder = "original" if is_translated else "translated"
+
                 for actual_index, ch_title, full_text in canonical_chapters:
+                    result_map[actual_index] = full_text
+                    # Save to both folders so both original and translated are cached
                     ch_key = f"novels/{novel_id}/{folder}/ch_{actual_index:04d}.txt"
                     self._save_raw_file(ch_key, full_text.encode("utf-8"), content_type="text/plain; charset=utf-8")
-                return True
+                    other_key = f"novels/{novel_id}/{other_folder}/ch_{actual_index:04d}.txt"
+                    self._save_raw_file(other_key, full_text.encode("utf-8"), content_type="text/plain; charset=utf-8")
+                return result_map
             finally:
                 if os.path.exists(tmp_epub_path):
                     try:
@@ -451,7 +459,7 @@ class LegacyLibraryService:
                         pass
         except Exception as exc:
             logger.warning("Không thể tự động trích xuất lại chương từ full.epub cho '%s': %s", novel_id, exc)
-            return False
+            return {}
 
     def get_chapter_content(
         self,
@@ -469,14 +477,27 @@ class LegacyLibraryService:
             except Exception:
                 return data_bytes.decode("latin1", errors="ignore")
 
-        # Self-healing fallback: trích xuất từ full.epub nếu file ch_*.txt bị thiếu trên storage
-        if self._extract_and_cache_chapters_from_epub_storage(novel_id, is_translated=is_trans):
-            data_bytes = storage_repo.get_bytes(key)
-            if data_bytes is not None:
-                try:
-                    return data_bytes.decode("utf-8")
-                except Exception:
-                    return data_bytes.decode("latin1", errors="ignore")
+        # Fallback: check if other version already exists on storage
+        other_key = self._chapter_key(novel_id, chapter_index, is_translated=not is_trans)
+        other_bytes = storage_repo.get_bytes(other_key)
+        if other_bytes is not None:
+            try:
+                content = other_bytes.decode("utf-8")
+            except Exception:
+                content = other_bytes.decode("latin1", errors="ignore")
+            # Cache to the requested key
+            self._save_raw_file(key, content.encode("utf-8"), content_type="text/plain; charset=utf-8")
+            return content
+
+        # Self-healing fallback: extract all chapters directly from full.epub
+        extracted_map = self._extract_and_cache_chapters_from_epub_storage(novel_id, is_translated=is_trans)
+        if chapter_index in extracted_map:
+            return extracted_map[chapter_index]
+
+        # Positional index fallback if chapter numbering in EPUB differed
+        extracted_values = list(extracted_map.values())
+        if 1 <= chapter_index <= len(extracted_values):
+            return extracted_values[chapter_index - 1]
 
         return None
 

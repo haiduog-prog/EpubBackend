@@ -1387,7 +1387,7 @@
                         </span>
                     </div>
 
-                    <!-- Quick Selection Tools -->
+                    <!-- Quick Selection Tools & API Key widget -->
                     <div style="display:flex; align-items:center; gap:0.4rem; flex-wrap:wrap; font-size:0.8rem;">
                         <button type="button" class="btn btn-secondary" onclick="selectAllChapters()" style="padding:0.3rem 0.6rem; font-size:0.78rem;">
                             <i class="fa-solid fa-check-double"></i> Chọn tất cả
@@ -1404,6 +1404,13 @@
                             <span style="color:var(--text-sub); font-size:0.75rem;">đến:</span>
                             <input type="number" id="select-range-to" min="1" placeholder="10" style="width:45px; background:transparent; border:none; color:#fff; font-size:0.75rem; text-align:center; outline:none;">
                             <button type="button" class="btn" onclick="selectRangeChapters()" style="padding:0.2rem 0.45rem; font-size:0.75rem;">Chọn</button>
+                        </div>
+                        <div style="display:inline-flex; align-items:center; gap:0.3rem; background:rgba(15,23,42,0.9); border:1px solid rgba(99,102,241,0.4); padding:0.2rem 0.5rem; border-radius:6px;" title="Nhập hoặc đổi API Key để dịch">
+                            <i class="fa-solid fa-key" style="color:#a5b4fc; font-size:0.75rem;"></i>
+                            <input type="password" id="detail-api-key-input" placeholder="API Key..." style="width:105px; background:transparent; border:none; color:#fff; font-size:0.75rem; outline:none; font-family:monospace;" onchange="syncFromDetailApiKey(this.value)" oninput="syncFromDetailApiKey(this.value)">
+                            <button type="button" class="btn btn-secondary" onclick="openApiKeyModal()" style="padding:0.12rem 0.35rem; font-size:0.7rem;" title="Cấu hình Model & Provider">
+                                <i class="fa-solid fa-gear"></i>
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -1744,6 +1751,64 @@
                     </div>
                 </div>
             </div>
+        <!-- MODAL: QUICK API KEY CONFIGURATION -->
+        <div id="modal-quick-apikey" class="modal" style="z-index: 1200;">
+            <div class="modal-content" style="max-width:520px; padding:1.5rem; gap:1.15rem; border:1px solid rgba(99,102,241,0.4); box-shadow:0 25px 60px rgba(0,0,0,0.85);">
+                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--card-border); padding-bottom:0.75rem;">
+                    <div style="display:flex; align-items:center; gap:0.6rem;">
+                        <div style="width:36px; height:36px; border-radius:10px; background:rgba(99,102,241,0.2); border:1px solid rgba(99,102,241,0.4); display:flex; align-items:center; justify-content:center;">
+                            <i class="fa-solid fa-key" style="color:#a5b4fc; font-size:1.1rem;"></i>
+                        </div>
+                        <h3 style="font-size:1.15rem; font-weight:700; color:#fff; margin:0;">Nhập API Key AI Dịch Thuật</h3>
+                    </div>
+                    <button onclick="closeModal('modal-quick-apikey')" style="background:none; border:none; color:var(--text-sub); font-size:1.3rem; cursor:pointer;"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+
+                <p style="color:var(--text-sub); font-size:0.85rem; margin:0; line-height:1.5;">
+                    Vui lòng nhập API Key để AI tiến hành dịch thuật hoặc quét Book Bible. API Key sẽ được lưu an toàn trên trình duyệt của bạn.
+                </p>
+
+                <div style="display:flex; flex-direction:column; gap:0.85rem;">
+                    <div>
+                        <label style="display:block; font-size:0.82rem; font-weight:600; color:#cbd5e1; margin-bottom:0.35rem;">Nhà cung cấp AI (Provider):</label>
+                        <select id="quick-api-provider" onchange="syncQuickProvider(this.value)" style="width:100%; background:rgba(15,23,42,0.8); border:1px solid var(--card-border); padding:0.55rem 0.75rem; border-radius:8px; color:#fff; font-size:0.88rem; outline:none;">
+                            <option value="gemini">Google Gemini API (Miễn phí & Rất nhanh)</option>
+                            <option value="anthropic">Anthropic Claude API (Văn phong cao cấp)</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label style="display:block; font-size:0.82rem; font-weight:600; color:#cbd5e1; margin-bottom:0.35rem;">Model AI:</label>
+                        <select id="quick-api-model" onchange="syncQuickModel(this.value)" style="width:100%; background:rgba(15,23,42,0.8); border:1px solid var(--card-border); padding:0.55rem 0.75rem; border-radius:8px; color:#fff; font-size:0.88rem; outline:none;">
+                            <!-- Injected via JS -->
+                        </select>
+                    </div>
+
+                    <div>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.35rem;">
+                            <label style="font-size:0.82rem; font-weight:600; color:#cbd5e1; margin:0;">API Key:</label>
+                            <a id="quick-api-get-link" href="https://aistudio.google.com/app/apikey" target="_blank" style="font-size:0.75rem; color:#818cf8; text-decoration:underline;">
+                                <i class="fa-solid fa-arrow-up-right-from-square"></i> Lấy Gemini API Key miễn phí
+                            </a>
+                        </div>
+                        <div style="position:relative; display:flex; align-items:center;">
+                            <input type="password" id="quick-api-key-input" placeholder="Dán API Key vào đây (VD: AIzaSy...)" style="width:100%; background:rgba(15,23,42,0.9); border:1px solid rgba(99,102,241,0.4); padding:0.6rem 2.5rem 0.6rem 0.75rem; border-radius:8px; color:#fff; font-size:0.88rem; outline:none; font-family:monospace;">
+                            <button type="button" onclick="toggleQuickApiKeyVisibility()" style="position:absolute; right:8px; background:none; border:none; color:var(--text-sub); cursor:pointer; font-size:0.95rem; padding:0.25rem 0.4rem;" title="Ẩn/Hiện API Key">
+                                <i id="quick-api-key-eye" class="fa-solid fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display:flex; justify-content:flex-end; gap:0.6rem; border-top:1px solid var(--card-border); padding-top:1rem; margin-top:0.2rem;">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('modal-quick-apikey')" style="padding:0.5rem 1rem; font-size:0.85rem;">
+                        Hủy
+                    </button>
+                    <button type="button" class="btn" onclick="saveAndApplyQuickApiKey()" style="background:linear-gradient(135deg, #6366f1, #8b5cf6); border:none; padding:0.5rem 1.25rem; font-size:0.85rem; font-weight:600; box-shadow:0 0 15px rgba(99,102,241,0.4);">
+                        <i class="fa-solid fa-bolt"></i> ⚡ Lưu & Tiếp Tục Dịch
+                    </button>
+                </div>
+            </div>
         </div>
 
         <div id="toast-container" class="toast-container"></div>
@@ -1903,17 +1968,170 @@
             if (typeof loadDatabaseSummary === 'function') loadDatabaseSummary();
         }
 
+        let pendingApiKeyCallback = null;
+
+        function getActiveApiKey() {
+            return (
+                document.getElementById('api-key-input')?.value ||
+                document.getElementById('quick-api-key-input')?.value ||
+                document.getElementById('detail-api-key-input')?.value ||
+                ''
+            ).trim();
+        }
+
+        function ensureApiKey(callback) {
+            const apiKey = getActiveApiKey();
+            if (apiKey) {
+                syncAllApiKeyInputs(apiKey);
+                if (typeof callback === 'function') callback(apiKey);
+                return true;
+            }
+
+            pendingApiKeyCallback = callback;
+            openApiKeyModal();
+            return false;
+        }
+
+        function openApiKeyModal() {
+            const savedProvider = localStorage.getItem('epub_provider') || document.getElementById('api-provider')?.value || 'gemini';
+            const savedModel = localStorage.getItem('epub_model') || document.getElementById('api-model')?.value;
+            const currentKey = getActiveApiKey();
+
+            const providerSelect = document.getElementById('quick-api-provider');
+            if (providerSelect) providerSelect.value = savedProvider;
+            updateQuickModelOptions(savedProvider, savedModel);
+
+            const keyInput = document.getElementById('quick-api-key-input');
+            if (keyInput) keyInput.value = currentKey;
+
+            updateQuickApiLink(savedProvider);
+            openModal('modal-quick-apikey');
+            setTimeout(() => {
+                if (keyInput) keyInput.focus();
+            }, 120);
+        }
+
+        function updateQuickModelOptions(provider, preferredModel) {
+            const modelSelect = document.getElementById('quick-api-model');
+            if (!modelSelect) return;
+            modelSelect.innerHTML = '';
+
+            const options = MODEL_MAP[provider] || MODEL_MAP.gemini;
+            options.forEach(opt => {
+                const el = document.createElement('option');
+                el.value = opt.val;
+                el.innerText = opt.text;
+                modelSelect.appendChild(el);
+            });
+
+            if (preferredModel) {
+                modelSelect.value = preferredModel;
+            }
+        }
+
+        function syncQuickProvider(provider) {
+            updateQuickModelOptions(provider);
+            updateQuickApiLink(provider);
+        }
+
+        function syncQuickModel(model) {
+            // Model synced on save
+        }
+
+        function updateQuickApiLink(provider) {
+            const link = document.getElementById('quick-api-get-link');
+            if (!link) return;
+            if (provider === 'gemini') {
+                link.href = 'https://aistudio.google.com/app/apikey';
+                link.innerHTML = '<i class="fa-solid fa-arrow-up-right-from-square"></i> Lấy Gemini API Key miễn phí';
+                link.style.display = 'inline-flex';
+            } else if (provider === 'anthropic') {
+                link.href = 'https://console.anthropic.com/settings/keys';
+                link.innerHTML = '<i class="fa-solid fa-arrow-up-right-from-square"></i> Lấy Claude API Key';
+                link.style.display = 'inline-flex';
+            } else {
+                link.style.display = 'none';
+            }
+        }
+
+        function toggleQuickApiKeyVisibility() {
+            const input = document.getElementById('quick-api-key-input');
+            const eye = document.getElementById('quick-api-key-eye');
+            if (!input || !eye) return;
+
+            if (input.type === 'password') {
+                input.type = 'text';
+                eye.className = 'fa-solid fa-eye-slash';
+            } else {
+                input.type = 'password';
+                eye.className = 'fa-solid fa-eye';
+            }
+        }
+
+        function saveAndApplyQuickApiKey() {
+            const keyInput = document.getElementById('quick-api-key-input');
+            const providerSelect = document.getElementById('quick-api-provider');
+            const modelSelect = document.getElementById('quick-api-model');
+
+            const key = (keyInput ? keyInput.value : '').trim();
+            const provider = providerSelect ? providerSelect.value : 'gemini';
+            const model = modelSelect ? modelSelect.value : '';
+
+            if (!key) {
+                showToast("Vui lòng nhập API Key trước khi tiếp tục!", "error");
+                if (keyInput) keyInput.focus();
+                return;
+            }
+
+            localStorage.setItem('epub_provider', provider);
+            localStorage.setItem('epub_model', model);
+
+            // Sync to main header inputs
+            const mainProvider = document.getElementById('api-provider');
+            if (mainProvider) {
+                mainProvider.value = provider;
+                updateModelOptions(model);
+            }
+
+            syncAllApiKeyInputs(key);
+            closeModal('modal-quick-apikey');
+            showToast("✓ Đã áp dụng API Key thành công!", "success");
+
+            if (typeof pendingApiKeyCallback === 'function') {
+                const cb = pendingApiKeyCallback;
+                pendingApiKeyCallback = null;
+                cb(key);
+            }
+        }
+
+        function syncAllApiKeyInputs(key) {
+            const mainKey = document.getElementById('api-key-input');
+            if (mainKey && mainKey.value !== key) mainKey.value = key;
+
+            const quickKey = document.getElementById('quick-api-key-input');
+            if (quickKey && quickKey.value !== key) quickKey.value = key;
+
+            const detailKey = document.getElementById('detail-api-key-input');
+            if (detailKey && detailKey.value !== key) detailKey.value = key;
+        }
+
+        function syncFromDetailApiKey(val) {
+            const key = (val || '').trim();
+            if (key) {
+                syncAllApiKeyInputs(key);
+                showToast("✓ Đã cập nhật API Key!", "info");
+            }
+        }
+
         window.addEventListener('DOMContentLoaded', async () => {
             const session = await window.EpubAuth.guard();
             if (!session) return;
             document.getElementById('logout-button')?.addEventListener('click', async () => { await window.EpubAuth.signOut(); window.location.replace('/login'); });
             const savedProvider = localStorage.getItem('epub_provider') || 'gemini';
-            const savedKey = '';
             const savedModel = localStorage.getItem('epub_model');
             const savedBackend = '';
 
             document.getElementById('api-provider').value = savedProvider;
-            document.getElementById('api-key-input').value = savedKey;
             if (document.getElementById('backend-url-input')) {
                 document.getElementById('backend-url-input').value = savedBackend;
             }
@@ -1944,6 +2162,9 @@
             const provider = document.getElementById('api-provider').value;
             const model = document.getElementById('api-model').value;
 
+            if (key) {
+                syncAllApiKeyInputs(key);
+            }
             localStorage.setItem('epub_provider', provider);
             localStorage.setItem('epub_model', model);
         }
@@ -1974,59 +2195,54 @@
                 return;
             }
 
-            const apiKey = document.getElementById('api-key-input').value.trim();
-            const provider = document.getElementById('api-provider').value;
-            const model = document.getElementById('api-model').value;
+            ensureApiKey(async (apiKey) => {
+                const provider = document.getElementById('api-provider').value;
+                const model = document.getElementById('api-model').value;
 
-            if (!apiKey) {
-                alert("Vui lòng nhập API Key (Google Gemini hoặc Anthropic Claude) ở thanh cấu hình phía trên!");
-                document.getElementById('api-key-input').focus();
-                return;
-            }
+                const btn = document.getElementById('btn-translate-text');
+                const outArea = document.getElementById('translated-text');
+                
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fa-solid fa-spinner spinner"></i> Đang dịch AI...';
+                outArea.value = `Hệ thống đang dịch qua model ${model}...`;
 
-            const btn = document.getElementById('btn-translate-text');
-            const outArea = document.getElementById('translated-text');
-            
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fa-solid fa-spinner spinner"></i> Đang dịch AI...';
-            outArea.value = `Hệ thống đang dịch qua model ${model}...`;
+                const novelId = document.getElementById('paste-novel-id').value.trim() || undefined;
 
-            const novelId = document.getElementById('paste-novel-id').value.trim() || undefined;
+                try {
+                    const response = await fetch(apiUrl('/api/v1/translate/text'), {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-API-Key': apiKey,
+                            'X-Provider': provider,
+                            'X-Model': model
+                        },
+                        body: JSON.stringify({
+                            text: srcText,
+                            novel_id: novelId,
+                            api_key: apiKey,
+                            provider: provider,
+                            model: model
+                        })
+                    });
 
-            try {
-                const response = await fetch(apiUrl('/api/v1/translate/text'), {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-API-Key': apiKey,
-                        'X-Provider': provider,
-                        'X-Model': model
-                    },
-                    body: JSON.stringify({
-                        text: srcText,
-                        novel_id: novelId,
-                        api_key: apiKey,
-                        provider: provider,
-                        model: model
-                    })
-                });
+                    if (!response.ok) {
+                        const err = await response.json();
+                        throw new Error(err.detail || "Lỗi khi gọi API dịch");
+                    }
 
-                if (!response.ok) {
-                    const err = await response.json();
-                    throw new Error(err.detail || "Lỗi khi gọi API dịch");
+                    const data = await response.json();
+                    outArea.value = data.translated_text;
+
+                    renderBookBible(data.book_bible);
+                } catch (err) {
+                    alert("Lỗi: " + err.message);
+                    outArea.value = "[Lỗi thực thi dịch: " + err.message + "]";
+                } finally {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fa-solid fa-bolt"></i> Dịch Thuần Việt';
                 }
-
-                const data = await response.json();
-                outArea.value = data.translated_text;
-
-                renderBookBible(data.book_bible);
-            } catch (err) {
-                alert("Lỗi: " + err.message);
-                outArea.value = "[Lỗi thực thi dịch: " + err.message + "]";
-            } finally {
-                btn.disabled = false;
-                btn.innerHTML = '<i class="fa-solid fa-bolt"></i> Dịch Thuần Việt';
-            }
+            });
         }
 
         function renderBookBible(bible) {
@@ -2065,15 +2281,9 @@
         async function startFileTranslation() {
             if (!currentFile) return;
 
-            const apiKey = document.getElementById('api-key-input').value.trim();
-            const provider = document.getElementById('api-provider').value;
-            const model = document.getElementById('api-model').value;
-
-            if (!apiKey) {
-                alert("Vui lòng nhập API Key ở thanh cấu hình phía trên trước khi bắt đầu dịch file!");
-                document.getElementById('api-key-input').focus();
-                return;
-            }
+            ensureApiKey(async (apiKey) => {
+                const provider = document.getElementById('api-provider').value;
+                const model = document.getElementById('api-model').value;
 
             const btn = document.getElementById('btn-start-file-job');
             btn.disabled = true;
@@ -2106,6 +2316,7 @@
                 alert("Lỗi: " + err.message);
                 btn.disabled = false;
             }
+            });
         }
 
         function pollJobStatus(jobId) {
@@ -2734,6 +2945,10 @@
                 const btnToggle = document.getElementById('btn-toggle-bible-tags');
                 if (btnToggle) btnToggle.innerHTML = '<i class="fa-solid fa-tags"></i> Xem từ điển';
 
+                // Sync API Key input in detail modal
+                const detailApiKeyInput = document.getElementById('detail-api-key-input');
+                if (detailApiKeyInput) detailApiKeyInput.value = getActiveApiKey();
+
                 // Render Chapters Table
                 if (novel.chapters.length === 0) {
                     document.getElementById('detail-chapters-tbody').innerHTML = '<tr><td colspan="6" style="padding:1.5rem; text-align:center; color:var(--text-sub);">Chưa có chương nào trong kho. Hãy thêm chương mới ở khung phía trên!</td></tr>';
@@ -2846,47 +3061,42 @@
         async function scanCurrentNovelCharacters() {
             if (!currentNovelId) return;
 
-            const apiKey = document.getElementById('api-key-input').value.trim();
-            const provider = document.getElementById('api-provider').value;
-            const model = document.getElementById('api-model').value;
+            ensureApiKey(async (apiKey) => {
+                const provider = document.getElementById('api-provider').value;
+                const model = document.getElementById('api-model').value;
 
-            if (!apiKey) {
-                alert("Vui lòng nhập API Key ở thanh cấu hình phía trên trước khi quét nhân vật!");
-                document.getElementById('api-key-input').focus();
-                return;
-            }
+                const btn = document.getElementById('btn-scan-novel-chars');
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fa-solid fa-spinner spinner"></i> Đang phân tích...';
 
-            const btn = document.getElementById('btn-scan-novel-chars');
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fa-solid fa-spinner spinner"></i> Đang phân tích...';
+                try {
+                    const res = await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(currentNovelId)}/scan-characters?max_chapters=5`), {
+                        method: 'POST',
+                        headers: {
+                            'X-API-Key': apiKey,
+                            'X-Provider': provider,
+                            'X-Model': model
+                        }
+                    });
 
-            try {
-                const res = await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(currentNovelId)}/scan-characters?max_chapters=5`), {
-                    method: 'POST',
-                    headers: {
-                        'X-API-Key': apiKey,
-                        'X-Provider': provider,
-                        'X-Model': model
+                    if (!res.ok) {
+                        const err = await res.json();
+                        throw new Error(err.detail || "Quét nhân vật thất bại");
                     }
-                });
 
-                if (!res.ok) {
-                    const err = await res.json();
-                    throw new Error(err.detail || "Quét nhân vật thất bại");
+                    // Invalidate bible & snapshot cache
+                    apiCache.invalidatePattern(`/api/v1/library/novels/${encodeURIComponent(currentNovelId)}/bible`);
+                    apiCache.invalidatePattern('character-snapshot');
+
+                    showToast("Đã quét và trích xuất thành công tiến trình nhân vật vào Book Bible!", "success");
+                    loadNovelBible(currentNovelId, true);
+                } catch (err) {
+                    alert("Lỗi: " + err.message);
+                } finally {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> ⚡ Quét Nhân Vật Tự Động';
                 }
-
-                // Invalidate bible & snapshot cache
-                apiCache.invalidatePattern(`/api/v1/library/novels/${encodeURIComponent(currentNovelId)}/bible`);
-                apiCache.invalidatePattern('character-snapshot');
-
-                alert("Đã quét và trích xuất thành công tiến trình nhân vật vào Book Bible!");
-                loadNovelBible(currentNovelId, true);
-            } catch (err) {
-                alert("Lỗi: " + err.message);
-            } finally {
-                btn.disabled = false;
-                btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> ⚡ Quét Nhân Vật Tự Động';
-            }
+            });
         }
 
         function openSnapshotModal() {
@@ -3051,42 +3261,37 @@
         }
 
         async function triggerTranslateChapter(novelId, chapterIndex) {
-            const apiKey = document.getElementById('api-key-input').value.trim();
-            const provider = document.getElementById('api-provider').value;
-            const model = document.getElementById('api-model').value;
+            ensureApiKey(async (apiKey) => {
+                const provider = document.getElementById('api-provider').value;
+                const model = document.getElementById('api-model').value;
 
-            if (!apiKey) {
-                alert("Vui lòng nhập API Key ở thanh cấu hình phía trên trước khi dịch!");
-                document.getElementById('api-key-input').focus();
-                return;
-            }
+                // Find chapter title from current loaded novel
+                let chapterTitle = `Chương ${chapterIndex}`;
+                if (currentNovelData && currentNovelData.chapters) {
+                    const ch = currentNovelData.chapters.find(c => c.chapter_index === chapterIndex);
+                    if (ch && ch.chapter_title) chapterTitle = ch.chapter_title;
+                }
 
-            // Find chapter title from current loaded novel
-            let chapterTitle = `Chương ${chapterIndex}`;
-            if (currentNovelData && currentNovelData.chapters) {
-                const ch = currentNovelData.chapters.find(c => c.chapter_index === chapterIndex);
-                if (ch && ch.chapter_title) chapterTitle = ch.chapter_title;
-            }
+                // Setup and Open Modal in Loading State
+                document.getElementById('retranslate-modal-title').innerHTML = `<i class="fa-solid fa-rotate-right" style="color:var(--accent);"></i> Dịch Lại: ${escapeHtml(chapterTitle)}`;
+                document.getElementById('retranslate-model-badge').innerHTML = `<i class="fa-solid fa-robot"></i> ${escapeHtml(provider.toUpperCase())} (${escapeHtml(model || 'Default')})`;
+                document.getElementById('retranslate-loading-view').style.display = 'flex';
+                document.getElementById('retranslate-diff-view').style.display = 'none';
+                document.getElementById('modal-chapter-retranslate-diff').classList.add('active');
 
-            // Setup and Open Modal in Loading State
-            document.getElementById('retranslate-modal-title').innerHTML = `<i class="fa-solid fa-rotate-right" style="color:var(--accent);"></i> Dịch Lại: ${escapeHtml(chapterTitle)}`;
-            document.getElementById('retranslate-model-badge').innerHTML = `<i class="fa-solid fa-robot"></i> ${escapeHtml(provider.toUpperCase())} (${escapeHtml(model || 'Default')})`;
-            document.getElementById('retranslate-loading-view').style.display = 'flex';
-            document.getElementById('retranslate-diff-view').style.display = 'none';
-            document.getElementById('modal-chapter-retranslate-diff').classList.add('active');
+                startRetranslateTimer();
 
-            startRetranslateTimer();
+                currentRetranslateData = {
+                    novelId,
+                    chapterIndex,
+                    chapterTitle,
+                    provider,
+                    apiKey,
+                    model
+                };
 
-            currentRetranslateData = {
-                novelId,
-                chapterIndex,
-                chapterTitle,
-                provider,
-                apiKey,
-                model
-            };
-
-            await runChapterRetranslateRequest();
+                await runChapterRetranslateRequest();
+            });
         }
 
         async function runChapterRetranslateRequest() {
@@ -3380,50 +3585,45 @@
         }
 
         async function startBatchTranslation() {
-            const apiKey = document.getElementById('api-key-input').value.trim();
-            const provider = document.getElementById('api-provider').value;
-            const model = document.getElementById('api-model').value;
-
-            if (!apiKey) {
-                alert("Vui lòng nhập API Key ở thanh cấu hình phía trên trước khi dịch!");
-                document.getElementById('api-key-input').focus();
-                return;
-            }
-
             if (!currentNovelData || selectedChapterIndexes.size === 0) {
                 alert("Vui lòng chọn ít nhất 1 chương để dịch!");
                 return;
             }
 
-            const sortedIndexes = Array.from(selectedChapterIndexes).sort((a, b) => a - b);
-            batchTranslateQueue = sortedIndexes.map(idx => {
-                const ch = currentNovelData.chapters.find(c => c.chapter_index === idx);
-                return {
-                    chapterIndex: idx,
-                    chapterTitle: ch ? ch.chapter_title : `Chương ${idx}`,
-                    status: 'pending',
-                    wordCount: 0,
-                    error: null,
-                    durationSeconds: 0
-                };
+            ensureApiKey(async (apiKey) => {
+                const provider = document.getElementById('api-provider').value;
+                const model = document.getElementById('api-model').value;
+
+                const sortedIndexes = Array.from(selectedChapterIndexes).sort((a, b) => a - b);
+                batchTranslateQueue = sortedIndexes.map(idx => {
+                    const ch = currentNovelData.chapters.find(c => c.chapter_index === idx);
+                    return {
+                        chapterIndex: idx,
+                        chapterTitle: ch ? ch.chapter_title : `Chương ${idx}`,
+                        status: 'pending',
+                        wordCount: 0,
+                        error: null,
+                        durationSeconds: 0
+                    };
+                });
+
+                // UI Init
+                document.getElementById('batch-modal-title').innerHTML = `<i class="fa-solid fa-bolt" style="color:var(--accent);"></i> Tiến Trình Dịch Hàng Loạt (${batchTranslateQueue.length} chương)`;
+                document.getElementById('batch-provider-badge').innerHTML = `<i class="fa-solid fa-robot"></i> ${escapeHtml(provider.toUpperCase())} (${escapeHtml(model || 'Default')})`;
+                document.getElementById('btn-batch-abort').style.display = 'inline-block';
+                document.getElementById('btn-batch-done-close').style.display = 'none';
+                document.getElementById('btn-batch-download-epub').style.display = 'none';
+                document.getElementById('batch-rebuild-status-box').style.display = 'none';
+
+                renderBatchQueueTable();
+                updateBatchProgressBar(0, batchTranslateQueue.length);
+
+                document.getElementById('modal-batch-translate-progress').classList.add('active');
+                startBatchTimer();
+                batchTranslateRunning = true;
+
+                await runBatchTranslateQueueLoop(apiKey, provider, model);
             });
-
-            // UI Init
-            document.getElementById('batch-modal-title').innerHTML = `<i class="fa-solid fa-bolt" style="color:var(--accent);"></i> Tiến Trình Dịch Hàng Loạt (${batchTranslateQueue.length} chương)`;
-            document.getElementById('batch-provider-badge').innerHTML = `<i class="fa-solid fa-robot"></i> ${escapeHtml(provider.toUpperCase())} (${escapeHtml(model || 'Default')})`;
-            document.getElementById('btn-batch-abort').style.display = 'inline-block';
-            document.getElementById('btn-batch-done-close').style.display = 'none';
-            document.getElementById('btn-batch-download-epub').style.display = 'none';
-            document.getElementById('batch-rebuild-status-box').style.display = 'none';
-
-            renderBatchQueueTable();
-            updateBatchProgressBar(0, batchTranslateQueue.length);
-
-            document.getElementById('modal-batch-translate-progress').classList.add('active');
-            startBatchTimer();
-            batchTranslateRunning = true;
-
-            await runBatchTranslateQueueLoop(apiKey, provider, model);
         }
 
         function renderBatchQueueTable() {

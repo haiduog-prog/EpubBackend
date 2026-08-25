@@ -917,7 +917,7 @@
                         <p style="color:var(--text-sub); font-size:0.85rem;">Quản lý các bộ tiểu thuyết, từng chương, tự động dịch và đóng gói EPUB.</p>
                     </div>
                     <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
-                        <button class="btn btn-secondary" onclick="loadLibraryNovels()" style="padding:0.5rem 0.9rem; font-size:0.85rem;">
+                        <button class="btn btn-secondary" onclick="loadLibraryNovels(true)" style="padding:0.5rem 0.9rem; font-size:0.85rem;">
                             <i class="fa-solid fa-rotate"></i> Làm Mới
                         </button>
                         <button class="btn btn-secondary" onclick="openImportEpubModal()" style="padding:0.5rem 1rem; font-size:0.85rem; background:rgba(99,102,241,0.2); border:1px solid rgba(99,102,241,0.4);">
@@ -942,7 +942,7 @@
             <div class="card" style="margin-bottom:1.5rem;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
                     <div class="card-title" style="margin-bottom:0;"><i class="fa-solid fa-database"></i> Quản Lý Dữ Liệu Đã Lưu (Database Inspector)</div>
-                    <button class="btn btn-secondary" onclick="loadDatabaseSummary()" style="padding:0.4rem 0.8rem; font-size:0.85rem;">
+                    <button class="btn btn-secondary" onclick="loadDatabaseSummary(true)" style="padding:0.4rem 0.8rem; font-size:0.85rem;">
                         <i class="fa-solid fa-rotate"></i> Làm mới Dữ liệu
                     </button>
                 </div>
@@ -1796,11 +1796,90 @@
             }
         }
 
+        // ==========================================
+        // CLIENT-SIDE API & ASSET CACHE MANAGER
+        // ==========================================
+        const coverBlobCache = new Map();
+
+        const apiCache = {
+            _store: new Map(),
+
+            get(key) {
+                const item = this._store.get(key);
+                if (!item) return null;
+                if (Date.now() < item.expiresAt) {
+                    return item.data;
+                }
+                this._store.delete(key);
+                return null;
+            },
+
+            set(key, data, ttlMs = 60000) {
+                this._store.set(key, {
+                    data: data,
+                    expiresAt: Date.now() + ttlMs,
+                    savedAt: Date.now()
+                });
+            },
+
+            invalidate(key) {
+                this._store.delete(key);
+            },
+
+            invalidatePattern(pattern) {
+                for (const key of this._store.keys()) {
+                    if (typeof pattern === 'string' && key.includes(pattern)) {
+                        this._store.delete(key);
+                    } else if (pattern instanceof RegExp && pattern.test(key)) {
+                        this._store.delete(key);
+                    }
+                }
+            },
+
+            clear() {
+                this._store.clear();
+            }
+        };
+
+        async function fetchWithCache(url, options = {}, ttlMs = 60000, forceRefresh = false) {
+            const cacheKey = typeof url === 'string' ? url : url.toString();
+
+            if (!forceRefresh) {
+                const cachedData = apiCache.get(cacheKey);
+                if (cachedData !== null) {
+                    return cachedData;
+                }
+            }
+
+            const res = await fetch(url, options);
+            if (!res.ok) {
+                let errorMsg = `HTTP ${res.status}`;
+                try {
+                    const err = await res.json();
+                    if (err && err.detail) errorMsg = err.detail;
+                } catch (_) {}
+                throw new Error(errorMsg);
+            }
+            const data = await res.json();
+            apiCache.set(cacheKey, data, ttlMs);
+            return data;
+        }
+
         async function loadPrivateCover(image, url, fallbackHtml) {
+            if (!url) {
+                if (image && image.parentNode) image.outerHTML = fallbackHtml || '<div class="novel-cover"><i class="fa-solid fa-book"></i></div>';
+                return;
+            }
             try {
+                if (coverBlobCache.has(url)) {
+                    image.src = coverBlobCache.get(url);
+                    return;
+                }
                 const response = await window.EpubAuth.authFetch(url, { headers: { Accept: 'image/*' } });
                 if (!response.ok) throw new Error('cover');
-                image.src = URL.createObjectURL(await response.blob());
+                const objectUrl = URL.createObjectURL(await response.blob());
+                coverBlobCache.set(url, objectUrl);
+                image.src = objectUrl;
             } catch (_) {
                 if (image && image.parentNode) image.outerHTML = fallbackHtml || '<div class="novel-cover"><i class="fa-solid fa-book"></i></div>';
             }
@@ -2243,11 +2322,15 @@
                     showToast(data.message || `Đã xóa thành công ${data.deleted_count} bộ truyện!`, "success");
                 }
 
+                // Invalidate all novel and library caches
+                apiCache.clear();
+                coverBlobCache.clear();
+
                 closeModal('modal-confirm-delete');
                 closeModal('modal-novel-detail');
-                loadLibraryNovels();
-                loadDatabaseSummary();
-                if (typeof loadCpBooks === 'function') loadCpBooks();
+                loadLibraryNovels(true);
+                loadDatabaseSummary(true);
+                if (typeof loadCpBooks === 'function') loadCpBooks(true);
             } catch (err) {
                 showToast("Lỗi xóa truyện: " + err.message, "error");
             } finally {
@@ -2263,29 +2346,34 @@
             confirmDeleteNovel(currentNovelId, title, parseInt(chapters, 10));
         }
 
-        async function loadDatabaseSummary() {
+        async function loadDatabaseSummary(forceRefresh = false) {
             const jobsBody = document.getElementById('db-jobs-list');
             const biblesBox = document.getElementById('db-bibles-container');
             const novelsBody = document.getElementById('db-novels-list');
 
-            jobsBody.innerHTML = '<tr><td colspan="6" style="padding:1rem; text-align:center; color:var(--text-sub);"><i class="fa-solid fa-spinner spinner"></i> Đang tải...</td></tr>';
-            biblesBox.innerHTML = '<span style="color:var(--text-sub); font-size:0.85rem;"><i class="fa-solid fa-spinner spinner"></i> Đang tải...</span>';
-            if (novelsBody) novelsBody.innerHTML = '<tr><td colspan="6" style="padding:1.5rem; text-align:center; color:var(--text-sub);"><i class="fa-solid fa-spinner spinner"></i> Đang tải danh sách truyện...</td></tr>';
+            if (forceRefresh) {
+                apiCache.invalidatePattern('/api/v1/admin/storage/summary');
+                apiCache.invalidatePattern('/api/v1/library/novels');
+                jobsBody.innerHTML = '<tr><td colspan="6" style="padding:1rem; text-align:center; color:var(--text-sub);"><i class="fa-solid fa-spinner spinner"></i> Đang tải...</td></tr>';
+                biblesBox.innerHTML = '<span style="color:var(--text-sub); font-size:0.85rem;"><i class="fa-solid fa-spinner spinner"></i> Đang tải...</span>';
+                if (novelsBody) novelsBody.innerHTML = '<tr><td colspan="6" style="padding:1.5rem; text-align:center; color:var(--text-sub);"><i class="fa-solid fa-spinner spinner"></i> Đang tải danh sách truyện...</td></tr>';
+            }
 
             try {
-                const [storageRes, novelsRes] = await Promise.all([
-                    fetch(apiUrl('/api/v1/admin/storage/summary')),
-                    fetch(apiUrl('/api/v1/library/novels'))
+                const [storageData, novels] = await Promise.all([
+                    fetchWithCache(apiUrl('/api/v1/admin/storage/summary'), {}, 60000, forceRefresh),
+                    fetchWithCache(apiUrl('/api/v1/library/novels'), {}, 60000, forceRefresh)
                 ]);
 
-                if (novelsRes.ok) {
-                    const novels = await novelsRes.json();
+                if (novels) {
                     renderDbNovelsTable(novels);
                 }
 
-                if (!storageRes.ok) throw new Error("Không thể lấy dữ liệu storage");
-                
-                const data = await storageRes.json();
+                if (forceRefresh) {
+                    showToast("✓ Đã làm mới dữ liệu!", "success");
+                }
+
+                const data = storageData || {};
                 const jobs = data.jobs || [];
                 const bibles = data.bibles || {};
 
@@ -2502,14 +2590,20 @@
             }
         }
 
-        async function loadLibraryNovels() {
+        async function loadLibraryNovels(forceRefresh = false) {
             const grid = document.getElementById('library-novels-grid');
-            grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:2rem; color:var(--text-sub);"><i class="fa-solid fa-spinner spinner"></i> Đang tải danh sách truyện từ kho lưu trữ...</div>';
+            if (forceRefresh) {
+                apiCache.invalidatePattern('/api/v1/library/novels');
+                grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:2rem; color:var(--text-sub);"><i class="fa-solid fa-spinner spinner"></i> Đang làm mới danh sách truyện...</div>';
+            } else if (!grid.querySelector('.novel-card')) {
+                grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:2rem; color:var(--text-sub);"><i class="fa-solid fa-spinner spinner"></i> Đang tải danh sách truyện từ kho lưu trữ...</div>';
+            }
 
             try {
-                const res = await fetch(apiUrl('/api/v1/library/novels'));
-                if (!res.ok) throw new Error("Không thể tải danh sách truyện");
-                const novels = await res.json();
+                const novels = await fetchWithCache(apiUrl('/api/v1/library/novels'), {}, 60000, forceRefresh);
+                if (forceRefresh) {
+                    showToast("✓ Đã làm mới kho truyện!", "success");
+                }
 
                 if (novels.length === 0) {
                     grid.innerHTML = `<div style="grid-column:1/-1; text-align:center; padding:3rem; color:var(--text-sub);">
@@ -2569,18 +2663,18 @@
             }
         }
 
-        async function openNovelDetail(novelId) {
+        async function openNovelDetail(novelId, forceRefresh = false) {
             currentNovelId = novelId;
             const modal = document.getElementById('modal-novel-detail');
             modal.classList.add('active');
 
-            document.getElementById('detail-novel-title').innerText = 'Đang tải...';
-            document.getElementById('detail-chapters-tbody').innerHTML = '<tr><td colspan="5" style="padding:1.5rem; text-align:center; color:var(--text-sub);"><i class="fa-solid fa-spinner spinner"></i> Đang tải danh sách chương...</td></tr>';
+            if (forceRefresh || !currentNovelData || currentNovelData.novel_id !== novelId) {
+                document.getElementById('detail-novel-title').innerText = 'Đang tải...';
+                document.getElementById('detail-chapters-tbody').innerHTML = '<tr><td colspan="6" style="padding:1.5rem; text-align:center; color:var(--text-sub);"><i class="fa-solid fa-spinner spinner"></i> Đang tải danh sách chương...</td></tr>';
+            }
 
             try {
-                const res = await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}`));
-                if (!res.ok) throw new Error("Không thể tải thông tin truyện");
-                const novel = await res.json();
+                const novel = await fetchWithCache(apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}`), {}, 60000, forceRefresh);
                 currentNovelData = novel;
 
                 document.getElementById('detail-novel-title').innerText = novel.title;
@@ -2677,14 +2771,15 @@
             }
         }
 
-        async function loadNovelBible(novelId) {
+        async function loadNovelBible(novelId, forceRefresh = false) {
             const container = document.getElementById('detail-bible-container');
-            container.innerHTML = '<span style="color:var(--text-sub); font-size:0.85rem;"><i class="fa-solid fa-spinner spinner"></i> Đang tải dữ liệu nhân vật...</span>';
+            if (forceRefresh) {
+                apiCache.invalidatePattern(`/api/v1/library/novels/${encodeURIComponent(novelId)}/bible`);
+                container.innerHTML = '<span style="color:var(--text-sub); font-size:0.85rem;"><i class="fa-solid fa-spinner spinner"></i> Đang làm mới dữ liệu nhân vật...</span>';
+            }
 
             try {
-                const res = await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/bible`));
-                if (!res.ok) throw new Error("Không thể tải Book Bible");
-                const bible = await res.json();
+                const bible = await fetchWithCache(apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/bible`), {}, 120000, forceRefresh);
 
                 const chars = bible.characters || [];
                 const terms = bible.terms || [];
@@ -2742,8 +2837,12 @@
                     throw new Error(err.detail || "Quét nhân vật thất bại");
                 }
 
+                // Invalidate bible & snapshot cache
+                apiCache.invalidatePattern(`/api/v1/library/novels/${encodeURIComponent(currentNovelId)}/bible`);
+                apiCache.invalidatePattern('character-snapshot');
+
                 alert("Đã quét và trích xuất thành công tiến trình nhân vật vào Book Bible!");
-                loadNovelBible(currentNovelId);
+                loadNovelBible(currentNovelId, true);
             } catch (err) {
                 alert("Lỗi: " + err.message);
             } finally {
@@ -2758,17 +2857,22 @@
             fetchAndRenderSnapshot();
         }
 
-        async function fetchAndRenderSnapshot() {
+        async function fetchAndRenderSnapshot(forceRefresh = false) {
             if (!currentNovelId) return;
             const chIdx = document.getElementById('snapshot-input-chapter').value || 1;
             const container = document.getElementById('snapshot-results-container');
 
-            container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-sub);"><i class="fa-solid fa-spinner spinner"></i> Đang tải dữ liệu hồ sơ nhân vật...</div>';
+            if (forceRefresh) {
+                container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-sub);"><i class="fa-solid fa-spinner spinner"></i> Đang làm mới dữ liệu hồ sơ nhân vật...</div>';
+            }
 
             try {
-                const res = await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(currentNovelId)}/chapters/${chIdx}/character-snapshot`));
-                if (!res.ok) throw new Error("Không thể tải trạng thái nhân vật");
-                const data = await res.json();
+                const data = await fetchWithCache(
+                    apiUrl(`/api/v1/library/novels/${encodeURIComponent(currentNovelId)}/chapters/${chIdx}/character-snapshot`),
+                    {},
+                    120000,
+                    forceRefresh
+                );
 
                 const chars = data.characters || [];
                 if (chars.length === 0) {
@@ -3411,28 +3515,36 @@
             exportNovelEpub(currentNovelId, false);
         }
 
-        async function openChapterReader(novelId, chapterIndex) {
+        async function openChapterReader(novelId, chapterIndex, forceRefresh = false) {
             document.getElementById('reader-title').innerText = `Đọc So Sánh: Chương ${chapterIndex}`;
             document.getElementById('reader-orig-text').value = 'Đang tải nội dung gốc...';
             document.getElementById('reader-trans-text').value = 'Đang tải bản dịch...';
             document.getElementById('modal-chapter-reader').classList.add('active');
 
             try {
-                // Fetch original
-                const resOrig = await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/chapters/${chapterIndex}/content?version=original`));
-                if (resOrig.ok) {
-                    const dataOrig = await resOrig.json();
+                // Fetch original with cache (5 min TTL)
+                try {
+                    const dataOrig = await fetchWithCache(
+                        apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/chapters/${chapterIndex}/content?version=original`),
+                        {},
+                        300000,
+                        forceRefresh
+                    );
                     document.getElementById('reader-orig-text').value = dataOrig.content || '';
-                } else {
+                } catch (_) {
                     document.getElementById('reader-orig-text').value = 'Chưa có nội dung gốc.';
                 }
 
-                // Fetch translated
-                const resTrans = await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/chapters/${chapterIndex}/content?version=translated`));
-                if (resTrans.ok) {
-                    const dataTrans = await resTrans.json();
+                // Fetch translated with cache (5 min TTL)
+                try {
+                    const dataTrans = await fetchWithCache(
+                        apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/chapters/${chapterIndex}/content?version=translated`),
+                        {},
+                        300000,
+                        forceRefresh
+                    );
                     document.getElementById('reader-trans-text').value = dataTrans.content || '';
-                } else {
+                } catch (_) {
                     document.getElementById('reader-trans-text').value = 'Chưa có bản dịch cho chương này. Hãy bấm nút "Dịch ngay" để dịch!';
                 }
             } catch (err) {
@@ -3483,14 +3595,11 @@
             ]);
         }
 
-        async function loadCpSettings() {
+        async function loadCpSettings(forceRefresh = false) {
             try {
-                const res = await fetch(apiUrl('/api/v1/book-bible/settings'));
-                if (res.ok) {
-                    const data = await res.json();
-                    cpAutoApprove = !!data.auto_approve;
-                    renderAutoApproveToggle();
-                }
+                const data = await fetchWithCache(apiUrl('/api/v1/book-bible/settings'), {}, 120000, forceRefresh);
+                cpAutoApprove = !!data.auto_approve;
+                renderAutoApproveToggle();
             } catch (err) {
                 console.error("Failed to load settings:", err);
             }
@@ -3523,6 +3632,7 @@
                 });
                 if (res.ok) {
                     const data = await res.json();
+                    apiCache.invalidatePattern('/api/v1/book-bible/settings');
                     cpAutoApprove = !!data.auto_approve;
                     renderAutoApproveToggle();
                 }
@@ -3531,41 +3641,39 @@
             }
         }
 
-        async function loadCpBooks() {
+        async function loadCpBooks(forceRefresh = false) {
             const select = document.getElementById('cp-book-select');
             try {
-                const res = await fetch(apiUrl('/api/v1/book-bible/books'));
-                if (res.ok) {
-                    cpBooksCache = await res.json();
-                    if (!cpBooksCache || cpBooksCache.length === 0) {
-                        select.innerHTML = '<option value="">-- Chưa có truyện nào. Bấm "+ Sách Mới" --</option>';
-                        document.getElementById('cp-badge-book-id').innerHTML = '<i class="fa-solid fa-book"></i> Chưa có sách';
-                        document.getElementById('cp-badge-edition').innerHTML = '<i class="fa-solid fa-code-branch"></i> Edition: N/A';
-                        document.getElementById('cp-badge-revision').innerHTML = '<i class="fa-solid fa-clock-rotate-left"></i> Revision: 0';
-                        document.getElementById('cp-badge-events-count').innerHTML = '<i class="fa-solid fa-bolt"></i> 0 sự kiện';
-                        document.getElementById('cp-events-container').innerHTML = `
-                            <div style="text-align:center; padding:2rem; color:var(--text-sub);">
-                                <i class="fa-solid fa-book-open" style="font-size:2rem; margin-bottom:0.75rem; color:#6366f1;"></i>
-                                <p style="font-size:0.9rem; margin-bottom:0.75rem;">Hệ thống chưa có bộ truyện nào trong Book Bible.</p>
-                                <button class="btn" onclick="openCpCreateBookModal()" style="padding:0.4rem 0.9rem; font-size:0.85rem;">
-                                    <i class="fa-solid fa-plus"></i> Bấm để tạo hoặc chọn truyện
-                                </button>
-                            </div>
-                        `;
-                    } else {
-                        select.innerHTML = '<option value="">-- Chọn bộ truyện (' + cpBooksCache.length + ' truyện) --</option>';
-                        cpBooksCache.forEach(b => {
-                            const opt = document.createElement('option');
-                            opt.value = b.book_id;
-                            const evText = b.event_count ? `${b.event_count} sự kiện` : '0 sự kiện';
-                            const revText = `v${b.revision || 0}`;
-                            opt.innerText = `${b.title} (${evText}, phiên bản ${revText})`;
-                            select.appendChild(opt);
-                        });
-                        if (!cpCurrentBookId || !cpBooksCache.find(b => b.book_id === cpCurrentBookId)) {
-                            select.value = cpBooksCache[0].book_id;
-                            await onCpBookSelected();
-                        }
+                const books = await fetchWithCache(apiUrl('/api/v1/book-bible/books'), {}, 60000, forceRefresh);
+                cpBooksCache = books || [];
+                if (!cpBooksCache || cpBooksCache.length === 0) {
+                    select.innerHTML = '<option value="">-- Chưa có truyện nào. Bấm "+ Sách Mới" --</option>';
+                    document.getElementById('cp-badge-book-id').innerHTML = '<i class="fa-solid fa-book"></i> Chưa có sách';
+                    document.getElementById('cp-badge-edition').innerHTML = '<i class="fa-solid fa-code-branch"></i> Edition: N/A';
+                    document.getElementById('cp-badge-revision').innerHTML = '<i class="fa-solid fa-clock-rotate-left"></i> Revision: 0';
+                    document.getElementById('cp-badge-events-count').innerHTML = '<i class="fa-solid fa-bolt"></i> 0 sự kiện';
+                    document.getElementById('cp-events-container').innerHTML = `
+                        <div style="text-align:center; padding:2rem; color:var(--text-sub);">
+                            <i class="fa-solid fa-book-open" style="font-size:2rem; margin-bottom:0.75rem; color:#6366f1;"></i>
+                            <p style="font-size:0.9rem; margin-bottom:0.75rem;">Hệ thống chưa có bộ truyện nào trong Book Bible.</p>
+                            <button class="btn" onclick="openCpCreateBookModal()" style="padding:0.4rem 0.9rem; font-size:0.85rem;">
+                                <i class="fa-solid fa-plus"></i> Bấm để tạo hoặc chọn truyện
+                            </button>
+                        </div>
+                    `;
+                } else {
+                    select.innerHTML = '<option value="">-- Chọn bộ truyện (' + cpBooksCache.length + ' truyện) --</option>';
+                    cpBooksCache.forEach(b => {
+                        const opt = document.createElement('option');
+                        opt.value = b.book_id;
+                        const evText = b.event_count ? `${b.event_count} sự kiện` : '0 sự kiện';
+                        const revText = `v${b.revision || 0}`;
+                        opt.innerText = `${b.title} (${evText}, phiên bản ${revText})`;
+                        select.appendChild(opt);
+                    });
+                    if (!cpCurrentBookId || !cpBooksCache.find(b => b.book_id === cpCurrentBookId)) {
+                        select.value = cpBooksCache[0].book_id;
+                        await onCpBookSelected();
                     }
                 }
             } catch (err) {
@@ -3588,9 +3696,10 @@
                     method: 'DELETE'
                 });
                 if (res.ok) {
+                    apiCache.invalidatePattern('/api/v1/book-bible');
                     alert(`Đã xóa bộ truyện "${bookTitle}" thành công!`);
                     cpCurrentBookId = null;
-                    await loadCpBooks();
+                    await loadCpBooks(true);
                 } else {
                     alert("Lỗi khi xóa bộ truyện!");
                 }
@@ -3607,9 +3716,13 @@
                 const res = await fetch(apiUrl('/api/v1/admin/clean-test-data'), { method: 'POST' });
                 if (res.ok) {
                     const data = await res.json();
+                    apiCache.clear();
+                    coverBlobCache.clear();
                     alert(`Đã dọn dẹp xong! Đã xóa ${data.deleted_count || 0} file rác trên R2 và ${data.deleted_books_from_memory?.length || 0} sách test.`);
                     cpCurrentBookId = null;
-                    await loadCpBooks();
+                    await loadCpBooks(true);
+                    loadLibraryNovels(true);
+                    loadDatabaseSummary(true);
                 } else {
                     alert("Lỗi khi dọn dẹp dữ liệu test!");
                 }
@@ -3843,7 +3956,7 @@
             }, 2000);
         }
 
-        async function loadEventsList() {
+        async function loadEventsList(forceRefresh = false) {
             if (!cpCurrentBookId) return;
 
             const filterStatus = document.getElementById('cp-filter-status').value;
@@ -3855,21 +3968,17 @@
             }
 
             try {
-                const res = await fetch(apiUrl(url));
-                if (res.ok) {
-                    const events = await res.json();
-                    cpEventsCache = events;
-                    
-                    // Update pending count badge
-                    const pendingCountRes = await fetch(apiUrl(`/api/v1/book-bible/events?book_id=${encodeURIComponent(cpCurrentBookId)}&status=pending`));
-                    if (pendingCountRes.ok) {
-                        const pendingEvents = await pendingCountRes.json();
-                        document.getElementById('cp-pending-count').innerText = `${pendingEvents.length} Chờ Duyệt`;
-                        document.getElementById('cp-badge-events-count').innerHTML = `<i class="fa-solid fa-bolt"></i> ${events.length} sự kiện`;
-                    }
+                const events = await fetchWithCache(apiUrl(url), {}, 60000, forceRefresh);
+                cpEventsCache = events || [];
+                
+                // Update pending count badge
+                try {
+                    const pendingEvents = await fetchWithCache(apiUrl(`/api/v1/book-bible/events?book_id=${encodeURIComponent(cpCurrentBookId)}&status=pending`), {}, 60000, forceRefresh);
+                    document.getElementById('cp-pending-count').innerText = `${pendingEvents.length} Chờ Duyệt`;
+                    document.getElementById('cp-badge-events-count').innerHTML = `<i class="fa-solid fa-bolt"></i> ${events.length} sự kiện`;
+                } catch (_) {}
 
-                    renderEventsList(events);
-                }
+                renderEventsList(events);
             } catch (err) {
                 console.error("Failed to load events:", err);
                 container.innerHTML = `<div style="text-align:center; padding:1.5rem; color:#ef4444;">Lỗi tải sự kiện: ${escapeHtml(err.message)}</div>`;
@@ -4026,10 +4135,11 @@
                     throw new Error(err.detail || "Không thể duyệt sự kiện");
                 }
 
+                apiCache.invalidatePattern('/api/v1/book-bible');
                 closeModal('modal-cp-edit-event');
                 await Promise.all([
-                    loadEventsList(),
-                    loadCharacterSnapshot()
+                    loadEventsList(true),
+                    loadCharacterSnapshot(true)
                 ]);
             } catch (err) {
                 alert("Lỗi: " + err.message);
@@ -4063,8 +4173,9 @@
                     throw new Error(err.detail || "Không thể lưu sự kiện");
                 }
 
+                apiCache.invalidatePattern('/api/v1/book-bible');
                 closeModal('modal-cp-edit-event');
-                await loadEventsList();
+                await loadEventsList(true);
             } catch (err) {
                 alert("Lỗi: " + err.message);
             }
@@ -4074,9 +4185,10 @@
             try {
                 const res = await fetch(apiUrl(`/api/v1/book-bible/events/${encodeURIComponent(eventId)}/approve`), { method: 'POST' });
                 if (res.ok) {
+                    apiCache.invalidatePattern('/api/v1/book-bible');
                     await Promise.all([
-                        loadEventsList(),
-                        loadCharacterSnapshot()
+                        loadEventsList(true),
+                        loadCharacterSnapshot(true)
                     ]);
                 }
             } catch (err) {
@@ -4088,9 +4200,10 @@
             try {
                 const res = await fetch(apiUrl(`/api/v1/book-bible/events/${encodeURIComponent(eventId)}/reject`), { method: 'POST' });
                 if (res.ok) {
+                    apiCache.invalidatePattern('/api/v1/book-bible');
                     await Promise.all([
-                        loadEventsList(),
-                        loadCharacterSnapshot()
+                        loadEventsList(true),
+                        loadCharacterSnapshot(true)
                     ]);
                 }
             } catch (err) {
@@ -4110,10 +4223,11 @@
                 });
                 if (res.ok) {
                     const approved = await res.json();
+                    apiCache.invalidatePattern('/api/v1/book-bible');
                     alert(`Đã duyệt thành công ${approved.length} sự kiện!`);
                     await Promise.all([
-                        loadEventsList(),
-                        loadCharacterSnapshot()
+                        loadEventsList(true),
+                        loadCharacterSnapshot(true)
                     ]);
                 }
             } catch (err) {
@@ -4121,23 +4235,24 @@
             }
         }
 
-        async function loadCharacterSnapshot() {
+        async function loadCharacterSnapshot(forceRefresh = false) {
             if (!cpCurrentEditionId) return;
 
             const chapterIndex = parseInt(document.getElementById('cp-snapshot-chapter').value) || 1;
             const container = document.getElementById('cp-snapshot-characters-container');
             const statusBadge = document.getElementById('cp-snapshot-status');
 
-            container.innerHTML = '<div style="text-align:center; padding:1.5rem; color:var(--text-sub);"><i class="fa-solid fa-spinner spinner"></i> Đang tính toán Snapshot...</div>';
+            if (forceRefresh) {
+                container.innerHTML = '<div style="text-align:center; padding:1.5rem; color:var(--text-sub);"><i class="fa-solid fa-spinner spinner"></i> Đang tính toán Snapshot...</div>';
+            }
 
             try {
-                const res = await fetch(apiUrl(`/api/v1/book-bible/editions/${cpCurrentEditionId}/chapters/${chapterIndex}/snapshot`));
-                if (!res.ok) {
-                    const err = await res.json();
-                    throw new Error(err.detail || "Không thể tải snapshot");
-                }
-
-                const data = await res.json();
+                const data = await fetchWithCache(
+                    apiUrl(`/api/v1/book-bible/editions/${cpCurrentEditionId}/chapters/${chapterIndex}/snapshot`),
+                    {},
+                    60000,
+                    forceRefresh
+                );
                 statusBadge.innerText = data.snapshot_status === 'complete' ? 'Complete (Đầy đủ)' : 'Partial (Một phần)';
                 statusBadge.style.color = data.snapshot_status === 'complete' ? '#34d399' : '#fbbf24';
 

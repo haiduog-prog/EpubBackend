@@ -2,7 +2,7 @@ import json
 import logging
 from urllib.parse import quote
 from typing import List, Optional, Union
-from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, Response, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse
 
 from app.config import settings
@@ -113,8 +113,10 @@ def get_import_job_endpoint(job_id: str):
 
 
 @router.get("/novels/{novel_id}/bible", response_model=BookBible)
-def get_novel_bible_endpoint(novel_id: str):
-    return library_service.get_novel_bible(novel_id)
+def get_novel_bible_endpoint(novel_id: str, response: Response):
+    data = library_service.get_novel_bible(novel_id)
+    response.headers["Cache-Control"] = "private, max-age=120"
+    return data
 
 
 @router.post("/novels/{novel_id}/scan-characters", response_model=BookBible)
@@ -267,18 +269,22 @@ async def add_chapter_endpoint(
 def get_chapter_content_endpoint(
     novel_id: str,
     chapter_index: int,
+    response: Response,
     version: str = Query(default="translated", description="'original' hoặc 'translated'"),
 ):
     content = library_service.get_chapter_content(novel_id, chapter_index, version=version)
     if content is None:
         raise HTTPException(status_code=404, detail="Nội dung chương chưa tồn tại.")
+    response.headers["Cache-Control"] = "private, max-age=180"
     return {"novel_id": novel_id, "chapter_index": chapter_index, "version": version, "content": content}
 
 
 @router.get("/novels/{novel_id}/chapters/{chapter_index}/character-snapshot")
-def get_chapter_character_snapshot_endpoint(novel_id: str, chapter_index: int):
+def get_chapter_character_snapshot_endpoint(novel_id: str, chapter_index: int, response: Response):
     try:
-        return library_service.get_character_snapshot_at_chapter(novel_id, chapter_index)
+        data = library_service.get_character_snapshot_at_chapter(novel_id, chapter_index)
+        response.headers["Cache-Control"] = "private, max-age=120"
+        return data
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 

@@ -25,12 +25,14 @@ def _clean_json_str(text: str) -> str:
     if not text:
         return "{}"
     t = text.strip()
-    if t.startswith("```json"):
-        t = t[7:]
-    elif t.startswith("```"):
-        t = t[3:]
-    if t.endswith("```"):
-        t = t[:-3]
+    if "```json" in t:
+        t = t.split("```json", 1)[1]
+        if "```" in t:
+            t = t.split("```", 1)[0]
+    elif "```" in t:
+        t = t.split("```", 1)[1]
+        if "```" in t:
+            t = t.split("```", 1)[0]
     t = t.strip()
     # Remove trailing commas before closing curly or square bracket
     t = re.sub(r",\s*([}\]])", r"\1", t)
@@ -113,12 +115,13 @@ class GeminiProvider(BaseLLMClient):
             except Exception as e:
                 err_str = str(e)
                 logger.warning(f"Gemini model '{candidate_model}' call failed: {err_str}")
-                self.failed_models.add(candidate_model)
 
                 if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower():
+                    self.failed_models.add(candidate_model)
                     logger.warning(f"Model {candidate_model} exhausted quota (429). Attempting fallback to next available model.")
                     continue
                 elif "404" in err_str or "NOT_FOUND" in err_str or "is not found for API version" in err_str:
+                    self.failed_models.add(candidate_model)
                     logger.warning(f"Model {candidate_model} not found or unsupported. Attempting fallback.")
                     continue
                 else:
@@ -140,32 +143,21 @@ class GeminiProvider(BaseLLMClient):
             source_text=source_text
         )
 
-        response = None
         try:
             response = await self._call_with_fallback(
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     system_instruction="Bạn là biên tập viên phân tích tiểu thuyết. Hãy trích xuất Book Bible JSON hợp lệ theo đúng cấu trúc yêu cầu.",
                     response_mime_type="application/json",
-                    response_schema=BookBibleDelta,
                 ),
                 preferred_model=model
             )
-            if hasattr(response, "parsed") and isinstance(response.parsed, BookBibleDelta):
-                return response.parsed
-            
             raw_text = getattr(response, "text", "") or "{}"
             json_text = _clean_json_str(raw_text)
             return BookBibleDelta.model_validate_json(json_text)
         except Exception as err:
-            logger.warning("Trích xuất BookBibleDelta qua response_schema gặp lỗi: %s. Thử parse cứu hộ...", err)
-            try:
-                raw_text = getattr(response, "text", "") if response else "{}"
-                json_text = _clean_json_str(raw_text)
-                return BookBibleDelta.model_validate_json(json_text)
-            except Exception as parse_err:
-                logger.warning("Không thể parse BookBibleDelta từ LLM (%s). Trả về delta rỗng để tiếp tục dịch.", parse_err)
-                return BookBibleDelta()
+            logger.warning("Trích xuất BookBibleDelta gặp lỗi (%s). Trả về delta rỗng để tiếp tục dịch.", err)
+            return BookBibleDelta()
 
     async def translate_prose_chunk(
         self,
@@ -207,30 +199,21 @@ class GeminiProvider(BaseLLMClient):
             input_json_array=input_json_str
         )
 
-        response = None
         try:
             response = await self._call_with_fallback(
                 contents=user_content,
                 config=types.GenerateContentConfig(
                     system_instruction=system_content,
                     response_mime_type="application/json",
-                    response_schema=HTMLTranslationOutput,
                 ),
                 preferred_model=model
             )
-            if hasattr(response, "parsed") and isinstance(response.parsed, HTMLTranslationOutput):
-                parsed_data = response.parsed
-            else:
-                json_text = _clean_json_str(response.text)
-                parsed_data = HTMLTranslationOutput.model_validate_json(json_text)
+            raw_text = getattr(response, "text", "") or "{}"
+            json_text = _clean_json_str(raw_text)
+            parsed_data = HTMLTranslationOutput.model_validate_json(json_text)
         except Exception as err:
-            logger.warning("HTML translation parse failed (%s), attempting text clean fallback...", err)
-            try:
-                raw_text = getattr(response, "text", "") if response else "{}"
-                json_text = _clean_json_str(raw_text)
-                parsed_data = HTMLTranslationOutput.model_validate_json(json_text)
-            except Exception:
-                parsed_data = HTMLTranslationOutput(translations=[HTMLTranslationItem(id=item.id, text_vi=item.text) for item in input_items])
+            logger.warning("HTML translation JSON parse failed (%s), falling back to input text.", err)
+            parsed_data = HTMLTranslationOutput(translations=[HTMLTranslationItem(id=item.id, text_vi=item.text) for item in input_items])
 
         raw_translations = parsed_data.translations
         out_map = {item.id: item.text_vi for item in raw_translations}
@@ -257,20 +240,17 @@ class GeminiProvider(BaseLLMClient):
             translated_chunk=translated_chunk
         )
 
-        response = None
         try:
             response = await self._call_with_fallback(
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     system_instruction="Bạn là trợ lý QA kiểm tra nhất quán bản dịch.",
                     response_mime_type="application/json",
-                    response_schema=QAReport,
                 ),
                 preferred_model=model
             )
-            if hasattr(response, "parsed") and isinstance(response.parsed, QAReport):
-                return response.parsed
-            json_text = _clean_json_str(response.text)
+            raw_text = getattr(response, "text", "") or "{}"
+            json_text = _clean_json_str(raw_text)
             return QAReport.model_validate_json(json_text)
         except Exception as qa_err:
             logger.warning("QA check parse failed (%s), returning default consistent QAReport", qa_err)

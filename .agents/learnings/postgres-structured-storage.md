@@ -36,6 +36,25 @@
 
 ## Bugs & Solutions
 
+### Supabase Storage CDN URL Prefix Duplication (HTTP 400 Bad Request)
+- **Ngày**: 2026-08-25
+- **Vấn đề**: Tải file EPUB từ Supabase Public CDN URL bị HTTP 400 (`.../object/public/novels/novels/novels/van-thu-chien-than/full.epub`).
+- **Root cause**: Biến môi trường `SUPABASE_STORAGE_PUBLIC_URL` được cấu hình kèm theo tiền tố `/novels` hoặc `/novels/novels`. Khi nối với `storage_key` (`novels/{id}/full.epub`), số lượng `novels/` bị nhân 3 lần. Supabase Storage trả về 400 Bad Request vì không tìm thấy folder path tương ứng.
+- **Fix**: Chuẩn hóa tự động trong `SupabaseStorageProvider.get_public_url`: tự động deduplicate các tiền tố lặp `novels/novels/...` và cắt tỉa đuôi trùng trong `self.public_url`.
+- **Files liên quan**: `app/infrastructure/storage/legacy_storage.py`, `tests/test_supabase_storage.py`
+
+### Missing Chapter Text Files on Storage & On-Demand EPUB Self-Healing
+- **Ngày**: 2026-08-25
+- **Vấn đề**: Bấm `Dịch lại` chương báo lỗi `Lỗi: Nội dung chương gốc đang trống`, do file `novels/{id}/translated/ch_*.txt` và `original/ch_*.txt` đều trả về 404 trên Supabase Storage dù `full.epub` tồn tại.
+- **Root cause**:
+  1. Hàm `_process_epub_chapters_sync` khi nạp sách thấy `existing_ch.r2_translated_key` trong DB không rỗng nên tự động bỏ qua upload file text lên storage (`if existing_key and not force_overwrite:`) mà không kiểm tra xem file thực tế có tồn tại trên storage hay không (`storage_repo.file_exists(existing_key)`).
+  2. Truyện nạp từ trước khi chuyển sang Supabase Storage chỉ có `full.epub` mà thiếu các file text chương lẻ.
+- **Fix**:
+  1. Bổ sung `storage_repo.file_exists(existing_key)` vào điều kiện bỏ qua khi nạp sách.
+  2. Triển khai cơ chế Self-Healing trong `get_chapter_content`: nếu file text chương bị thiếu, tự động tải `full.epub` từ storage, bóc tách lại toàn bộ các chương và lưu vĩnh viễn vào Supabase Storage.
+  3. Bổ sung fallback trong `translate_chapter`: nếu `original/` thiếu nhưng `translated/` có, tự động dùng bản dịch làm nguồn và đồng thời sao lưu vào `original/`.
+- **Files liên quan**: `app/modules/library/legacy_service.py`, `tests/test_library_service.py`
+
 ### Cloudflare R2 404 on EPUB Download via Stale Env Var & Alias Conflict
 - **Ngày**: 2026-08-25
 - **Vấn đề**: Tải file EPUB qua `/api/v1/library/novels/{novel_id}/export/epub` bị 404 Not Found từ URL Cloudflare R2 (`pub-*.r2.dev/novels/.../full.epub`) dù server đang chạy backend `Supabase`.

@@ -3543,9 +3543,20 @@
             if (count > 0) {
                 if (badge) badge.style.display = 'inline-flex';
                 if (actionBar) actionBar.style.display = 'flex';
+                const idxArr = Array.from(selectedChapterIndexes);
+                const minCh = Math.min(...idxArr);
+                const maxCh = Math.max(...idxArr);
+                const rebuildStart = document.getElementById('rebuild-start-ch');
+                const rebuildEnd = document.getElementById('rebuild-end-ch');
+                if (rebuildStart && !rebuildStart.value) rebuildStart.placeholder = String(minCh);
+                if (rebuildEnd && !rebuildEnd.value) rebuildEnd.placeholder = String(maxCh);
             } else {
                 if (badge) badge.style.display = 'none';
                 if (actionBar) actionBar.style.display = 'none';
+                const rebuildStart = document.getElementById('rebuild-start-ch');
+                const rebuildEnd = document.getElementById('rebuild-end-ch');
+                if (rebuildStart && !rebuildStart.value) rebuildStart.placeholder = "Từ";
+                if (rebuildEnd && !rebuildEnd.value) rebuildEnd.placeholder = "Đến";
             }
 
             // Sync individual checkboxes and highlight row
@@ -3619,12 +3630,21 @@
 
         function selectRangeChapters() {
             if (!currentNovelData || !currentNovelData.chapters) return;
-            const fromVal = parseInt(document.getElementById('select-range-from').value, 10);
-            const toVal = parseInt(document.getElementById('select-range-to').value, 10);
-            if (isNaN(fromVal) || isNaN(toVal) || fromVal < 1 || toVal < fromVal) {
+            const fromInput = document.getElementById('select-range-from');
+            const toInput = document.getElementById('select-range-to');
+            let fromVal = parseInt(fromInput ? fromInput.value : '', 10);
+            let toVal = parseInt(toInput ? toInput.value : '', 10);
+            if (isNaN(fromVal)) fromVal = 1;
+            if (fromVal <= 0) fromVal = 1;
+            if (isNaN(toVal) || toVal < fromVal) {
                 alert("Vui lòng nhập khoảng chương hợp lệ (Từ nhỏ đến lớn)!");
                 return;
             }
+            const rebuildStart = document.getElementById('rebuild-start-ch');
+            const rebuildEnd = document.getElementById('rebuild-end-ch');
+            if (rebuildStart) rebuildStart.value = fromVal;
+            if (rebuildEnd) rebuildEnd.value = toVal;
+
             let count = 0;
             currentNovelData.chapters.forEach(ch => {
                 if (ch.chapter_index >= fromVal && ch.chapter_index <= toVal) {
@@ -3638,12 +3658,21 @@
 
         function selectRangeTranslatedChapters() {
             if (!currentNovelData || !currentNovelData.chapters) return;
-            const fromVal = parseInt(document.getElementById('select-range-from').value, 10);
-            const toVal = parseInt(document.getElementById('select-range-to').value, 10);
-            if (isNaN(fromVal) || isNaN(toVal) || fromVal < 1 || toVal < fromVal) {
+            const fromInput = document.getElementById('select-range-from');
+            const toInput = document.getElementById('select-range-to');
+            let fromVal = parseInt(fromInput ? fromInput.value : '', 10);
+            let toVal = parseInt(toInput ? toInput.value : '', 10);
+            if (isNaN(fromVal)) fromVal = 1;
+            if (fromVal <= 0) fromVal = 1;
+            if (isNaN(toVal) || toVal < fromVal) {
                 alert("Vui lòng nhập khoảng chương hợp lệ (Từ nhỏ đến lớn)!");
                 return;
             }
+            const rebuildStart = document.getElementById('rebuild-start-ch');
+            const rebuildEnd = document.getElementById('rebuild-end-ch');
+            if (rebuildStart) rebuildStart.value = fromVal;
+            if (rebuildEnd) rebuildEnd.value = toVal;
+
             let count = 0;
             currentNovelData.chapters.forEach(ch => {
                 if (ch.chapter_index >= fromVal && ch.chapter_index <= toVal) {
@@ -3934,13 +3963,40 @@
             try {
                 let queryParam = forceRebuild ? '?force_rebuild=true' : '?force_rebuild=false';
 
-                const inputStart = startCh !== null ? startCh : (document.getElementById('rebuild-start-ch') ? document.getElementById('rebuild-start-ch').value.trim() : '');
-                const inputEnd = endCh !== null ? endCh : (document.getElementById('rebuild-end-ch') ? document.getElementById('rebuild-end-ch').value.trim() : '');
+                let inputStart = startCh !== null ? String(startCh).trim() : (document.getElementById('rebuild-start-ch') ? document.getElementById('rebuild-start-ch').value.trim() : '');
+                let inputEnd = endCh !== null ? String(endCh).trim() : (document.getElementById('rebuild-end-ch') ? document.getElementById('rebuild-end-ch').value.trim() : '');
+
+                // Fallback 1: check select-range-from / select-range-to
+                if (forceRebuild && !inputStart && !inputEnd) {
+                    const selFrom = document.getElementById('select-range-from') ? document.getElementById('select-range-from').value.trim() : '';
+                    const selTo = document.getElementById('select-range-to') ? document.getElementById('select-range-to').value.trim() : '';
+                    if (selFrom || selTo) {
+                        inputStart = selFrom;
+                        inputEnd = selTo;
+                    }
+                }
+
+                // Fallback 2: check selected checkboxes in table
+                if (forceRebuild && !inputStart && !inputEnd && typeof selectedChapterIndexes !== 'undefined' && selectedChapterIndexes.size > 0) {
+                    const idxArr = Array.from(selectedChapterIndexes);
+                    inputStart = String(Math.min(...idxArr));
+                    inputEnd = String(Math.max(...idxArr));
+                }
+
+                let rangeMsg = "";
                 if (forceRebuild && inputStart && !isNaN(Number(inputStart))) {
-                    queryParam += `&start_chapter=${encodeURIComponent(inputStart)}`;
+                    const sVal = Math.max(1, parseInt(inputStart, 10));
+                    queryParam += `&start_chapter=${encodeURIComponent(sVal)}`;
+                    rangeMsg += `từ chương ${sVal}`;
                 }
                 if (forceRebuild && inputEnd && !isNaN(Number(inputEnd))) {
-                    queryParam += `&end_chapter=${encodeURIComponent(inputEnd)}`;
+                    const eVal = Math.max(1, parseInt(inputEnd, 10));
+                    queryParam += `&end_chapter=${encodeURIComponent(eVal)}`;
+                    rangeMsg += (rangeMsg ? ` đến ${eVal}` : `đến chương ${eVal}`);
+                }
+
+                if (forceRebuild) {
+                    showToast(rangeMsg ? `🔄 Đang biên dịch lại EPUB cho ${rangeMsg}...` : "🔄 Đang biên dịch lại tất cả chương đã dịch vào EPUB...", "info");
                 }
 
                 let url = apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/export/epub${queryParam}`);

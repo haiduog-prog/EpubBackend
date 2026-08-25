@@ -1,7 +1,7 @@
 # PostgreSQL Structured Storage & Migration
 
 > Tổng hợp kiến thức về hạ tầng lưu trữ cơ sở dữ liệu có cấu trúc Render PostgreSQL / Supabase, mô hình Repository, quy trình Backfill từ Cloudflare R2, cơ chế Audit an toàn và Quản lý/Xóa dữ liệu đa tầng.
-> Cập nhật lần cuối: 2026-08-24
+> Cập nhật lần cuối: 2026-08-25
 
 ---
 
@@ -35,6 +35,13 @@
 ---
 
 ## Bugs & Solutions
+
+### Cloudflare R2 404 on EPUB Download via Stale Env Var & Alias Conflict
+- **Ngày**: 2026-08-25
+- **Vấn đề**: Tải file EPUB qua `/api/v1/library/novels/{novel_id}/export/epub` bị 404 Not Found từ URL Cloudflare R2 (`pub-*.r2.dev/novels/.../full.epub`) dù server đang chạy backend `Supabase`.
+- **Root cause**: `file_exists_in_r2` là alias trỏ vào active provider (`self.file_exists`, tức Supabase). Nhánh kiểm tra `CLOUDFLARE_R2_PUBLIC_URL` đặt trước Supabase, nên khi biến này còn lưu trong môi trường Render, backend ngộ nhận file có trên R2 và redirect 307 nhầm sang R2 CDN thay vì Supabase CDN.
+- **Fix**: Đảo thứ tự ưu tiên trong `export_novel_epub_endpoint`, kiểm tra `active_provider_name == 'supabase'` trước để redirect sang Supabase Public CDN. Chỉ redirect sang R2 khi `active_provider_name == 'r2'` hoặc khi `file_exists_on_r2` xác nhận file thực sự có trên R2.
+- **Files liên quan**: `app/modules/library/api.py`, `tests/test_library_service.py`
 
 ### 502 Bad Gateway / Timeout on Large EPUB Export with Supabase Storage
 - **Ngày**: 2026-08-24

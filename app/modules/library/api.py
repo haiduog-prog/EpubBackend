@@ -321,15 +321,8 @@ def export_novel_epub_endpoint(
 
         storage_key = f"novels/{novel_id}/full.epub"
 
-        # 1. If public CDN URL is configured or available on storage provider:
+        # 1. If public CDN URL is configured or available on active storage provider:
         if (
-            not force_rebuild
-            and settings.cloudflare_r2_public_url
-            and storage_repo.file_exists_in_r2(storage_key)
-        ):
-            cdn_url = f"{settings.cloudflare_r2_public_url.rstrip('/')}/{storage_key}"
-            return RedirectResponse(url=cdn_url, status_code=307)
-        elif (
             not force_rebuild
             and storage_repo.active_provider_name == "supabase"
             and storage_repo.file_exists(storage_key)
@@ -337,6 +330,17 @@ def export_novel_epub_endpoint(
             cdn_url = storage_repo.get_public_url(storage_key)
             if cdn_url and not cdn_url.startswith("/storage/"):
                 return RedirectResponse(url=cdn_url, status_code=307)
+        elif (
+            not force_rebuild
+            and (storage_repo.active_provider_name == "r2" or settings.cloudflare_r2_public_url)
+            and storage_repo.file_exists_on_r2(storage_key)
+        ):
+            cdn_url = (
+                f"{settings.cloudflare_r2_public_url.rstrip('/')}/{storage_key}"
+                if settings.cloudflare_r2_public_url
+                else storage_repo.get_public_url(storage_key)
+            )
+            return RedirectResponse(url=cdn_url, status_code=307)
 
         # 2. File does not exist on storage or force_rebuild requested -> compile full EPUB
         output_path = library_service.export_full_epub(novel_id)

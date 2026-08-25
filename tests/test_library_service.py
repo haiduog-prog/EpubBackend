@@ -274,8 +274,9 @@ def test_export_novel_epub_endpoint_fallback_and_redirect(monkeypatch):
     )
     meta = library_service.import_epub_novel(epub_data, is_translated=True, novel_id=novel_id)
 
-    # Scenario 1: File is NOT in R2 (file_exists_in_r2 returns False)
-    monkeypatch.setattr(storage_repo, "file_exists_in_r2", lambda key: False)
+    # Scenario 1: File is NOT in storage (file_exists and file_exists_on_r2 return False)
+    monkeypatch.setattr(storage_repo, "file_exists", lambda key: False)
+    monkeypatch.setattr(storage_repo, "file_exists_on_r2", lambda key: False)
     monkeypatch.setattr(settings, "cloudflare_r2_public_url", "https://pub-test.r2.dev")
 
     # Should NOT 307 redirect to missing CDN file, but generate and return EPUB file (200 OK)
@@ -284,8 +285,17 @@ def test_export_novel_epub_endpoint_fallback_and_redirect(monkeypatch):
     assert resp.headers["content-type"] == "application/epub+zip"
     assert len(resp.content) > 500
 
-    # Scenario 2: File is cached on R2 (file_exists_in_r2 returns True)
-    monkeypatch.setattr(storage_repo, "file_exists_in_r2", lambda key: True)
+    # Scenario 2A: Supabase active and file cached
+    monkeypatch.setattr(type(storage_repo), "active_provider_name", property(lambda self: "supabase"))
+    monkeypatch.setattr(storage_repo, "file_exists", lambda key: True)
+    monkeypatch.setattr(storage_repo, "get_public_url", lambda key: f"https://test.supabase.co/storage/v1/object/public/novels/{key}")
+    resp_supabase = client.get(f"/api/v1/library/novels/{novel_id}/export/epub", follow_redirects=False)
+    assert resp_supabase.status_code == 307
+    assert resp_supabase.headers["location"] == f"https://test.supabase.co/storage/v1/object/public/novels/novels/{novel_id}/full.epub"
+
+    # Scenario 2B: File is cached specifically on R2 (file_exists_on_r2 returns True)
+    monkeypatch.setattr(type(storage_repo), "active_provider_name", property(lambda self: "r2"))
+    monkeypatch.setattr(storage_repo, "file_exists_on_r2", lambda key: True)
     resp_redirect = client.get(f"/api/v1/library/novels/{novel_id}/export/epub", follow_redirects=False)
     assert resp_redirect.status_code == 307
     assert resp_redirect.headers["location"] == f"https://pub-test.r2.dev/novels/{novel_id}/full.epub"

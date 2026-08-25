@@ -1395,13 +1395,16 @@
 
                     <!-- Quick Selection Tools & API Key widget -->
                     <div style="display:flex; align-items:center; gap:0.4rem; flex-wrap:wrap; font-size:0.8rem;">
-                        <button type="button" class="btn btn-secondary" onclick="selectAllChapters()" style="padding:0.3rem 0.6rem; font-size:0.78rem;">
-                            <i class="fa-solid fa-check-double"></i> Chọn tất cả
+                        <button type="button" class="btn btn-secondary" onclick="selectAllChapters()" style="padding:0.3rem 0.6rem; font-size:0.78rem;" title="Chọn toàn bộ các chương trong truyện">
+                            <i class="fa-solid fa-check-double"></i> Tất cả
                         </button>
-                        <button type="button" class="btn btn-secondary" onclick="selectUntranslatedChapters()" style="padding:0.3rem 0.6rem; font-size:0.78rem; color:#38bdf8;">
-                            <i class="fa-solid fa-filter"></i> Chọn chưa dịch
+                        <button type="button" class="btn btn-secondary" onclick="selectUntranslatedChapters()" style="padding:0.3rem 0.6rem; font-size:0.78rem; color:#38bdf8;" title="Chỉ chọn các chương chưa dịch">
+                            <i class="fa-solid fa-filter"></i> Chưa dịch
                         </button>
-                        <button type="button" class="btn btn-secondary" onclick="clearSelectedChapters()" style="padding:0.3rem 0.6rem; font-size:0.78rem;">
+                        <button type="button" class="btn btn-secondary" onclick="selectTranslatedChapters()" style="padding:0.3rem 0.6rem; font-size:0.78rem; color:#34d399; border-color:rgba(52,211,153,0.4);" title="Chọn tất cả các chương đã dịch để dịch lại hàng loạt hoặc xuất sách">
+                            <i class="fa-solid fa-rotate-right"></i> Đã dịch (Dịch lại)
+                        </button>
+                        <button type="button" class="btn btn-secondary" onclick="clearSelectedChapters()" style="padding:0.3rem 0.6rem; font-size:0.78rem;" title="Bỏ chọn tất cả">
                             <i class="fa-solid fa-xmark"></i> Bỏ chọn
                         </button>
                         <div style="display:inline-flex; align-items:center; gap:0.25rem; background:rgba(15,23,42,0.8); border:1px solid var(--card-border); padding:0.2rem 0.45rem; border-radius:6px;">
@@ -1409,7 +1412,8 @@
                             <input type="number" id="select-range-from" min="1" placeholder="1" style="width:45px; background:transparent; border:none; color:#fff; font-size:0.75rem; text-align:center; outline:none;">
                             <span style="color:var(--text-sub); font-size:0.75rem;">đến:</span>
                             <input type="number" id="select-range-to" min="1" placeholder="10" style="width:45px; background:transparent; border:none; color:#fff; font-size:0.75rem; text-align:center; outline:none;">
-                            <button type="button" class="btn" onclick="selectRangeChapters()" style="padding:0.2rem 0.45rem; font-size:0.75rem;">Chọn</button>
+                            <button type="button" class="btn" onclick="selectRangeChapters()" style="padding:0.2rem 0.45rem; font-size:0.75rem;" title="Chọn tất cả chương trong khoảng này">Chọn</button>
+                            <button type="button" class="btn btn-secondary" onclick="selectRangeTranslatedChapters()" style="padding:0.2rem 0.45rem; font-size:0.72rem; color:#34d399;" title="Chỉ chọn các chương đã dịch trong khoảng này để dịch lại">Đã dịch</button>
                         </div>
                         <div style="display:inline-flex; align-items:center; gap:0.3rem; background:rgba(15,23,42,0.9); border:1px solid rgba(99,102,241,0.4); padding:0.2rem 0.5rem; border-radius:6px;" title="Nhập hoặc đổi API Key để dịch">
                             <i class="fa-solid fa-key" style="color:#a5b4fc; font-size:0.75rem;"></i>
@@ -2975,7 +2979,7 @@
 
                         return `<tr style="border-bottom:1px solid rgba(255,255,255,0.05); ${isChecked ? 'background:rgba(99,102,241,0.08);' : ''}">
                             <td style="padding:0.6rem; text-align:center;">
-                                <input type="checkbox" class="chapter-row-checkbox" data-chapter-index="${ch.chapter_index}" ${isChecked ? 'checked' : ''} onchange="onChapterCheckboxChanged(${ch.chapter_index}, this.checked)">
+                                <input type="checkbox" class="chapter-row-checkbox" data-chapter-index="${ch.chapter_index}" ${isChecked ? 'checked' : ''} onclick="onChapterCheckboxChanged(${ch.chapter_index}, this.checked, event)">
                             </td>
                             <td style="padding:0.6rem; font-weight:600; color:#c7d2fe;">#${ch.chapter_index}</td>
                             <td style="padding:0.6rem; font-weight:600;">${escapeHtml(ch.chapter_title)}</td>
@@ -3457,12 +3461,29 @@
         // ==========================================
         // MULTI-CHAPTER SELECTION & BATCH TRANSLATE
         // ==========================================
-        function onChapterCheckboxChanged(chapterIndex, isChecked) {
-            if (isChecked) {
-                selectedChapterIndexes.add(chapterIndex);
+        let lastSelectedChapterIndex = null;
+
+        function onChapterCheckboxChanged(chapterIndex, isChecked, event) {
+            if (event && event.shiftKey && lastSelectedChapterIndex !== null && currentNovelData && currentNovelData.chapters) {
+                const start = Math.min(lastSelectedChapterIndex, chapterIndex);
+                const end = Math.max(lastSelectedChapterIndex, chapterIndex);
+                currentNovelData.chapters.forEach(ch => {
+                    if (ch.chapter_index >= start && ch.chapter_index <= end) {
+                        if (isChecked) {
+                            selectedChapterIndexes.add(ch.chapter_index);
+                        } else {
+                            selectedChapterIndexes.delete(ch.chapter_index);
+                        }
+                    }
+                });
             } else {
-                selectedChapterIndexes.delete(chapterIndex);
+                if (isChecked) {
+                    selectedChapterIndexes.add(chapterIndex);
+                } else {
+                    selectedChapterIndexes.delete(chapterIndex);
+                }
             }
+            lastSelectedChapterIndex = chapterIndex;
             updateSelectedChaptersUI();
         }
 
@@ -3529,6 +3550,24 @@
             });
             if (selectedChapterIndexes.size === 0) {
                 showToast("Tất cả các chương đã được dịch xong!", "info");
+            } else {
+                showToast(`✓ Đã chọn ${selectedChapterIndexes.size} chương chưa dịch!`, "info");
+            }
+            updateSelectedChaptersUI();
+        }
+
+        function selectTranslatedChapters() {
+            if (!currentNovelData || !currentNovelData.chapters) return;
+            selectedChapterIndexes.clear();
+            currentNovelData.chapters.forEach(ch => {
+                if (ch.status === 'completed' || ch.r2_translated_key) {
+                    selectedChapterIndexes.add(ch.chapter_index);
+                }
+            });
+            if (selectedChapterIndexes.size === 0) {
+                showToast("Chưa có chương nào được dịch trong bộ truyện này!", "info");
+            } else {
+                showToast(`✓ Đã chọn ${selectedChapterIndexes.size} chương đã dịch để dịch lại!`, "success");
             }
             updateSelectedChaptersUI();
         }
@@ -3546,11 +3585,39 @@
                 alert("Vui lòng nhập khoảng chương hợp lệ (Từ nhỏ đến lớn)!");
                 return;
             }
+            let count = 0;
             currentNovelData.chapters.forEach(ch => {
                 if (ch.chapter_index >= fromVal && ch.chapter_index <= toVal) {
                     selectedChapterIndexes.add(ch.chapter_index);
+                    count++;
                 }
             });
+            showToast(`✓ Đã chọn ${count} chương từ ${fromVal} đến ${toVal}!`, "info");
+            updateSelectedChaptersUI();
+        }
+
+        function selectRangeTranslatedChapters() {
+            if (!currentNovelData || !currentNovelData.chapters) return;
+            const fromVal = parseInt(document.getElementById('select-range-from').value, 10);
+            const toVal = parseInt(document.getElementById('select-range-to').value, 10);
+            if (isNaN(fromVal) || isNaN(toVal) || fromVal < 1 || toVal < fromVal) {
+                alert("Vui lòng nhập khoảng chương hợp lệ (Từ nhỏ đến lớn)!");
+                return;
+            }
+            let count = 0;
+            currentNovelData.chapters.forEach(ch => {
+                if (ch.chapter_index >= fromVal && ch.chapter_index <= toVal) {
+                    if (ch.status === 'completed' || ch.r2_translated_key) {
+                        selectedChapterIndexes.add(ch.chapter_index);
+                        count++;
+                    }
+                }
+            });
+            if (count === 0) {
+                showToast(`Không có chương đã dịch nào trong khoảng ${fromVal} - ${toVal}!`, "info");
+            } else {
+                showToast(`✓ Đã chọn ${count} chương đã dịch trong khoảng ${fromVal} - ${toVal}!`, "success");
+            }
             updateSelectedChaptersUI();
         }
 

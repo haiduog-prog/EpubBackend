@@ -92,11 +92,12 @@ def test_api_contract_is_stable_after_router_move():
 
     # The authenticated reader flow adds the Supabase config and reader sync
     # endpoints to the public contract.
-    assert len(paths) == 53
+    assert len(paths) == 54
     assert "/api/v1/translate/text" in paths
     assert "/api/v1/translate/file" in paths
     assert "/api/v1/library/novels" in paths
     assert "/api/v1/library/novels/bulk-delete" in paths
+    assert "/api/v1/library/novels/{novel_id}/chapters/{chapter_index}/apply-translation" in paths
     assert "/api/v1/book-bible/editions/{edition_id}/chapters/{local_chapter}/snapshot" in paths
     assert "/api/v1/reader/books" in paths
     assert "/api/v1/reader/me/state" in paths

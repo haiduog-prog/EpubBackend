@@ -1,7 +1,7 @@
 import json
 import logging
 from urllib.parse import quote
-from typing import List, Optional
+from typing import List, Optional, Union
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse
 
@@ -12,8 +12,10 @@ from app.schemas.book_bible import BookBible
 from app.schemas.library import (
     BulkDeleteNovelsRequest,
     BulkDeleteNovelsResponse,
+    ChapterApplyTranslationRequest,
     ChapterCreateRequest,
     ChapterItem,
+    ChapterTranslatePreviewResponse,
     ChapterTranslateRequest,
     ImportJobStatus,
     NovelCreateRequest,
@@ -281,11 +283,12 @@ def get_chapter_character_snapshot_endpoint(novel_id: str, chapter_index: int):
         raise HTTPException(status_code=404, detail=str(exc))
 
 
-@router.post("/novels/{novel_id}/chapters/{chapter_index}/translate", response_model=ChapterItem)
+@router.post("/novels/{novel_id}/chapters/{chapter_index}/translate", response_model=Union[ChapterItem, ChapterTranslatePreviewResponse])
 async def translate_chapter_endpoint(
     novel_id: str,
     chapter_index: int,
     req: ChapterTranslateRequest = ChapterTranslateRequest(),
+    preview_only: Optional[bool] = Query(default=None, description="Nếu True, chỉ trả về bản dịch để so sánh"),
     x_api_key: Optional[str] = Header(default=None),
     x_provider: Optional[str] = Header(default=None),
     x_model: Optional[str] = Header(default=None),
@@ -294,6 +297,7 @@ async def translate_chapter_endpoint(
     key = req.api_key or x_api_key
     prov = req.provider or x_provider or "gemini"
     mod = req.model or x_model
+    is_preview = req.preview_only if req.preview_only is not None else bool(preview_only)
 
     try:
         return await library_service.translate_chapter(
@@ -302,11 +306,32 @@ async def translate_chapter_endpoint(
             provider=prov,
             api_key=key,
             model=mod,
+            preview_only=is_preview,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Lỗi trong quá trình dịch chương: {exc}")
+
+
+@router.post("/novels/{novel_id}/chapters/{chapter_index}/apply-translation", response_model=ChapterItem)
+def apply_chapter_translation_endpoint(
+    novel_id: str,
+    chapter_index: int,
+    req: ChapterApplyTranslationRequest,
+    _: None = Depends(require_write_access),
+):
+    try:
+        return library_service.apply_chapter_translation(
+            novel_id=novel_id,
+            chapter_index=chapter_index,
+            content=req.content,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Lỗi khi áp dụng bản dịch chương: {exc}")
+
 
 
 @router.get("/novels/{novel_id}/export/epub")

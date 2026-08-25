@@ -10,7 +10,7 @@ import time
 import unicodedata
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 from urllib.parse import urlparse
 
 import ebooklib
@@ -28,6 +28,7 @@ from app.schemas.library import (
     ChapterCreateRequest,
     ChapterItem,
     ChapterStatus,
+    ChapterTranslatePreviewResponse,
     ImportJobStatus,
     NovelCreateRequest,
     NovelMetadata,
@@ -479,17 +480,11 @@ class LegacyLibraryService:
             except Exception:
                 return data_bytes.decode("latin1", errors="ignore")
 
-        # Fallback: check if other version already exists on storage
-        other_key = self._chapter_key(novel_id, chapter_index, is_translated=not is_trans)
-        other_bytes = storage_repo.get_bytes(other_key)
-        if other_bytes is not None:
-            try:
-                content = other_bytes.decode("utf-8")
-            except Exception:
-                content = other_bytes.decode("latin1", errors="ignore")
-            # Cache to the requested key
-            self._save_raw_file(key, content.encode("utf-8"), content_type="text/plain; charset=utf-8")
-            return content
+        # If requesting translated version, check if the chapter has actually been completed or translated
+        meta = self.get_novel(novel_id)
+        chapter = next((c for c in meta.chapters if c.chapter_index == chapter_index), None) if meta else None
+        if is_trans and chapter and chapter.status != ChapterStatus.COMPLETED and not chapter.r2_translated_key:
+            return None
 
         # Self-healing fallback: extract all chapters directly from full.epub
         extracted_map = self._extract_and_cache_chapters_from_epub_storage(novel_id, is_translated=is_trans)
@@ -500,6 +495,18 @@ class LegacyLibraryService:
         extracted_values = list(extracted_map.values())
         if 1 <= chapter_index <= len(extracted_values):
             return extracted_values[chapter_index - 1]
+
+        # Fallback: check if other version already exists on storage (e.g. novel imported as single version or requesting original when only translated was uploaded)
+        if not is_trans or (meta and meta.translated_chapters == meta.total_chapters and meta.total_chapters > 0):
+            other_key = self._chapter_key(novel_id, chapter_index, is_translated=not is_trans)
+            other_bytes = storage_repo.get_bytes(other_key)
+            if other_bytes is not None:
+                try:
+                    content = other_bytes.decode("utf-8")
+                except Exception:
+                    content = other_bytes.decode("latin1", errors="ignore")
+                self._save_raw_file(key, content.encode("utf-8"), content_type="text/plain; charset=utf-8")
+                return content
 
         return None
 
@@ -564,7 +571,8 @@ class LegacyLibraryService:
         provider: Optional[str] = None,
         api_key: Optional[str] = None,
         model: Optional[str] = None,
-    ) -> ChapterItem:
+        preview_only: bool = False,
+    ) -> Union[ChapterItem, ChapterTranslatePreviewResponse]:
         meta = self.get_novel(novel_id)
         if not meta:
             raise ValueError(f"Không tìm thấy bộ truyện '{novel_id}'")
@@ -592,8 +600,11 @@ class LegacyLibraryService:
         if not chapter.r2_original_key:
             chapter.r2_original_key = self._chapter_key(novel_id, chapter_index, is_translated=False)
 
-        chapter.status = ChapterStatus.TRANSLATING
-        self._save_metadata(meta)
+        prev_translated = self.get_chapter_content(novel_id, chapter_index, version="translated") or ""
+
+        if not preview_only:
+            chapter.status = ChapterStatus.TRANSLATING
+            self._save_metadata(meta)
 
         try:
             # Khởi tạo LLM và pipeline
@@ -603,12 +614,13 @@ class LegacyLibraryService:
             # Lấy Book Bible hiện tại của truyện
             bible = storage_repo.get_bible(novel_id) or BookBible(novel_id=novel_id)
 
-            # Trích xuất delta & cập nhật bible
+            # Trích xuất delta & cập nhật bible nếu không ở chế độ preview_only
             known_names = BookBibleService.get_known_names_index(bible)
             delta = await llm_client.extract_book_bible_delta(
                 orig_content[:3000], known_names, model=model
             )
-            bible = storage_repo.merge_bible_delta(novel_id, delta, default_novel_id=novel_id)
+            if not preview_only:
+                bible = storage_repo.merge_bible_delta(novel_id, delta, default_novel_id=novel_id)
 
             # Dịch nội dung chương
             filtered_bible = BookBibleService.filter_bible_for_text(bible, orig_content)
@@ -619,7 +631,20 @@ class LegacyLibraryService:
                 model=model,
             )
 
-            # Lưu bản dịch lên R2
+            if preview_only:
+                return ChapterTranslatePreviewResponse(
+                    novel_id=novel_id,
+                    chapter_index=chapter_index,
+                    chapter_title=chapter.chapter_title,
+                    original_text=orig_content,
+                    previous_translated_text=prev_translated,
+                    new_translated_text=translated_text,
+                    word_count=len(translated_text.split()),
+                    model=model,
+                    provider=provider,
+                )
+
+            # Lưu bản dịch lên R2 / Supabase
             trans_key = self._chapter_key(novel_id, chapter_index, is_translated=True)
             trans_url = self._save_raw_file(trans_key, translated_text.encode("utf-8"), content_type="text/plain; charset=utf-8")
 
@@ -637,9 +662,43 @@ class LegacyLibraryService:
 
         except Exception as exc:
             logger.error("Lỗi khi dịch chương %d: %s", chapter_index, exc)
-            chapter.status = ChapterStatus.FAILED
-            self._save_metadata(meta)
+            if not preview_only:
+                chapter.status = ChapterStatus.FAILED
+                self._save_metadata(meta)
             raise
+
+    def apply_chapter_translation(
+        self,
+        novel_id: str,
+        chapter_index: int,
+        content: str,
+    ) -> ChapterItem:
+        if not content or not content.strip():
+            raise ValueError("Nội dung bản dịch không được để trống.")
+
+        meta = self.get_novel(novel_id)
+        if not meta:
+            raise ValueError(f"Không tìm thấy bộ truyện '{novel_id}'")
+
+        chapter = next((c for c in meta.chapters if c.chapter_index == chapter_index), None)
+        if not chapter:
+            raise ValueError(f"Không tìm thấy chương {chapter_index} của truyện '{novel_id}'")
+
+        trans_key = self._chapter_key(novel_id, chapter_index, is_translated=True)
+        trans_url = self._save_raw_file(trans_key, content.encode("utf-8"), content_type="text/plain; charset=utf-8")
+
+        chapter.status = ChapterStatus.COMPLETED
+        chapter.r2_translated_key = trans_key
+        chapter.r2_translated_url = trans_url
+        chapter.translated_text_preview = (content[:150] + "...") if len(content) > 150 else content
+        chapter.word_count = len(content.split())
+        chapter.updated_at = datetime.now(timezone.utc).isoformat()
+
+        meta.translated_chapters = sum(1 for c in meta.chapters if c.status == ChapterStatus.COMPLETED)
+        meta.updated_at = datetime.now(timezone.utc).isoformat()
+        self._save_metadata(meta)
+        self._cache[novel_id] = meta
+        return chapter
 
     async def scan_characters_and_timeline(
         self,

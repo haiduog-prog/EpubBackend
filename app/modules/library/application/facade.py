@@ -55,6 +55,9 @@ class LibraryService:
     async def translate_chapter(self, novel_id, chapter_index, **kwargs):
         return await self.chapters.translate(novel_id, chapter_index, **kwargs)
 
+    def apply_chapter_translation(self, novel_id, chapter_index, content: str):
+        return self.chapters.apply_translation(novel_id, chapter_index, content)
+
     async def scan_characters_and_timeline(self, novel_id, **kwargs):
         return await self.chapters.scan(novel_id, **kwargs)
 

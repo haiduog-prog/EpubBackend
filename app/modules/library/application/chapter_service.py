@@ -23,8 +23,11 @@ class ChapterService:
     def content_urls(self, chapter: ChapterItem, version: str = "translated") -> List[str]:
         return self._legacy.get_chapter_content_urls_for_item(chapter, version)
 
-    async def translate(self, novel_id: str, chapter_index: int, **kwargs) -> ChapterItem:
+    async def translate(self, novel_id: str, chapter_index: int, **kwargs) -> Any:
         return await self._legacy.translate_chapter(novel_id, chapter_index, **kwargs)
+
+    def apply_translation(self, novel_id: str, chapter_index: int, content: str) -> ChapterItem:
+        return self._legacy.apply_chapter_translation(novel_id, chapter_index, content)
 
     async def scan(self, novel_id: str, **kwargs) -> BookBible:
         return await self._legacy.scan_characters_and_timeline(novel_id, **kwargs)

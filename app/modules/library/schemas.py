@@ -79,6 +79,24 @@ class ChapterTranslateRequest(BaseModel):
     api_key: Optional[str] = None
     provider: Optional[str] = None
     model: Optional[str] = None
+    preview_only: bool = Field(default=False, description="Nếu True, chỉ trả về bản dịch để so sánh xem trước mà không ghi đè vào kho lưu trữ")
+
+
+class ChapterTranslatePreviewResponse(BaseModel):
+    novel_id: str
+    chapter_index: int
+    chapter_title: str
+    original_text: str = ""
+    previous_translated_text: str = ""
+    new_translated_text: str = ""
+    word_count: int = 0
+    model: Optional[str] = None
+    provider: Optional[str] = None
+
+
+class ChapterApplyTranslationRequest(BaseModel):
+    content: str = Field(..., description="Nội dung bản dịch mới cần áp dụng")
+
 
 
 class ImportJobStatus(BaseModel):

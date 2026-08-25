@@ -590,6 +590,115 @@
             gap: 0.6rem;
             border-left: 4px solid var(--accent);
         }
+        /* Retranslate & Diff Modal Styling */
+        .retranslate-modal-content {
+            max-width: 1240px;
+            width: 95vw;
+            height: 90vh;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            padding: 1.5rem;
+        }
+        .retranslate-pulse-card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 3.5rem 1.5rem;
+            text-align: center;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            border-radius: 16px;
+            margin: auto 0;
+            gap: 1.25rem;
+        }
+        .retranslate-pulse-icon {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.3), rgba(168, 85, 247, 0.3));
+            border: 2px solid rgba(168, 85, 247, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.2rem;
+            color: #c084fc;
+            animation: pulseGlow 2s infinite ease-in-out;
+        }
+        @keyframes pulseGlow {
+            0%, 100% {
+                transform: scale(1);
+                box-shadow: 0 0 25px rgba(99, 102, 241, 0.4);
+            }
+            50% {
+                transform: scale(1.08);
+                box-shadow: 0 0 50px rgba(168, 85, 247, 0.8);
+            }
+        }
+        .retranslate-diff-container {
+            display: flex;
+            flex-direction: column;
+            gap: 0.85rem;
+            flex: 1;
+            min-height: 0;
+        }
+        .retranslate-diff-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            flex: 1;
+            min-height: 0;
+        }
+        .retranslate-pane {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            height: 100%;
+            background: rgba(15, 23, 42, 0.7);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 0.85rem;
+            min-height: 0;
+        }
+        .retranslate-pane.new-version {
+            border-color: rgba(16, 185, 129, 0.4);
+            background: rgba(16, 185, 129, 0.03);
+            box-shadow: inset 0 0 20px rgba(16, 185, 129, 0.05);
+        }
+        .retranslate-pane textarea {
+            flex: 1;
+            height: 100%;
+            font-family: inherit;
+            font-size: 0.92rem;
+            line-height: 1.7;
+            padding: 0.85rem;
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            color: #f1f5f9;
+            resize: none;
+        }
+        .retranslate-pane textarea:focus {
+            border-color: var(--accent);
+            outline: none;
+        }
+        .retranslate-mobile-tabs {
+            display: none;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+        @media (max-width: 768px) {
+            .retranslate-diff-grid {
+                grid-template-columns: 1fr;
+            }
+            .retranslate-mobile-tabs {
+                display: flex;
+            }
+            .retranslate-pane.hide-on-mobile {
+                display: none;
+            }
+        }
     </style>
 </head>
 <body>
@@ -1291,6 +1400,126 @@
             </div>
         </div>
 
+        <!-- MODAL: CHAPTER RETRANSLATE & DIFF REVIEW -->
+        <div id="modal-chapter-retranslate-diff" class="modal">
+            <div class="modal-content retranslate-modal-content">
+                <!-- Header -->
+                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--card-border); padding-bottom:0.75rem; flex-wrap:wrap; gap:0.5rem;">
+                    <div style="display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap;">
+                        <h3 id="retranslate-modal-title" style="font-size:1.15rem; font-weight:700; color:#f8fafc; margin:0;">
+                            <i class="fa-solid fa-rotate-right" style="color:var(--accent);"></i> Dịch Lại Chương
+                        </h3>
+                        <span id="retranslate-model-badge" class="tag" style="background:rgba(99,102,241,0.2); border:1px solid rgba(99,102,241,0.4); color:#a5b4fc; font-size:0.78rem;">
+                            <i class="fa-solid fa-robot"></i> Gemini
+                        </span>
+                        <span id="retranslate-timer-badge" class="tag" style="background:rgba(245,158,11,0.15); border:1px solid rgba(245,158,11,0.3); color:#fbbf24; font-size:0.78rem;">
+                            <i class="fa-regular fa-clock"></i> 00:00s
+                        </span>
+                    </div>
+                    <button onclick="cancelAndCloseRetranslateModal()" style="background:none; border:none; color:var(--text-sub); font-size:1.3rem; cursor:pointer; padding:0.2rem 0.5rem;" title="Đóng cửa sổ">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+
+                <!-- STATE 1: LOADING PULSE VIEW -->
+                <div id="retranslate-loading-view" class="retranslate-pulse-card">
+                    <div class="retranslate-pulse-icon">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    </div>
+                    <div>
+                        <h4 id="retranslate-loading-step" style="font-size:1.25rem; font-weight:700; color:#f8fafc; margin-bottom:0.4rem;">
+                            🤖 AI đang phân tích và dịch lại chương...
+                        </h4>
+                        <p id="retranslate-loading-sub" style="font-size:0.88rem; color:#94a3b8; max-width:550px; line-height:1.5; margin:0 auto;">
+                            Đang áp dụng Book Bible nhân vật, địa danh và quy tắc dịch thuần Việt để văn phong mượt mà nhất.
+                        </p>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:0.6rem; color:#a5b4fc; font-size:0.88rem; font-weight:600; background:rgba(99,102,241,0.15); padding:0.4rem 1rem; border-radius:20px; border:1px solid rgba(99,102,241,0.3);">
+                        <i class="fa-solid fa-spinner spinner"></i>
+                        <span id="retranslate-loading-elapsed">Thời gian xử lý: 00:00s</span>
+                    </div>
+                </div>
+
+                <!-- STATE 2: DIFF & COMPARISON VIEW (Hidden initially) -->
+                <div id="retranslate-diff-view" class="retranslate-diff-container" style="display:none;">
+                    <!-- Stats bar -->
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem; background:rgba(15,23,42,0.8); border:1px solid var(--card-border); padding:0.6rem 1rem; border-radius:10px;">
+                        <div style="display:flex; gap:1.2rem; align-items:center; font-size:0.85rem; flex-wrap:wrap;">
+                            <span style="color:#94a3b8;"><i class="fa-solid fa-book-open"></i> Gốc: <strong id="diff-orig-words" style="color:#f8fafc;">0</strong> từ</span>
+                            <span style="color:#94a3b8;"><i class="fa-regular fa-file-lines"></i> Bản cũ: <strong id="diff-prev-words" style="color:#f8fafc;">0</strong> từ</span>
+                            <span style="color:#10b981; font-weight:600;"><i class="fa-solid fa-sparkles"></i> Bản mới: <strong id="diff-new-words">0</strong> từ (<span id="diff-words-delta">+0 từ</span>)</span>
+                        </div>
+                        <!-- Mobile Tabs -->
+                        <div class="retranslate-mobile-tabs">
+                            <button type="button" class="btn btn-secondary retranslate-tab-btn active" data-tab="new" onclick="setRetranslateMobileTab('new')" style="padding:0.25rem 0.6rem; font-size:0.75rem;">✨ Bản mới</button>
+                            <button type="button" class="btn btn-secondary retranslate-tab-btn" data-tab="prev" onclick="setRetranslateMobileTab('prev')" style="padding:0.25rem 0.6rem; font-size:0.75rem;">📜 Bản cũ</button>
+                            <button type="button" class="btn btn-secondary retranslate-tab-btn" data-tab="orig" onclick="setRetranslateMobileTab('orig')" style="padding:0.25rem 0.6rem; font-size:0.75rem;">📖 Gốc</button>
+                        </div>
+                    </div>
+
+                    <!-- 2-Column Comparison Grid -->
+                    <div class="retranslate-diff-grid">
+                        <!-- Left Pane: Previous Translation -->
+                        <div id="pane-diff-prev" class="retranslate-pane">
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <span style="font-size:0.85rem; font-weight:700; color:#94a3b8;">
+                                    <i class="fa-solid fa-history"></i> Bản Dịch Trước Đó
+                                </span>
+                                <button type="button" class="btn btn-secondary" onclick="copyRetranslateText('diff-prev-text')" style="padding:0.2rem 0.5rem; font-size:0.72rem;">
+                                    <i class="fa-regular fa-copy"></i> Sao chép
+                                </button>
+                            </div>
+                            <textarea id="diff-prev-text" readonly placeholder="Chưa có bản dịch trước đó..."></textarea>
+                        </div>
+
+                        <!-- Right Pane: New Translation -->
+                        <div id="pane-diff-new" class="retranslate-pane new-version">
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <div style="display:flex; align-items:center; gap:0.4rem;">
+                                    <span style="font-size:0.85rem; font-weight:700; color:#10b981;">
+                                        <i class="fa-solid fa-wand-magic-sparkles"></i> Bản Dịch Mới (AI Vừa Dịch)
+                                    </span>
+                                    <span class="tag" style="background:rgba(16,185,129,0.2); border:1px solid rgba(16,185,129,0.4); color:#34d399; font-size:0.7rem; padding:0.1rem 0.4rem;">MỚI</span>
+                                </div>
+                                <button type="button" class="btn btn-secondary" onclick="copyRetranslateText('diff-new-text')" style="padding:0.2rem 0.5rem; font-size:0.72rem;">
+                                    <i class="fa-regular fa-copy"></i> Sao chép
+                                </button>
+                            </div>
+                            <textarea id="diff-new-text" placeholder="Đang chuẩn bị bản dịch mới..."></textarea>
+                        </div>
+
+                        <!-- Optional Hidden/Mobile Original Pane -->
+                        <div id="pane-diff-orig" class="retranslate-pane hide-on-mobile" style="display:none;">
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <span style="font-size:0.85rem; font-weight:700; color:#cbd5e1;">
+                                    <i class="fa-solid fa-book"></i> Văn Bản Gốc
+                                </span>
+                                <button type="button" class="btn btn-secondary" onclick="copyRetranslateText('diff-orig-text')" style="padding:0.2rem 0.5rem; font-size:0.72rem;">
+                                    <i class="fa-regular fa-copy"></i> Sao chép
+                                </button>
+                            </div>
+                            <textarea id="diff-orig-text" readonly placeholder="Đang tải văn bản gốc..."></textarea>
+                        </div>
+                    </div>
+
+                    <!-- Footer Action Bar -->
+                    <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--card-border); padding-top:0.85rem; flex-wrap:wrap; gap:0.75rem;">
+                        <button type="button" class="btn btn-secondary" id="btn-retranslate-retry" onclick="retryCurrentChapterRetranslation()" style="padding:0.55rem 1.1rem; font-size:0.85rem;">
+                            <i class="fa-solid fa-rotate-right"></i> Dịch Lại Lần Nữa
+                        </button>
+                        <div style="display:flex; gap:0.75rem; align-items:center;">
+                            <button type="button" class="btn btn-secondary" onclick="cancelAndCloseRetranslateModal()" style="padding:0.55rem 1.2rem; font-size:0.85rem;">
+                                <i class="fa-solid fa-xmark"></i> Giữ Bản Dịch Cũ
+                            </button>
+                            <button type="button" class="btn" id="btn-retranslate-apply" onclick="applyRetranslatedChapter()" style="background:linear-gradient(135deg, #10b981, #059669); color:#fff; border:none; padding:0.55rem 1.4rem; font-size:0.85rem; font-weight:600; box-shadow:0 0 20px rgba(16,185,129,0.35);">
+                                <i class="fa-solid fa-check"></i> ✓ Áp Dụng Bản Dịch Mới
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- MODAL: CONFIRM DELETE NOVEL -->
         <div id="modal-confirm-delete" class="modal">
             <div class="modal-content" style="max-width:480px; border:1px solid rgba(239,68,68,0.4); box-shadow:0 0 35px rgba(239,68,68,0.25);">
@@ -1324,6 +1553,10 @@
     <script>
         let currentFile = null;
         let activePollInterval = null;
+        let currentNovelData = null;
+        let currentRetranslateData = null;
+        let retranslateTimerInterval = null;
+        let retranslateSeconds = 0;
 
         const MODEL_MAP = {
             gemini: [
@@ -2155,6 +2388,7 @@
                 const res = await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}`));
                 if (!res.ok) throw new Error("Không thể tải thông tin truyện");
                 const novel = await res.json();
+                currentNovelData = novel;
 
                 document.getElementById('detail-novel-title').innerText = novel.title;
                 document.getElementById('detail-novel-author').innerText = `Tác giả: ${novel.author || 'Chưa rõ'}`;
@@ -2436,6 +2670,34 @@
             }
         }
 
+        function startRetranslateTimer() {
+            clearInterval(retranslateTimerInterval);
+            retranslateSeconds = 0;
+            const updateTimerDisplay = () => {
+                const mins = String(Math.floor(retranslateSeconds / 60)).padStart(2, '0');
+                const secs = String(retranslateSeconds % 60).padStart(2, '0');
+                const timeStr = `${mins}:${secs}s`;
+                const badge = document.getElementById('retranslate-timer-badge');
+                if (badge) badge.innerHTML = `<i class="fa-regular fa-clock"></i> ${timeStr}`;
+                const elapsed = document.getElementById('retranslate-loading-elapsed');
+                if (elapsed) elapsed.innerText = `Thời gian xử lý: ${timeStr}`;
+                retranslateSeconds++;
+            };
+            updateTimerDisplay();
+            retranslateTimerInterval = setInterval(updateTimerDisplay, 1000);
+        }
+
+        function stopRetranslateTimer() {
+            clearInterval(retranslateTimerInterval);
+            retranslateTimerInterval = null;
+        }
+
+        function cancelAndCloseRetranslateModal() {
+            stopRetranslateTimer();
+            closeModal('modal-chapter-retranslate-diff');
+            currentRetranslateData = null;
+        }
+
         async function triggerTranslateChapter(novelId, chapterIndex) {
             const apiKey = document.getElementById('api-key-input').value.trim();
             const provider = document.getElementById('api-provider').value;
@@ -2447,13 +2709,43 @@
                 return;
             }
 
-            const trRow = event.currentTarget.closest('tr');
-            if (trRow) {
-                trRow.style.opacity = '0.5';
+            // Find chapter title from current loaded novel
+            let chapterTitle = `Chương ${chapterIndex}`;
+            if (currentNovelData && currentNovelData.chapters) {
+                const ch = currentNovelData.chapters.find(c => c.chapter_index === chapterIndex);
+                if (ch && ch.chapter_title) chapterTitle = ch.chapter_title;
             }
 
+            // Setup and Open Modal in Loading State
+            document.getElementById('retranslate-modal-title').innerHTML = `<i class="fa-solid fa-rotate-right" style="color:var(--accent);"></i> Dịch Lại: ${escapeHtml(chapterTitle)}`;
+            document.getElementById('retranslate-model-badge').innerHTML = `<i class="fa-solid fa-robot"></i> ${escapeHtml(provider.toUpperCase())} (${escapeHtml(model || 'Default')})`;
+            document.getElementById('retranslate-loading-view').style.display = 'flex';
+            document.getElementById('retranslate-diff-view').style.display = 'none';
+            document.getElementById('modal-chapter-retranslate-diff').classList.add('active');
+
+            startRetranslateTimer();
+
+            currentRetranslateData = {
+                novelId,
+                chapterIndex,
+                chapterTitle,
+                provider,
+                apiKey,
+                model
+            };
+
+            await runChapterRetranslateRequest();
+        }
+
+        async function runChapterRetranslateRequest() {
+            if (!currentRetranslateData) return;
+            const { novelId, chapterIndex, provider, apiKey, model } = currentRetranslateData;
+
+            document.getElementById('retranslate-loading-view').style.display = 'flex';
+            document.getElementById('retranslate-diff-view').style.display = 'none';
+
             try {
-                const res = await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/chapters/${chapterIndex}/translate`), {
+                const res = await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/chapters/${chapterIndex}/translate?preview_only=true`), {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -2461,7 +2753,12 @@
                         'X-Provider': provider,
                         'X-Model': model
                     },
-                    body: JSON.stringify({})
+                    body: JSON.stringify({
+                        api_key: apiKey,
+                        provider: provider,
+                        model: model,
+                        preview_only: true
+                    })
                 });
 
                 if (!res.ok) {
@@ -2469,12 +2766,127 @@
                     throw new Error(err.detail || "Dịch chương thất bại");
                 }
 
-                alert(`Đã dịch xong thành công Chương ${chapterIndex}!`);
+                const data = await res.json();
+                stopRetranslateTimer();
+
+                currentRetranslateData.originalText = data.original_text || '';
+                currentRetranslateData.prevText = data.previous_translated_text || '';
+                currentRetranslateData.newText = data.new_translated_text || '';
+
+                renderRetranslateDiffView();
+
+            } catch (err) {
+                stopRetranslateTimer();
+                alert("Lỗi khi dịch: " + err.message);
+                cancelAndCloseRetranslateModal();
+            }
+        }
+
+        function renderRetranslateDiffView() {
+            if (!currentRetranslateData) return;
+
+            const origWords = (currentRetranslateData.originalText || '').trim().split(/\s+/).filter(Boolean).length;
+            const prevWords = (currentRetranslateData.prevText || '').trim().split(/\s+/).filter(Boolean).length;
+            const newWords = (currentRetranslateData.newText || '').trim().split(/\s+/).filter(Boolean).length;
+            const delta = newWords - prevWords;
+            const deltaSign = delta >= 0 ? `+${delta}` : `${delta}`;
+
+            document.getElementById('diff-orig-words').innerText = origWords;
+            document.getElementById('diff-prev-words').innerText = prevWords;
+            document.getElementById('diff-new-words').innerText = newWords;
+            const deltaEl = document.getElementById('diff-words-delta');
+            deltaEl.innerText = `${deltaSign} từ`;
+            deltaEl.style.color = delta >= 0 ? '#10b981' : '#f59e0b';
+
+            document.getElementById('diff-prev-text').value = currentRetranslateData.prevText || '(Chưa có bản dịch trước đó)';
+            document.getElementById('diff-new-text').value = currentRetranslateData.newText || '';
+            document.getElementById('diff-orig-text').value = currentRetranslateData.originalText || '';
+
+            // Switch to Diff view
+            document.getElementById('retranslate-loading-view').style.display = 'none';
+            document.getElementById('retranslate-diff-view').style.display = 'flex';
+
+            // Reset mobile tab to 'new'
+            setRetranslateMobileTab('new');
+        }
+
+        function setRetranslateMobileTab(tabKey) {
+            document.querySelectorAll('.retranslate-tab-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.tab === tabKey);
+            });
+            const paneNew = document.getElementById('pane-diff-new');
+            const panePrev = document.getElementById('pane-diff-prev');
+            const paneOrig = document.getElementById('pane-diff-orig');
+
+            if (window.innerWidth <= 768) {
+                if (paneNew) paneNew.style.display = (tabKey === 'new') ? 'flex' : 'none';
+                if (panePrev) panePrev.style.display = (tabKey === 'prev') ? 'flex' : 'none';
+                if (paneOrig) paneOrig.style.display = (tabKey === 'orig') ? 'flex' : 'none';
+            } else {
+                if (paneNew) paneNew.style.display = 'flex';
+                if (panePrev) panePrev.style.display = 'flex';
+                if (paneOrig) paneOrig.style.display = 'none';
+            }
+        }
+
+        function retryCurrentChapterRetranslation() {
+            if (!currentRetranslateData) return;
+            startRetranslateTimer();
+            runChapterRetranslateRequest();
+        }
+
+        async function applyRetranslatedChapter() {
+            if (!currentRetranslateData) return;
+            const { novelId, chapterIndex } = currentRetranslateData;
+            const content = document.getElementById('diff-new-text').value;
+
+            if (!content || !content.trim()) {
+                alert("Nội dung bản dịch mới không được để trống!");
+                return;
+            }
+
+            const btn = document.getElementById('btn-retranslate-apply');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner spinner"></i> Đang áp dụng...';
+
+            try {
+                const res = await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/chapters/${chapterIndex}/apply-translation`), {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        content: content
+                    })
+                });
+
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || "Không thể áp dụng bản dịch");
+                }
+
+                showToast(`✓ Đã áp dụng thành công bản dịch mới cho Chương ${chapterIndex}!`, "success");
+                cancelAndCloseRetranslateModal();
                 openNovelDetail(novelId);
+
             } catch (err) {
                 alert("Lỗi: " + err.message);
-                openNovelDetail(novelId);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fa-solid fa-check"></i> ✓ Áp Dụng Bản Dịch Mới';
             }
+        }
+
+        function copyRetranslateText(elementId) {
+            const el = document.getElementById(elementId);
+            if (!el) return;
+            navigator.clipboard.writeText(el.value).then(() => {
+                showToast("Đã sao chép nội dung vào Clipboard!", "info");
+            }).catch(err => {
+                el.select();
+                document.execCommand('copy');
+                showToast("Đã sao chép nội dung!", "info");
+            });
         }
 
         async function openChapterReader(novelId, chapterIndex) {

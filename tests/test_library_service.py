@@ -690,6 +690,64 @@ def test_get_chapter_content_self_healing_from_full_epub():
     service.delete_novel(novel_id)
 
 
+@pytest.mark.asyncio
+async def test_translate_chapter_preview_mode(monkeypatch):
+    class MockLLM:
+        async def extract_book_bible_delta(self, *args, **kwargs):
+            return {}
+
+        async def translate_prose_chunk(self, *args, **kwargs):
+            return "Bản dịch thử nghiệm xem trước không ghi đè."
+
+    monkeypatch.setattr("app.modules.library.legacy_service.create_llm_client", lambda **kwargs: MockLLM())
+
+    service = LibraryService()
+    novel_id = f"test-preview-{uuid.uuid4().hex[:6]}"
+    service.create_novel(NovelCreateRequest(title="Truyện Test Preview", novel_id=novel_id))
+
+    service.add_or_update_chapter(
+        novel_id=novel_id,
+        chapter_index=1,
+        chapter_title="Chương 1: Khởi đầu",
+        content="Văn bản gốc tiếng Trung...",
+    )
+    # Save an initial translation
+    trans_key = service._chapter_key(novel_id, 1, is_translated=True)
+    service._save_raw_file(trans_key, "Bản dịch cũ ban đầu.".encode("utf-8"))
+    meta = service.get_novel(novel_id)
+    meta.chapters[0].status = ChapterStatus.COMPLETED
+    meta.chapters[0].translated_text_preview = "Bản dịch cũ ban đầu."
+    service._save_metadata(meta)
+
+    # Run translation in preview_only mode
+    preview_res = await service.translate_chapter(novel_id, 1, preview_only=True)
+
+    # Assert preview response fields
+    assert preview_res.novel_id == novel_id
+    assert preview_res.chapter_index == 1
+    assert preview_res.previous_translated_text == "Bản dịch cũ ban đầu."
+    assert preview_res.new_translated_text == "Bản dịch thử nghiệm xem trước không ghi đè."
+    assert preview_res.word_count > 0
+
+    # Ensure storage and metadata were NOT overwritten
+    assert service.get_chapter_content(novel_id, 1, version="translated") == "Bản dịch cũ ban đầu."
+    meta_after = service.get_novel(novel_id)
+    assert meta_after.chapters[0].translated_text_preview == "Bản dịch cũ ban đầu."
+
+    # Now apply the new translation
+    updated_ch = service.apply_chapter_translation(
+        novel_id=novel_id,
+        chapter_index=1,
+        content="Bản dịch mới đã được người dùng chấp thuận.",
+    )
+    assert updated_ch.status == ChapterStatus.COMPLETED
+    assert "Bản dịch mới đã được người dùng chấp thuận." in updated_ch.translated_text_preview
+    assert service.get_chapter_content(novel_id, 1, version="translated") == "Bản dịch mới đã được người dùng chấp thuận."
+
+    service.delete_novel(novel_id)
+
+
+
 
 
 

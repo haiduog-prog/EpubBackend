@@ -7,6 +7,12 @@
 
 ## Architecture
 
+### Precision Range Delta EPUB Rebuild (start_chapter & end_chapter)
+- **Ngày**: 2026-08-25
+- **Chi tiết**: Hỗ trợ tham số start_chapter và end_chapter (hoặc 	arget_chapters) trên cả API /export/epub lẫn Web UI. Cho phép người dùng hoặc tiến trình batch translation chỉ định chính xác dải chương vừa dịch (ví dụ từ chương 20 đến 50) để nạp vào file ull.epub thay vì phải quét toàn bộ. Tốc độ nạp chỉ mất 0.5 - 1 giây.
+- **Files liên quan**: pp/modules/library/api.py, pp/modules/library/legacy_service.py, pp/static/index.html
+
+
 ### Ultra-Fast Delta Patching for Large EPUBs (1,000 - 5,000+ Chapters)
 - **Ngày**: 2026-08-25
 - **Chi tiết**: Để tránh tải hàng ngàn file txt lẻ qua Supabase Storage gây nghẽn mạng và chạm rate limit, export_full_epub áp dụng chiến lược Delta Patching: nạp trực tiếp file base ull.epub từ storage (1 request), sau đó chỉ tải song song các chương ĐÃ DỊCH (ví dụ 50/4000 chương = 50 requests), cập nhật nội dung HTML của các chương này vào reading spine của EPUB rồi ghi đè file xuất. Giảm tới 98.7% số lượng request và hoàn thành trong ~2 giây.

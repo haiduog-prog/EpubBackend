@@ -215,6 +215,27 @@
 
 ## How-To
 
+### Sử dụng Công Cụ Chọn Nhanh Chương & Phím Tắt Shift-Click để Dịch Lại
+- **Ngày**: 2026-08-25
+- **Bước thực hiện**:
+  1. Mở modal chi tiết truyện, tại thanh công cụ chọn chương có các nút chuyên dụng:
+     - [Tất cả]: Chọn toàn bộ các chương.
+     - [Chưa dịch]: Chọn tất cả các chương chưa dịch.
+     - [Đã dịch (Dịch lại)]: Chọn toàn bộ các chương đã có bản dịch tiếng Việt chỉ với 1 click.
+     - Từ [A] đến [B] [Đã dịch]: Chỉ lọc và chọn các chương đã dịch nằm trong dải A đến B.
+  2. Phím tắt Shift + Click: Nhấp chọn checkbox chương đầu (ví dụ chương 10), giữ phím Shift và nhấp checkbox chương cuối (ví dụ chương 50), toàn bộ các chương từ 10 đến 50 sẽ được chọn ngay lập tức.
+  3. Bấm [⚡ Dịch X Chương Đã Chọn] trên thanh công cụ nổi để bắt đầu dịch hàng loạt.
+- **Files liên quan**: pp/static/index.html
+
+### Tùy Chọn Khoảng Chương Biên Dịch Lại EPUB (Precision Range Rebuild)
+- **Ngày**: 2026-08-25
+- **Bước thực hiện**:
+  1. Tại modal chi tiết bộ truyện, cạnh nút [Biên Dịch Lại], có 2 ô Chương: [ Từ ] - [ Đến ].
+  2. Nhập số chương bắt đầu và kết thúc (ví dụ Từ: 20 Đến: 50) rồi bấm [Biên Dịch Lại].
+  3. Hệ thống chỉ tải 31 chương tiếng Việt tương ứng và patch vào file ull.epub trong ~0.5 giây.
+  4. Nếu để trống 2 ô, hệ thống sẽ tự động cập nhật toàn bộ các chương đã dịch.
+- **Files liên quan**: pp/modules/library/api.py, pp/modules/library/legacy_service.py, pp/static/index.html
+
 ### Tải File Binary / Export Được Bảo Vệ Bằng Supabase Auth trên Frontend
 - **Ngày**: 2026-08-25
 - **Bước thực hiện**:
@@ -296,6 +317,16 @@
 ---
 
 ## Patterns
+
+### Relative & Human-friendly Date Formatting Pattern
+- **Ngày**: 2026-08-25
+- **Chi tiết**: Hàm ormatDateFriendly(isoString) chuyển đổi ISO timestamp thành nhãn thời gian tương đối trực quan cho người dùng (*Vừa xong*, *5 phút trước*, *Hôm nay 14:20*, *Hôm qua 08:30*, *25/08/2026 10:15*). Hiển thị nhất quán trên cả Novel Cards ngoài thư viện, thông tin tổng quan modal và cột *Ngày Dịch* trong bảng danh sách chương.
+- **Files liên quan**: pp/static/index.html
+
+### Safe Concurrency Throttling & Connection Reuse in Cloud Storage Batch Operations
+- **Ngày**: 2026-08-25
+- **Chi tiết**: Để xử lý các bộ tiểu thuyết cực lớn (1.000 - 5.000+ chương) mà không làm sập server hay bị Supabase/Cloudflare rate limit, kết hợp 2 kỹ thuật: (1) Giới hạn ThreadPool ở mức 20-25 workers đồng thời (giữ QPS ~40-50 req/s an toàn), (2) Tái sử dụng HTTP connection pool (Keep-Alive TCP/TLS) qua httpx.Limits(max_keepalive_connections=20, max_connections=50).
+- **Files liên quan**: pp/modules/library/legacy_service.py, pp/infrastructure/storage/legacy_storage.py
 
 ### Preview-before-Commit Translation Pattern
 - **Ngày**: 2026-08-25

@@ -25,6 +25,8 @@ from app.schemas.library import (
     ChapterStatus,
 )
 from app.api.dependencies import require_write_access
+from app.api.provider_errors import provider_http_exception
+from app.llm.errors import GeminiProviderError
 from app.api.uploads import read_upload_limited
 from app.modules.library.application.facade import library_service
 
@@ -314,6 +316,8 @@ async def translate_chapter_endpoint(
             model=mod,
             preview_only=is_preview,
         )
+    except GeminiProviderError as exc:
+        raise provider_http_exception(exc) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:

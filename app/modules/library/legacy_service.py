@@ -23,6 +23,7 @@ from app.parsers.epub_parser import extract_cover_from_epub, read_epub_safe
 from app.modules.library.persistence.repository import LibraryRepository
 from app.modules.book_bible.persistence.repository import BookBibleRepository
 from app.llm.factory import create_llm_client
+from app.llm.errors import GeminiProviderError
 from app.schemas.book_bible import BookBible
 from app.schemas.library import (
     ChapterCreateRequest,
@@ -622,6 +623,11 @@ class LegacyLibraryService:
                 )
                 if not preview_only and delta:
                     bible = storage_repo.merge_bible_delta(novel_id, delta, default_novel_id=novel_id)
+            except GeminiProviderError:
+                # Quota/outage errors must reach the API layer so the client
+                # receives 429/503 and can retry; only malformed optional
+                # Book Bible output is safe to ignore here.
+                raise
             except Exception as bible_err:
                 logger.warning("Trích xuất Book Bible delta chương %d thất bại (tiếp tục dịch): %s", chapter_index, bible_err)
 

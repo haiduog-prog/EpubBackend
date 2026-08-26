@@ -53,12 +53,28 @@ class Settings(BaseModel):
     cloudflare_r2_bucket_name: str = Field(default_factory=lambda: os.getenv("CLOUDFLARE_R2_BUCKET_NAME", ""))
     cloudflare_r2_public_url: str = Field(default_factory=lambda: os.getenv("CLOUDFLARE_R2_PUBLIC_URL", ""))
 
-    # Model defaults
+    # Model defaults. Keep these configurable because model availability and
+    # quotas are project-specific; do not hard-code a pool that may not be
+    # enabled for every Gemini API key.
     default_provider: str = Field(default="gemini")
     default_translation_model: str = Field(default="gemini-flash-latest")
     default_extraction_model: str = Field(default="gemini-flash-latest")
     default_qa_model: str = Field(default="gemini-flash-latest")
-    default_gemini_model: str = Field(default="gemini-flash-latest")
+    default_gemini_model: str = Field(
+        default_factory=lambda: os.getenv("GEMINI_DEFAULT_MODEL", "gemini-flash-latest")
+    )
+    gemini_model_pool: str = Field(
+        default_factory=lambda: os.getenv(
+            "GEMINI_MODEL_POOL",
+            "gemini-flash-latest,gemini-flash-lite-latest,gemini-pro-latest",
+        )
+    )
+    gemini_candidate_timeout_seconds: float = Field(
+        default_factory=lambda: float(os.getenv("GEMINI_CANDIDATE_TIMEOUT_SECONDS", "45"))
+    )
+    gemini_cooldown_seconds: float = Field(
+        default_factory=lambda: float(os.getenv("GEMINI_COOLDOWN_SECONDS", "60"))
+    )
     default_anthropic_model: str = Field(
         default_factory=lambda: os.getenv("ANTHROPIC_MODEL", "claude-3-5-haiku-latest")
     )

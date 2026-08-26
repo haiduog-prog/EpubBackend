@@ -3,9 +3,16 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from google.genai.errors import APIError
 
 from app.llm.anthropic_provider import AnthropicProvider
-from app.llm.gemini_provider import GeminiProvider
+from app.llm.errors import GeminiRateLimitError, GeminiServiceUnavailableError
+from app.llm.gemini_provider import (
+    GeminiProvider,
+    _GLOBAL_MODEL_COOLDOWNS,
+    _normalise_provider_error,
+    _parse_retry_after,
+)
 from app.schemas.book_bible import BookBibleDelta
 from app.prompts.templates import PROMPT_1_EXTRACT_BOOK_BIBLE_DELTA, PROMPT_4_QA_CHECK
 
@@ -97,3 +104,115 @@ def test_gemini_configures_sdk_request_timeout_in_milliseconds(monkeypatch):
     )
 
     assert captured["http_options"].timeout == 45_000
+
+
+def test_gemini_parses_retry_info_and_quota_scope():
+    payload = {
+        "error": {
+            "status": "RESOURCE_EXHAUSTED",
+            "message": "Quota exceeded",
+            "details": [
+                {
+                    "@type": "type.googleapis.com/google.rpc.RetryInfo",
+                    "retryDelay": "12s",
+                },
+                {
+                    "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+                    "violations": [{"quotaMetric": "GenerateContentRequestsPerDay"}],
+                },
+            ],
+        }
+    }
+    error = _normalise_provider_error(APIError(429, payload), "gemini-flash-latest")
+
+    assert isinstance(error, GeminiRateLimitError)
+    assert error.retry_after_seconds == 12
+    assert error.quota_scope == "GenerateContentRequestsPerDay"
+    assert _parse_retry_after(payload) == 12
+
+
+@pytest.mark.asyncio
+async def test_gemini_does_not_bypass_global_cooldowns():
+    provider = object.__new__(GeminiProvider)
+    provider.default_model = "cool-model"
+    provider.working_model = None
+    provider.failed_models = set()
+    provider.model_pool = ["cool-model", "cool-lite"]
+    provider.client = SimpleNamespace(
+        aio=SimpleNamespace(models=SimpleNamespace(generate_content=AsyncMock()))
+    )
+    _GLOBAL_MODEL_COOLDOWNS["cool-model"] = 9_999_999_999.0
+    _GLOBAL_MODEL_COOLDOWNS["cool-lite"] = 9_999_999_999.0
+
+    try:
+        with pytest.raises(GeminiServiceUnavailableError):
+            await provider._call_with_fallback("text", object())
+        provider.client.aio.models.generate_content.assert_not_awaited()
+    finally:
+        _GLOBAL_MODEL_COOLDOWNS.pop("cool-model", None)
+        _GLOBAL_MODEL_COOLDOWNS.pop("cool-lite", None)
+
+
+@pytest.mark.asyncio
+async def test_gemini_transient_failure_is_not_marked_permanently_failed():
+    provider = object.__new__(GeminiProvider)
+    provider.default_model = "first-model"
+    provider.working_model = None
+    provider.failed_models = set()
+    provider.model_pool = ["first-model", "second-model"]
+    calls = []
+
+    async def generate_content(**kwargs):
+        calls.append(kwargs["model"])
+        if kwargs["model"] == "first-model":
+            raise APIError(503, {"error": {"status": "UNAVAILABLE", "message": "high demand"}})
+        return SimpleNamespace(text="ok")
+
+    provider.client = SimpleNamespace(
+        aio=SimpleNamespace(models=SimpleNamespace(generate_content=generate_content))
+    )
+    response = await provider._call_with_fallback("text", object())
+
+    assert response.text == "ok"
+    assert calls == ["first-model", "second-model"]
+    assert "first-model" not in provider.failed_models
+    _GLOBAL_MODEL_COOLDOWNS.pop("first-model", None)
+
+
+@pytest.mark.asyncio
+async def test_gemini_stops_fallback_for_project_wide_quota():
+    provider = object.__new__(GeminiProvider)
+    provider.default_model = "first-model"
+    provider.working_model = None
+    provider.failed_models = set()
+    provider.model_pool = ["first-model", "second-model"]
+    calls = []
+
+    async def generate_content(**kwargs):
+        calls.append(kwargs["model"])
+        raise APIError(
+            429,
+            {
+                "error": {
+                    "status": "RESOURCE_EXHAUSTED",
+                    "message": "daily quota exceeded",
+                    "details": [
+                        {
+                            "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+                            "violations": [{"quotaMetric": "GenerateContentRequestsPerDay"}],
+                        }
+                    ],
+                }
+            },
+        )
+
+    provider.client = SimpleNamespace(
+        aio=SimpleNamespace(models=SimpleNamespace(generate_content=generate_content))
+    )
+    try:
+        with pytest.raises(GeminiRateLimitError):
+            await provider._call_with_fallback("text", object())
+        assert calls == ["first-model"]
+    finally:
+        _GLOBAL_MODEL_COOLDOWNS.pop("first-model", None)
+        _GLOBAL_MODEL_COOLDOWNS.pop("second-model", None)

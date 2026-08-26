@@ -1,7 +1,7 @@
 # Novel Translation Engine
 
 > Tổng hợp kiến thức về hệ thống dịch truyện thuần Việt (v2) hỗ trợ EPUB/HTML/TXT với Structured Outputs, Prompt Caching và Decoupled LLM Providers.
-> Cập nhật lần cuối: 2026-08-25
+> Cập nhật lần cuối: 2026-08-26
 
 ---
 
@@ -12,10 +12,14 @@
 - **Chi tiết**: Khi Google server bị quá tải (503 High Demand), nó giữ kết nối treo từ 2-4 phút trước khi nhả lỗi. Giải pháp: Áp dụng syncio.wait_for giới hạn 15s cho từng candidate model. Nếu timeout hoặc dính 503/429, model đó tự động đưa vào _GLOBAL_MODEL_COOLDOWNS (tạm khóa 10 phút), các chương tiếp theo sẽ tự động bỏ qua model này và gọi thẳng gemini-flash-lite (chỉ mất 10s/chương).
 - **Files liên quan**: pp/llm/gemini_provider.py, pp/static/index.html
 
+- **Cập nhật 2026-08-26**: Timeout mặc định của từng candidate là 45 giây và cooldown local là 60 giây (có thể cấu hình qua env). Cooldown không bị bypass; provider đọc RetryInfo, phân biệt lỗi tạm thời với model 404 và không đánh dấu 429/503 là lỗi vĩnh viễn.
+
 ### Resilient Enrichment Boundary (Safe Delta Extraction)
 - **Ngày**: 2026-08-25
 - **Chi tiết**: Phân lập hoàn toàn các bước bổ trợ (enrichment) như trích xuất nhân vật/thuật ngữ mới (BookBibleDelta) khỏi luồng dịch văn bản chính. Nếu LLM sinh dữ liệu JSON lỗi hoặc timeout ở bước delta, hệ thống ghi log warning và tiếp tục tiến trình dịch văn bản chương bằng Book Bible hiện có thay vì dừng hoặc ném lỗi HTTP 400.
 - **Files liên quan**: pp/llm/gemini_provider.py, pp/modules/library/legacy_service.py, pp/modules/translation/legacy_pipeline.py
+
+- **Cập nhật 2026-08-26**: Vẫn fail-open với JSON BookBibleDelta sai định dạng, nhưng lỗi provider có thể retry (429 quota, 503 unavailable, timeout) phải được giữ nguyên và truyền lên API để client biết khi nào nên thử lại.
 
 ### Quick Chapter Selection & Shift-Click for Retranslation
 - **Ngày**: 2026-08-25
@@ -169,6 +173,15 @@ esponse_schema vào 	ypes.GenerateContentConfig, bổ sung regex dọn dẹp tra
 - **Fix**: Triển khai chuỗi fallback tự động (`gemini-1.5-flash-latest`, `gemini-1.5-flash-002`, `gemini-1.5-flash`, `gemini-2.0-flash-exp`, `gemini-2.0-flash-lite`, `gemini-1.5-pro`). Nếu tất cả đều hết quota, báo lỗi hướng dẫn người dùng tạo Key mới hoặc dùng Claude.
 - **Files liên quan**: `app/llm/gemini_provider.py`
 
+- **Cập nhật 2026-08-26**: Quota có thể nằm ở cấp project/ngày chứ không chỉ từng model. Khi payload có QuotaFailure/RetryInfo cấp project hoặc per-day, provider dừng fallback ngay, cooldown toàn pool và trả lỗi typed kèm thời gian retry; fallback chỉ tiếp tục cho giới hạn riêng model.
+
+### Provider Error Mapping for Mobile Retry
+- **Ngày**: 2026-08-26
+- **Vấn đề**: Provider error trước đây bị gom thành `ValueError`, khiến endpoint trả HTTP 400 dù lỗi thực tế là quota hoặc Google tạm unavailable.
+- **Root cause**: Tầng provider chỉ dò chuỗi message và tầng API không có contract cho retry semantics.
+- **Fix**: Chuẩn hóa `GeminiProviderError` và các subtype 429/503/404; API trả mã HTTP tương ứng, detail có error code/retryable/quota scope và header `Retry-After`. Lỗi delta extraction/provider không còn bị nuốt.
+- **Files liên quan**: `app/llm/errors.py`, `app/llm/gemini_provider.py`, `app/api/provider_errors.py`, `app/modules/library/api.py`, `app/modules/translation/api.py`
+
 ### Retry tạo event trùng
 - **Ngày**: 2026-08-17
 - **Vấn đề**: Android có thể gửi lại submission sau timeout hoặc offline replay.
@@ -306,6 +319,15 @@ esponse_schema vào 	ypes.GenerateContentConfig, bổ sung regex dọn dẹp tra
   3. Dùng `asyncio.wait_for` làm deadline tổng, đóng client trong `finally`, rồi test bằng fake coroutine nhận cancellation.
 - **Files liên quan**: `app/llm/factory.py`, `app/llm/gemini_provider.py`, `app/modules/library/legacy_service.py`, `tests/test_llm_adapters.py`
 
+### Cấu hình Gemini model pool và retry
+- **Ngày**: 2026-08-26
+- **Bước thực hiện**:
+  1. Đặt GEMINI_DEFAULT_MODEL bằng model đã kiểm tra với API key/project.
+  2. Đặt GEMINI_MODEL_POOL là danh sách model phân tách bằng dấu phẩy; chỉ thêm model mà project được cấp quyền.
+  3. Điều chỉnh GEMINI_CANDIDATE_TIMEOUT_SECONDS và GEMINI_COOLDOWN_SECONDS khi cần.
+  4. Client Android xử lý HTTP 429/503, đọc body code, retryable, retry_after_seconds và header Retry-After; không retry 404 model nếu retryable=false.
+- **Files liên quan**: app/config.py, app/llm/gemini_provider.py, app/api/provider_errors.py
+
 ### Khởi Chạy Server & Web UI Test
 - **Ngày**: 2026-08-10
 - **Bước thực hiện**:
@@ -401,6 +423,11 @@ esponse_schema vào 	ypes.GenerateContentConfig, bổ sung regex dọn dẹp tra
   return response.parsed
   ```
 - **Files liên quan**: `app/llm/gemini_provider.py`
+
+### Typed Provider Error Contract
+- **Ngày**: 2026-08-26
+- **Chi tiết**: Provider dùng exception typed thay vì để API dò chuỗi message. GeminiRateLimitError giữ quota scope/thời gian retry; GeminiServiceUnavailableError biểu diễn 503/timeout; GeminiModelUnavailableError dành cho 404 model. Mapper HTTP dùng chung chuyển chúng thành response ổn định cho Android.
+- **Files liên quan**: app/llm/errors.py, app/api/provider_errors.py, app/modules/library/api.py, app/modules/translation/api.py
  
 ### Safe EPUB Asset & Cover Extraction Fallback
 - **Ngày**: 2026-08-21

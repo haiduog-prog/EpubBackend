@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from math import ceil
 import os
 import uuid
 from datetime import datetime, timezone
@@ -19,13 +20,22 @@ from app.modules.translation.application.facade import TranslationPipelineServic
 from app.infrastructure.cache.direct_translation import DirectTranslationCache
 from app.config import settings
 from app.api.dependencies import require_write_access
+from app.api.provider_errors import provider_http_exception
 from app.api.uploads import read_upload_limited
 from app.infrastructure.jobs import limited_background_work
+from app.llm.errors import GeminiProviderError
 
 router = APIRouter(prefix="/translate", tags=["Translation"])
 direct_translation_cache = DirectTranslationCache()
 logger = logging.getLogger("EpubBackend.TranslationAPI")
 _running_jobs: set[str] = set()
+
+
+def _provider_job_error(error: GeminiProviderError) -> str:
+    message = f"[{error.error_code}] {error}"
+    if error.retry_after_seconds is not None and error.retry_after_seconds > 0:
+        message += f" Thu lai sau khoang {max(1, ceil(error.retry_after_seconds))} giay."
+    return message
 
 STORAGE_BASE_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "storage"
@@ -145,7 +155,7 @@ async def run_translation_background_job(
         storage_repo.save_job(job)
     except Exception as exc:
         job.status = JobStatusEnum.FAILED
-        job.error_message = str(exc)
+        job.error_message = _provider_job_error(exc) if isinstance(exc, GeminiProviderError) else str(exc)
         job.current_step = f"Loi: {exc}"
         storage_repo.save_job(job)
     finally:
@@ -285,6 +295,8 @@ async def translate_text_direct_endpoint(
             book_bible=updated_bible,
             address_resolution=AddressResolutionResponse(**resolution),
         )
+    except GeminiProviderError as exc:
+        raise provider_http_exception(exc) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:

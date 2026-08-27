@@ -10,7 +10,7 @@ class ReaderChapterSummary(BaseModel):
     chapter_id: str = ""
     chapter_title: str
     word_count: int = 0
-    updated_at: str = ""
+    updated_at: Optional[str] = None
     content_url: Optional[str] = None
     content_urls: List[str] = Field(default_factory=list)
 

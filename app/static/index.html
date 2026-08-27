@@ -3004,6 +3004,7 @@
                     document.getElementById('detail-chapters-tbody').innerHTML = novel.chapters.map(ch => {
                         let statusBadge = '<span style="color:#94a3b8;"><i class="fa-regular fa-clock"></i> Chưa dịch</span>';
                         if (ch.status === 'completed') statusBadge = '<span style="color:#10b981; font-weight:600;"><i class="fa-solid fa-circle-check"></i> Đã dịch</span>';
+                        else if (ch.status === 'needs_review') statusBadge = '<span style="color:#f59e0b; font-weight:600;" title="Bản dịch đang ở draft, cần duyệt"><i class="fa-solid fa-eye"></i> Cần duyệt</span>';
                         else if (ch.status === 'translating') statusBadge = '<span style="color:#f59e0b; font-weight:600;"><i class="fa-solid fa-spinner spinner"></i> Đang dịch...</span>';
                         else if (ch.status === 'failed') statusBadge = '<span style="color:#ef4444; font-weight:600;"><i class="fa-solid fa-triangle-exclamation"></i> Lỗi</span>';
 
@@ -3779,6 +3780,8 @@
                     badgeHtml = '<span style="color:#f59e0b; font-weight:600;"><i class="fa-solid fa-spinner spinner"></i> Đang dịch...</span>';
                 } else if (item.status === 'completed') {
                     badgeHtml = `<span style="color:#10b981; font-weight:600;"><i class="fa-solid fa-circle-check"></i> Xong (${item.wordCount} từ)</span>`;
+                } else if (item.status === 'needs_review') {
+                    badgeHtml = `<span style="color:#f59e0b; font-weight:600;" title="Draft cần duyệt"><i class="fa-solid fa-eye"></i> Cần duyệt</span>`;
                 } else if (item.status === 'failed') {
                     badgeHtml = `<span style="color:#ef4444; font-weight:600;" title="${escapeHtml(item.error || '')}"><i class="fa-solid fa-triangle-exclamation"></i> Lỗi</span>`;
                 }
@@ -3805,6 +3808,8 @@
         async function runBatchTranslateQueueLoop(apiKey, provider, model) {
             const total = batchTranslateQueue.length;
             let completed = 0;
+            let processed = 0;
+            let needsReview = 0;
 
             for (let i = 0; i < total; i++) {
                 if (!batchTranslateRunning) break;
@@ -3846,18 +3851,20 @@
                     }
 
                     const chData = await res.json();
-                    item.status = 'completed';
+                    item.status = chData.status === 'needs_review' ? 'needs_review' : 'completed';
                     item.wordCount = chData.word_count || 0;
                     item.durationSeconds = Math.round((Date.now() - startItemTime) / 1000);
-                    completed++;
+                    if (item.status === 'needs_review') needsReview++;
+                    else completed++;
 
                 } catch (err) {
                     item.status = 'failed';
                     item.error = err.message;
                     item.durationSeconds = Math.round((Date.now() - startItemTime) / 1000);
                 }
+                processed++;
 
-                updateBatchProgressBar(completed, total);
+                updateBatchProgressBar(processed, total);
                 renderBatchQueueTable();
             }
 
@@ -3903,10 +3910,10 @@
                 }
             }
 
-            document.getElementById('batch-progress-status-text').innerHTML = `<span style="color:#10b981; font-weight:700;"><i class="fa-solid fa-circle-check"></i> Đã hoàn thành dịch ${completed}/${total} chương!</span>`;
+            document.getElementById('batch-progress-status-text').innerHTML = `<span style="color:#10b981; font-weight:700;"><i class="fa-solid fa-circle-check"></i> Đã xử lý ${processed}/${total} chương${needsReview ? ` (cần duyệt: ${needsReview})` : ''}!</span>`;
             document.getElementById('btn-batch-abort').style.display = 'none';
             document.getElementById('btn-batch-done-close').style.display = 'inline-block';
-            showToast(`✓ Đã hoàn thành dịch ${completed} chương!`, "success");
+            showToast(`✓ Đã xử lý ${processed} chương${needsReview ? `; cần duyệt ${needsReview}` : ''}!`, needsReview ? "warning" : "success");
         }
 
         function downloadCompiledEpubNow() {

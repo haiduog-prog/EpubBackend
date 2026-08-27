@@ -93,6 +93,8 @@ Quy tắc:
 5. Trích xuất biệt danh/chức danh vào "aliases" để giữ mapping canonical.
 6. Nhân vật đã có trong danh sách đã biết mà không có gì mới thì KHÔNG liệt kê lại.
 7. "style_guide" chỉ trả nếu đây là lần trích xuất đầu tiên hoặc có thay đổi rõ rệt.
+8. BẮT BUỘC trích xuất tên loài/thực thể fantasy xuất hiện trong văn bản vào "new_terms", gồm ma thú, yêu thú, linh thú, thần thú, dị thú, yêu quái, chủng tộc và giống loài có tên riêng. Với tên Hán tự, "original_name" giữ nguyên chữ Hán và "vi_name" dùng phiên âm Hán-Việt nhất quán (ví dụ 金毛暴熊 -> Kim Mao Bạo Hùng), không dịch nghĩa từng chữ.
+9. Phân biệt tên loài (thuật ngữ định danh cần lưu Bible) với mô tả hình dáng trong câu. Chữ 毛 khi nói về động vật là "mao/lông", tuyệt đối không suy diễn thành "tóc".
 
 Văn bản gốc cần phân tích:
 {source_text}"""
@@ -109,6 +111,9 @@ QUY TẮC DỊCH:
 6. Giữ giọng văn riêng từng nhân vật theo "voice_notes".
 7. Nội dung trong <previous_context> CHỈ để tham khảo mạch văn và xưng hô — TUYỆT ĐỐI không dịch lại, không lặp lại trong output.
 8. Giữ nguyên cấu trúc đoạn văn/xuống dòng. Không thêm lời dẫn, không giải thích — chỉ trả về bản dịch của nội dung trong <text_to_translate>.
+9. Tên loài/thực thể fantasy có tính định danh (ma thú, yêu thú, linh thú, thần thú, dị thú, yêu quái, chủng tộc) BẮT BUỘC dùng đúng tên Hán-Việt canonical trong Book Bible; không pha nửa dịch nghĩa nửa Hán-Việt và không tự đổi cách gọi giữa các chương.
+10. Khi tên gốc có 毛: nếu chỉ loài động vật thì hiểu là "mao/lông", không dịch thành "tóc". Mô tả như "bộ lông màu vàng" chỉ dùng khi nguyên văn đang mô tả hình dáng, không thay thế tên loài.
+11. Các biến thể bị cấm trong trường "forbidden_variants" của Book Bible không được xuất hiện trong bản dịch; nếu không chắc, giữ nguyên tên canonical.
 
 <book_bible>
 {book_bible_json}
@@ -152,3 +157,22 @@ PROMPT_4_QA_CHECK = """So sánh đoạn bản dịch dưới đây với Book Bi
 
 Trả JSON dạng object có thuộc tính "issues": [{{"issue": "...", "found": "...", "expected": "...", "location": "trích đoạn ngắn chứa lỗi"}}].
 Nếu không có lỗi, trả về "issues": []."""
+
+
+PROMPT_5_CORRECT_TERMINOLOGY = """Bạn là biên tập viên hiệu đính bản dịch. Chỉ sửa các tên riêng và thuật ngữ được nêu trong <issues>; giữ nguyên toàn bộ câu chữ, giọng văn, xuống dòng và ý nghĩa ngoài phạm vi đó. Tên loài/thực thể fantasy phải dùng đúng vi_name canonical trong Book Bible. Không giải thích, chỉ trả lại bản dịch đã hiệu đính.
+
+<book_bible>
+{book_bible_json}
+</book_bible>
+
+<issues>
+{issues_json}
+</issues>
+
+<source_text>
+{source_text}
+</source_text>
+
+<translated_text>
+{translated_text}
+</translated_text>"""

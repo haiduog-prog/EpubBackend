@@ -176,6 +176,12 @@ class LegacyBookBibleService:
         term_map: Dict[str, TermEntry] = {
             BookBibleService._key(term.original_name): term for term in bible.terms
         }
+        term_alias_map: Dict[str, TermEntry] = {
+            BookBibleService._key(alias): term
+            for term in bible.terms
+            for alias in getattr(term, "aliases", [])
+            if alias
+        }
         term_vi_map: Dict[str, TermEntry] = {
             BookBibleService._key(term.vi_name): term
             for term in bible.terms
@@ -186,12 +192,33 @@ class LegacyBookBibleService:
                 new_term.first_seen_chapter = chapter_index
             name_key = BookBibleService._key(new_term.original_name)
             vi_key = BookBibleService._key(new_term.vi_name)
-            existing = term_map.get(name_key) or term_vi_map.get(vi_key)
+            existing = term_map.get(name_key) or term_alias_map.get(name_key) or term_vi_map.get(vi_key)
             if existing:
                 if _is_cjk(new_term.original_name) and not _is_cjk(existing.original_name):
                     existing.original_name = new_term.original_name
                 if new_term.vi_name and not existing.vi_name:
                     existing.vi_name = new_term.vi_name
+                elif (
+                    new_term.vi_name
+                    and existing.vi_name
+                    and BookBibleService._key(new_term.vi_name)
+                    != BookBibleService._key(existing.vi_name)
+                ):
+                    if existing.locked:
+                        if new_term.vi_name not in existing.forbidden_variants:
+                            existing.forbidden_variants.append(new_term.vi_name)
+                    else:
+                        if existing.vi_name not in existing.aliases:
+                            existing.aliases.append(existing.vi_name)
+                        existing.vi_name = new_term.vi_name
+                for alias in new_term.aliases:
+                    if alias and alias not in existing.aliases:
+                        existing.aliases.append(alias)
+                    if alias:
+                        term_alias_map[BookBibleService._key(alias)] = existing
+                for variant in new_term.forbidden_variants:
+                    if variant and variant not in existing.forbidden_variants:
+                        existing.forbidden_variants.append(variant)
                 if new_term.category and not existing.category:
                     existing.category = new_term.category
                 if new_term.notes:
@@ -204,6 +231,9 @@ class LegacyBookBibleService:
             else:
                 term_map[name_key] = new_term
                 bible.terms.append(new_term)
+                for alias in new_term.aliases:
+                    if alias:
+                        term_alias_map[BookBibleService._key(alias)] = new_term
                 if new_term.vi_name:
                     term_vi_map[BookBibleService._key(new_term.vi_name)] = new_term
 
@@ -229,6 +259,12 @@ class LegacyBookBibleService:
             lines.append(f"{place.original_name} -> {place.vi_name}")
         for term in bible.terms:
             lines.append(f"{term.original_name} -> {term.vi_name}")
+            for alias in getattr(term, "aliases", []) or []:
+                if alias:
+                    lines.append(f"{alias} -> {term.vi_name} (alias of {term.original_name})")
+            for forbidden in getattr(term, "forbidden_variants", []) or []:
+                if forbidden:
+                    lines.append(f"DO NOT USE: {forbidden}; use {term.vi_name}")
         return "\n".join(lines) if lines else "(empty)"
 
     @staticmethod

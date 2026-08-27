@@ -24,6 +24,7 @@ from app.llm.errors import (
     GeminiProviderError,
     GeminiRateLimitError,
     GeminiServiceUnavailableError,
+    StructuredOutputError,
 )
 
 logger = logging.getLogger("EpubBackend.GeminiProvider")
@@ -406,8 +407,12 @@ class GeminiProvider(BaseLLMClient):
         except Exception as err:
             if isinstance(err, GeminiProviderError):
                 raise
-            logger.warning("Trích xuất BookBibleDelta gặp lỗi (%s). Trả về delta rỗng để tiếp tục dịch.", err)
-            return BookBibleDelta()
+            logger.warning("Trích xuất BookBibleDelta gặp lỗi structured output (%s). Đánh dấu scan chưa hoàn tất.", err)
+            raise StructuredOutputError(
+                "BookBibleDelta không hợp lệ",
+                operation="extract_book_bible_delta",
+                details=str(err),
+            ) from err
 
     async def translate_prose_chunk(
         self,

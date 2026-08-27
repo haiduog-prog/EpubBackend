@@ -8,6 +8,7 @@ class ChapterStatus(str, Enum):
     NOT_TRANSLATED = "not_translated"
     TRANSLATING = "translating"
     COMPLETED = "completed"
+    NEEDS_REVIEW = "needs_review"
     FAILED = "failed"
 
 

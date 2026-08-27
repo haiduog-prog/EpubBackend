@@ -1,7 +1,7 @@
 # Novel Translation Engine
 
 > Tổng hợp kiến thức về hệ thống dịch truyện thuần Việt (v2) hỗ trợ EPUB/HTML/TXT với Structured Outputs, Prompt Caching và Decoupled LLM Providers.
-> Cập nhật lần cuối: 2026-08-26
+> Cập nhật lần cuối: 2026-08-27
 
 ---
 
@@ -113,6 +113,11 @@
 - **Files liên quan**: `app/parsers/epub_parser.py`, `app/services/library_service.py`
 
 ---
+
+### Chapter Terminology Consistency & Review Gate
+- **Ngày**: 2026-08-27
+- **Chi tiết**: Quét Book Bible theo toàn chương; chương dài dùng cửa sổ chồng lấn. Canonical term chỉ bắt buộc với tên định danh đủ điều kiện, tránh false positive với term một chữ. Nếu scan/QA chưa đạt, lưu draft và đánh dấu `NEEDS_REVIEW`, không ghi đè bản publish.
+- **Files liên quan**: `app/modules/translation/application/terminology_consistency_service.py`, `app/modules/library/legacy_service.py`, `app/modules/library/schemas.py`
 
 ## Bugs & Solutions
 
@@ -252,6 +257,25 @@ esponse_schema vào 	ypes.GenerateContentConfig, bổ sung regex dọn dẹp tra
 
 ---
 
+### Structured Output Fail-Open Boundary
+- **Ngày**: 2026-08-27
+- **Vấn đề**: Gemini trả JSON BookBibleDelta lỗi có thể làm pipeline legacy dừng đột ngột.
+- **Root cause**: Provider chuyển từ delta rỗng sang `StructuredOutputError`, nhưng caller cũ không bắt lỗi typed.
+- **Fix**: Library chapter mới giữ fail-closed để chuyển review; TXT/EPUB/direct bắt `StructuredOutputError`, log và tiếp tục với `BookBibleDelta()` rỗng.
+- **Files liên quan**: `app/llm/gemini_provider.py`, `app/modules/translation/legacy_pipeline.py`
+
+### Locked Canonical Merge Policy
+- **Ngày**: 2026-08-27
+- **Vấn đề**: Tên mới từ LLM bị đưa vào `forbidden_variants` dù canonical cũ chưa được xác nhận.
+- **Fix**: Term chưa khóa được cập nhật canonical và lưu tên cũ làm alias; chỉ term đã khóa mới cấm đề xuất mới.
+- **Files liên quan**: `app/modules/book_bible/legacy_service.py`, `app/modules/book_bible/schemas.py`
+
+### Nullable Reader Timestamp
+- **Ngày**: 2026-08-27
+- **Vấn đề**: `updated_at=None` gây `ValidationError` trong Reader.
+- **Fix**: Dùng `Optional[str] = None` và để UI hiển thị placeholder khi chưa có timestamp.
+- **Files liên quan**: `app/modules/reader/schemas.py`
+
 ## How-To
 
 ### Sử dụng Công Cụ Chọn Nhanh Chương & Phím Tắt Shift-Click để Dịch Lại
@@ -363,6 +387,14 @@ esponse_schema vào 	ypes.GenerateContentConfig, bổ sung regex dọn dẹp tra
 - **Files liên quan**: `app/api/v1/character_profiles.py`
 
 ---
+
+### Regressions for Terminology Workflow
+- **Ngày**: 2026-08-27
+- **Bước thực hiện**:
+  1. Test cửa sổ scan và canonical check bằng fake extractor.
+  2. Test locked/unlocked merge và fail-open legacy caller.
+  3. Chạy `PYTHONPATH=. pytest -q` trước khi bàn giao.
+- **Files liên quan**: `tests/test_terminology_consistency.py`, `tests/test_translation_regression_fixes.py`
 
 ## Patterns
 

@@ -7,7 +7,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from app.modules.shared.ports import LLMClient
 from app.parsers.epub_parser import EPUBParser
 from app.parsers.txt_chunker import TXTChunker
-from app.schemas.book_bible import BookBible
+from app.schemas.book_bible import BookBible, BookBibleDelta
+from app.llm.errors import StructuredOutputError
 from app.schemas.translation import HTMLInputItem, HTMLTranslationItem
 from app.modules.book_bible.domain.address_resolver import AddressRuleResolver
 from app.modules.book_bible.application.facade import BookBibleService
@@ -29,6 +30,15 @@ class LegacyTranslationPipelineService:
         self.qa_service = QAService(llm_client)
         self.policy = HybridPolicyEngine()
 
+    async def _extract_delta_fail_open(
+        self, source_text: str, known_index: str
+    ) -> BookBibleDelta:
+        try:
+            return await self.llm_client.extract_book_bible_delta(source_text, known_index)
+        except StructuredOutputError as exc:
+            logger.warning("Book Bible enrichment không hợp lệ; tiếp tục dịch với delta rỗng: %s", exc)
+            return BookBibleDelta()
+
     async def extract_initial_book_bible(
         self,
         sample_text: str,
@@ -46,7 +56,7 @@ class LegacyTranslationPipelineService:
         )
         started = time.perf_counter()
         known_index = BookBibleService.get_known_names_index(bible)
-        delta = await self.llm_client.extract_book_bible_delta(sample_text, known_index)
+        delta = await self._extract_delta_fail_open(sample_text, known_index)
         logger.info(
             "[TIMING] stage=book_bible_extract.end chapter=%s chunk=%s elapsed_ms=%.1f "
             "new_chars=%d observations=%d",
@@ -195,9 +205,7 @@ class LegacyTranslationPipelineService:
         for index, chunk in enumerate(chunks):
             known_index = BookBibleService.get_known_names_index(bible)
             extract_started = time.perf_counter()
-            delta = await self.llm_client.extract_book_bible_delta(
-                chunk.text, known_index
-            )
+            delta = await self._extract_delta_fail_open(chunk.text, known_index)
             logger.info(
                 "[TIMING] stage=book_bible_extract.end chunk=%d elapsed_ms=%.1f "
                 "text_chars=%d new_chars=%d observations=%d",
@@ -318,9 +326,7 @@ class LegacyTranslationPipelineService:
             if extract_text:
                 known_index = BookBibleService.get_known_names_index(bible)
                 extract_started = time.perf_counter()
-                delta = await self.llm_client.extract_book_bible_delta(
-                    extract_text, known_index
-                )
+                delta = await self._extract_delta_fail_open(extract_text, known_index)
                 logger.info(
                     "[TIMING] stage=book_bible_extract.end chapter=%d elapsed_ms=%.1f "
                     "text_chars=%d new_chars=%d observations=%d",

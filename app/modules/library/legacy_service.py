@@ -23,7 +23,6 @@ from app.parsers.epub_parser import extract_cover_from_epub, read_epub_safe
 from app.modules.library.persistence.repository import LibraryRepository
 from app.modules.book_bible.persistence.repository import BookBibleRepository
 from app.llm.factory import create_llm_client
-from app.llm.errors import GeminiProviderError
 from app.schemas.book_bible import BookBible
 from app.schemas.library import (
     ChapterCreateRequest,
@@ -39,6 +38,7 @@ from app.schemas.library import (
 )
 from app.modules.translation.application.facade import TranslationPipelineService
 from app.modules.book_bible.application.facade import BookBibleService
+from app.modules.translation.application.terminology_consistency_service import TerminologyConsistencyService
 
 logger = logging.getLogger("EpubBackend.LibraryService")
 AUTO_SCAN_TIMEOUT_SECONDS = 45.0
@@ -616,20 +616,14 @@ class LegacyLibraryService:
             bible = storage_repo.get_bible(novel_id) or BookBible(novel_id=novel_id)
 
             # Trích xuất delta & cập nhật bible nếu không ở chế độ preview_only
-            known_names = BookBibleService.get_known_names_index(bible)
-            try:
-                delta = await llm_client.extract_book_bible_delta(
-                    orig_content[:3000], known_names, model=model
-                )
-                if not preview_only and delta:
-                    bible = storage_repo.merge_bible_delta(novel_id, delta, default_novel_id=novel_id)
-            except GeminiProviderError:
-                # Quota/outage errors must reach the API layer so the client
-                # receives 429/503 and can retry; only malformed optional
-                # Book Bible output is safe to ignore here.
-                raise
-            except Exception as bible_err:
-                logger.warning("Trích xuất Book Bible delta chương %d thất bại (tiếp tục dịch): %s", chapter_index, bible_err)
+            scan_result = await TerminologyConsistencyService.scan_full_chapter(
+                llm_client, bible, orig_content, chapter_index=chapter_index, model=model
+            )
+            bible = scan_result.bible
+            if not preview_only and scan_result.complete:
+                storage_repo.save_bible(novel_id, bible)
+            elif not scan_result.complete:
+                logger.warning("Book Bible scan chương %d chưa hoàn tất: %s", chapter_index, scan_result.errors)
 
             # Dịch nội dung chương
             filtered_bible = BookBibleService.filter_bible_for_text(bible, orig_content)
@@ -640,6 +634,25 @@ class LegacyLibraryService:
                 model=model,
             )
 
+            terminology_issues = TerminologyConsistencyService.check_translation(
+                orig_content, translated_text, bible
+            )
+            if (terminology_issues or not scan_result.complete) and not preview_only:
+                draft_key = f"novels/{novel_id}/drafts/ch_{chapter_index:04d}.txt"
+                self._save_raw_file(
+                    draft_key,
+                    translated_text.encode("utf-8"),
+                    content_type="text/plain; charset=utf-8",
+                )
+                review_reason = terminology_issues[0].issue if terminology_issues else "Book Bible scan chưa hoàn tất"
+                chapter.status = ChapterStatus.NEEDS_REVIEW
+                chapter.translated_text_preview = (
+                    f"NEEDS_REVIEW: {review_reason}; "
+                    f"draft_key={draft_key}"
+                )
+                chapter.updated_at = datetime.now(timezone.utc).isoformat()
+                self._save_metadata(meta)
+                return chapter
             if preview_only:
                 return ChapterTranslatePreviewResponse(
                     novel_id=novel_id,

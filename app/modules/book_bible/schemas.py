@@ -89,6 +89,11 @@ class TermEntry(BaseModel):
     vi_name: str
     category: str = ""
     notes: str = ""
+    aliases: List[str] = Field(default_factory=list)
+    forbidden_variants: List[str] = Field(default_factory=list)
+    locked: bool = False
+    updated_by: Optional[str] = None
+    updated_at: Optional[datetime] = None
     first_seen_chapter: Optional[int] = None
 
 

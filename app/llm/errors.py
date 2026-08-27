@@ -76,3 +76,12 @@ class GeminiModelUnavailableError(GeminiProviderError):
     def error_code(self) -> str:
         return "GEMINI_MODEL_UNAVAILABLE"
 
+
+
+class StructuredOutputError(ValueError):
+    """LLM returned a response that could not be validated against its schema."""
+
+    def __init__(self, message: str, *, operation: str = "", details: Any = None) -> None:
+        super().__init__(message)
+        self.operation = operation
+        self.details = details

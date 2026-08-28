@@ -95,6 +95,8 @@ Quy tắc:
 7. "style_guide" chỉ trả nếu đây là lần trích xuất đầu tiên hoặc có thay đổi rõ rệt.
 8. BẮT BUỘC trích xuất tên loài/thực thể fantasy xuất hiện trong văn bản vào "new_terms", gồm ma thú, yêu thú, linh thú, thần thú, dị thú, yêu quái, chủng tộc và giống loài có tên riêng. Với tên Hán tự, "original_name" giữ nguyên chữ Hán và "vi_name" dùng phiên âm Hán-Việt nhất quán (ví dụ 金毛暴熊 -> Kim Mao Bạo Hùng), không dịch nghĩa từng chữ.
 9. Phân biệt tên loài (thuật ngữ định danh cần lưu Bible) với mô tả hình dáng trong câu. Chữ 毛 khi nói về động vật là "mao/lông", tuyệt đối không suy diễn thành "tóc".
+10. Trong "address_terms" và "address_observations", "self"/"self_term" và "other"/"other_term" BẮT BUỘC là cách xưng hô tiếng Việt dùng trong bản dịch, tuyệt đối không chứa chữ Hán. Chỉ "counterpart_original_name", "counterpart_text" và "evidence" được giữ nguyên dạng gốc.
+11. Ví dụ: 萧炎 gọi 药老 là 老师 thì trả "counterpart_original_name": "药老", "counterpart_text": "老师", "self_term": "ta", "other_term": "sư phụ"; 药老 tự xưng 老夫 thì dùng "lão phu", không trả lại "老夫" trong trường dịch.
 
 Văn bản gốc cần phân tích:
 {source_text}"""
@@ -104,7 +106,7 @@ PROMPT_2_TRANSLATE_CHUNK_SYSTEM = """Bạn là dịch giả tiểu thuyết chuy
 
 QUY TẮC DỊCH:
 1. Dịch theo ý, không dịch từng chữ. Được đảo trật tự câu, tách/gộp câu cho tự nhiên.
-2. Xưng hô: theo đúng "address_terms" trong Book Bible ứng với quan hệ và thời điểm hiện tại. Nếu nội dung trong <text_to_translate> cho thấy quan hệ vừa thay đổi, ưu tiên diễn biến hiện tại hơn Book Bible.
+2. Xưng hô: theo đúng nghĩa tiếng Việt của "address_terms" trong Book Bible ứng với quan hệ và thời điểm hiện tại. Tuyệt đối không sao chép các giá trị source/raw như 老师, 好小子, 老夫 từ Book Bible hoặc văn bản gốc sang output; nếu nội dung trong <text_to_translate> cho thấy quan hệ vừa thay đổi, ưu tiên diễn biến hiện tại hơn Book Bible.
 3. Tên riêng/thuật ngữ dùng đúng "vi_name" trong Book Bible, không tự đặt tên mới.
 4. Hán Việt chỉ dùng cho thuật ngữ đặc trưng thể loại (cảnh giới, chiêu thức, danh xưng). Lời thoại đời thường và mô tả hành động dùng tiếng Việt thuần.
 5. Ngữ khí từ cuối câu chuyển sang tương đương tiếng Việt tự nhiên, phù hợp tính cách nhân vật.
@@ -114,6 +116,7 @@ QUY TẮC DỊCH:
 9. Tên loài/thực thể fantasy có tính định danh (ma thú, yêu thú, linh thú, thần thú, dị thú, yêu quái, chủng tộc) BẮT BUỘC dùng đúng tên Hán-Việt canonical trong Book Bible; không pha nửa dịch nghĩa nửa Hán-Việt và không tự đổi cách gọi giữa các chương.
 10. Khi tên gốc có 毛: nếu chỉ loài động vật thì hiểu là "mao/lông", không dịch thành "tóc". Mô tả như "bộ lông màu vàng" chỉ dùng khi nguyên văn đang mô tả hình dáng, không thay thế tên loài.
 11. Các biến thể bị cấm trong trường "forbidden_variants" của Book Bible không được xuất hiện trong bản dịch; nếu không chắc, giữ nguyên tên canonical.
+12. Output bản dịch tiếng Việt không được chứa bất kỳ chữ Hán/CJK nào; nếu một cụm xưng hô không có mapping, hãy dịch theo ngữ cảnh tiếng Việt tự nhiên thay vì giữ nguyên chữ gốc.
 
 <book_bible>
 {book_bible_json}
@@ -131,7 +134,7 @@ PROMPT_2_TRANSLATE_CHUNK_USER = """<previous_context>
 
 PROMPT_3_TRANSLATE_HTML_SYSTEM = """Bạn nhận một mảng JSON các đoạn text trích từ HTML gốc, mỗi đoạn có "id" riêng. Đọc TOÀN BỘ mảng như một văn bản liên tục để nắm mạch văn trước khi dịch từng phần tử — không dịch độc lập từng id như thể chúng không liên quan nhau.
 
-QUY TẮC DỊCH: (áp dụng như prompt dịch chunk — xưng hô theo Book Bible, dịch theo ý, Hán Việt chọn lọc, ngữ khí từ tự nhiên, giữ giọng văn nhân vật)
+QUY TẮC DỊCH: (áp dụng như prompt dịch chunk — xưng hô theo nghĩa tiếng Việt trong Book Bible, tuyệt đối không sao chép raw address term/chữ Hán, dịch theo ý, Hán Việt chọn lọc, ngữ khí từ tự nhiên, giữ giọng văn nhân vật)
 
 Trả về CHÍNH XÁC một mảng JSON cùng số lượng phần tử, cùng thứ tự "id". Không kèm markdown code fence, không giải thích.
 

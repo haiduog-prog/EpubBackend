@@ -1098,7 +1098,7 @@ class StorageRepository:
         target.bible_revision = max(target.bible_revision, incoming.bible_revision)
         return BookBibleService.ensure_timeline(target)
 
-    def save_bible(self, job_id: str, bible: BookBible) -> None:
+    def save_bible(self, job_id: str, bible: BookBible, *, replace: bool = False) -> None:
         if not hasattr(self, "_bibles"):
             self._bibles = {}
         started = time.perf_counter()
@@ -1118,7 +1118,11 @@ class StorageRepository:
                     r2_data = self.download_json(f"data/bibles/{doc_key}.json")
                     if r2_data:
                         existing = BookBibleService.ensure_timeline(BookBible.model_validate(r2_data))
-            merged = self._merge_full_bible(existing, bible)
+            merged = (
+                BookBibleService.ensure_timeline(bible.model_copy(deep=True))
+                if replace
+                else self._merge_full_bible(existing, bible)
+            )
             self._cache_bible(job_id, doc_key, merged)
             logger.info(
                 "[TIMING] stage=book_bible_merge_storage.end novel=%s elapsed_ms=%.1f "

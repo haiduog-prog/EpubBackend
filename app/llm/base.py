@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional
 from app.schemas.book_bible import BookBible, BookBibleDelta
-from app.schemas.translation import HTMLInputItem, HTMLTranslationItem, QAReport
+from app.schemas.translation import HTMLInputItem, HTMLTranslationItem, QAIssue, QAReport
 
 
 class BaseLLMClient(ABC):
@@ -29,6 +29,17 @@ class BaseLLMClient(ABC):
     ) -> str:
         """Prompt 2: Dịch văn bản prose txt/epub"""
         pass
+
+    async def correct_translation_terms(
+        self,
+        source_text: str,
+        translated_text: str,
+        book_bible: BookBible,
+        issues: List[QAIssue],
+        model: Optional[str] = None,
+    ) -> str:
+        """Correct only deterministic translation issues when the adapter supports it."""
+        raise NotImplementedError("This LLM adapter does not support translation correction.")
 
     @abstractmethod
     async def translate_html_json(

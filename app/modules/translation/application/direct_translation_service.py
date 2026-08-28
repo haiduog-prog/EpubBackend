@@ -16,10 +16,12 @@ class DirectTranslationService:
         bible: Optional[BookBible] = None,
         chapter_index: Optional[int] = None,
         chapter_id: Optional[str] = None,
+        model: Optional[str] = None,
     ) -> Tuple[str, BookBible]:
         return await self._legacy.translate_direct_text(
             text,
             bible=bible,
             chapter_index=chapter_index,
             chapter_id=chapter_id,
+            model=model,
         )

@@ -9,11 +9,15 @@ from app.parsers.epub_parser import EPUBParser
 from app.parsers.txt_chunker import TXTChunker
 from app.schemas.book_bible import BookBible, BookBibleDelta
 from app.llm.errors import StructuredOutputError
-from app.schemas.translation import HTMLInputItem, HTMLTranslationItem
+from app.schemas.translation import HTMLInputItem, HTMLTranslationItem, QAIssue, QAReport
 from app.modules.book_bible.domain.address_resolver import AddressRuleResolver
 from app.modules.book_bible.application.facade import BookBibleService
 from app.modules.book_bible.domain.review_policy import HybridPolicyEngine
-from app.modules.translation.application.qa_service import QAService
+from app.modules.translation.application.qa_service import (
+    QAService,
+    TranslationQualityError,
+    TranslationQualityResult,
+)
 
 logger = logging.getLogger("EpubBackend.PipelineService")
 
@@ -29,6 +33,44 @@ class LegacyTranslationPipelineService:
         self.llm_client = llm_client
         self.qa_service = QAService(llm_client)
         self.policy = HybridPolicyEngine()
+        self.last_quality_report = QAReport(issues=[])
+        self.last_correction_attempted = False
+
+    def _reset_quality_state(self) -> None:
+        self.last_quality_report = QAReport(issues=[])
+        self.last_correction_attempted = False
+
+    def _record_quality_result(self, result: TranslationQualityResult) -> None:
+        self.last_correction_attempted = (
+            self.last_correction_attempted or result.correction_attempted
+        )
+        known = {
+            (issue.found.casefold(), issue.expected.casefold(), issue.issue)
+            for issue in self.last_quality_report.issues
+        }
+        issues: List[QAIssue] = list(self.last_quality_report.issues)
+        for issue in result.report.issues:
+            key = (issue.found.casefold(), issue.expected.casefold(), issue.issue)
+            if key not in known:
+                known.add(key)
+                issues.append(issue)
+        self.last_quality_report = QAReport(issues=issues)
+
+    async def _translate_prose_checked(
+        self,
+        chunk_text: str,
+        book_bible: BookBible,
+        previous_context: str = "",
+        model: Optional[str] = None,
+    ) -> str:
+        result = await self.qa_service.translate_with_quality(
+            original_text=chunk_text,
+            book_bible=book_bible,
+            previous_context=previous_context,
+            model=model,
+        )
+        self._record_quality_result(result)
+        return result.translated_text
 
     async def _extract_delta_fail_open(
         self, source_text: str, known_index: str
@@ -89,7 +131,9 @@ class LegacyTranslationPipelineService:
         bible: Optional[BookBible] = None,
         chapter_index: Optional[int] = None,
         chapter_id: Optional[str] = None,
+        model: Optional[str] = None,
     ) -> Tuple[str, BookBible]:
+        self._reset_quality_state()
         bible = bible or BookBible()
         request_id = chapter_id or "direct-text"
         started = time.perf_counter()
@@ -112,10 +156,11 @@ class LegacyTranslationPipelineService:
             len(filtered_bible.address_observations),
         )
         translate_started = time.perf_counter()
-        translated_text = await self.llm_client.translate_prose_chunk(
+        translated_text = await self._translate_prose_checked(
             chunk_text=text,
             book_bible=filtered_bible,
             previous_context="",
+            model=model,
         )
         logger.info(
             "[TIMING] stage=translate_direct.end chapter=%s elapsed_ms=%.1f total_elapsed_ms=%.1f",
@@ -153,7 +198,9 @@ class LegacyTranslationPipelineService:
         on_bible_updated: Optional[Callable[[BookBible], Any]] = None,
         chapter_index_offset: int = 0,
         chapter_id_prefix: str = "txt",
+        model: Optional[str] = None,
     ) -> BookBible:
+        self._reset_quality_state()
         with open(input_path, "r", encoding="utf-8", errors="ignore") as file:
             full_text = file.read()
         chunks = TXTChunker().chunk_text(full_text)
@@ -185,10 +232,11 @@ class LegacyTranslationPipelineService:
             )
             resolve_ms = _elapsed_ms(resolver_started)
             translate_started = time.perf_counter()
-            translated = await self.llm_client.translate_prose_chunk(
+            translated = await self._translate_prose_checked(
                 chunk_text=chunk.text,
                 book_bible=filtered_bible,
                 previous_context=chunk.previous_context,
+                model=model,
             )
             translated_parts.append(translated)
             logger.info(
@@ -234,6 +282,9 @@ class LegacyTranslationPipelineService:
             await self._notify_bible_updated(on_bible_updated, bible)
             await translate_chunk(index)
 
+        if self.last_quality_report.issues:
+            raise TranslationQualityError(self.last_quality_report.issues)
+
         output_started = time.perf_counter()
         os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
         with open(output_path, "w", encoding="utf-8") as file:
@@ -254,7 +305,9 @@ class LegacyTranslationPipelineService:
         on_bible_updated: Optional[Callable[[BookBible], Any]] = None,
         chapter_index_offset: int = 0,
         chapter_id_prefix: str = "epub",
+        model: Optional[str] = None,
     ) -> BookBible:
+        self._reset_quality_state()
         chapters = EPUBParser.read_epub_chapters(input_path)
         if not chapters:
             raise ValueError("Khong tim thay chuong HTML hop le trong file EPUB.")
@@ -295,12 +348,29 @@ class LegacyTranslationPipelineService:
                 batch_count += 1
                 batch_items = input_items[batch_start : batch_start + 40]
                 batch_started = time.perf_counter()
-                translations.extend(
-                    await self.llm_client.translate_html_json(
-                        input_items=batch_items,
-                        book_bible=filtered_bible,
+                html_kwargs = {
+                    "input_items": batch_items,
+                    "book_bible": filtered_bible,
+                }
+                if model is not None:
+                    html_kwargs["model"] = model
+                batch_translations = await self.llm_client.translate_html_json(**html_kwargs)
+                translations_by_id = {item.id: item for item in batch_translations}
+                for source_item in batch_items:
+                    translation = translations_by_id.get(
+                        source_item.id,
+                        HTMLTranslationItem(id=source_item.id, text_vi=source_item.text),
                     )
-                )
+                    checked = await self.qa_service.correct_and_recheck(
+                        source_item.text,
+                        translation.text_vi,
+                        filtered_bible,
+                        model=model,
+                    )
+                    self._record_quality_result(checked)
+                    translations.append(
+                        HTMLTranslationItem(id=translation.id, text_vi=checked.translated_text)
+                    )
                 logger.info(
                     "[TIMING] stage=translate_epub_batch.end chapter=%s batch=%d "
                     "batch_items=%d ai_ms=%.1f",
@@ -353,6 +423,9 @@ class LegacyTranslationPipelineService:
                 await self._notify_bible_updated(on_bible_updated, bible)
             if input_items:
                 await translate_chapter(index, chapter_id, input_items)
+
+        if self.last_quality_report.issues:
+            raise TranslationQualityError(self.last_quality_report.issues)
 
         if progress_callback:
             progress_callback(95.0, "Dang dong goi file EPUB...")

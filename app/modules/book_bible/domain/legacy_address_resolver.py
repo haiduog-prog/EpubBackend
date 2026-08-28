@@ -2,6 +2,10 @@
 
 from app.schemas.book_bible import AddressObservation, AddressTerm, BookBible
 from app.modules.book_bible.application.facade import BookBibleService
+from app.modules.book_bible.domain.address_term_policy import (
+    contains_cjk,
+    is_valid_address_observation,
+)
 
 
 class AddressRuleResolver:
@@ -14,9 +18,22 @@ class AddressRuleResolver:
         return observation.chapter_index <= chapter_index
 
     @staticmethod
-    def _group_key(observation: AddressObservation) -> Tuple[str, str]:
-        counterpart = observation.counterpart_id or BookBibleService._key(
-            observation.counterpart_text
+    def _find_character_id(bible: BookBible, value: str) -> Optional[str]:
+        value_key = BookBibleService._key(value)
+        if not value_key:
+            return None
+        for character in bible.characters:
+            candidates = [character.original_name, character.vi_name, *character.aliases]
+            if any(BookBibleService._key(item) == value_key for item in candidates if item):
+                return character.character_id
+        return None
+
+    @classmethod
+    def _group_key(cls, bible: BookBible, observation: AddressObservation) -> Tuple[str, str]:
+        counterpart = (
+            observation.counterpart_id
+            or cls._find_character_id(bible, observation.counterpart_text)
+            or BookBibleService._key(observation.counterpart_text)
         )
         return observation.character_id, counterpart
 
@@ -35,11 +52,12 @@ class AddressRuleResolver:
             observation
             for observation in bible.address_observations
             if observation.resolution not in {"pending", "rejected"}
+            and is_valid_address_observation(observation)
             and cls._chapter_allowed(observation, chapter_index)
         ]
         grouped: Dict[Tuple[str, str], AddressObservation] = {}
         for observation in candidates:
-            key = cls._group_key(observation)
+            key = cls._group_key(bible, observation)
             current = grouped.get(key)
             if current is None or cls._rank(observation) > cls._rank(current):
                 grouped[key] = observation
@@ -85,14 +103,29 @@ class AddressRuleResolver:
             or item.chapter_index is None
             or item.chapter_index <= chapter_index
         ]
+        characters_by_id = {character.character_id: character for character in result.characters}
+        for character in result.characters:
+            character.address_terms = []
         terms_by_character: Dict[str, List[AddressTerm]] = {}
         for observation in active:
+            counterpart = characters_by_id.get(observation.counterpart_id or "")
+            counterpart_candidates = (
+                [counterpart.vi_name, counterpart.original_name]
+                if counterpart
+                else [observation.counterpart_text]
+            )
+            counterpart_name = next(
+                (
+                    candidate.strip()
+                    for candidate in counterpart_candidates
+                    if candidate and candidate.strip() and not contains_cjk(candidate)
+                ),
+                "đối phương",
+            )
             terms_by_character.setdefault(observation.character_id, []).append(
                 AddressTerm(
                     **{
-                        "with": observation.counterpart_text
-                        or observation.counterpart_id
-                        or "unknown",
+                        "with": counterpart_name or observation.counterpart_id or "unknown",
                         "self": observation.self_term,
                         "other": observation.other_term,
                         "context": observation.context,

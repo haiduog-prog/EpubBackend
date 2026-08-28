@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from app.config import settings
+from app.modules.book_bible.domain.address_term_policy import cjk_sequences
 from app.schemas.book_bible import BookBible
 
 logger = logging.getLogger("EpubBackend.TranslationCache")
@@ -14,6 +15,9 @@ logger = logging.getLogger("EpubBackend.TranslationCache")
 
 class DirectTranslationCache:
     """Atomic local cache adapter for repeated direct-text translations."""
+
+    CACHE_VERSION = 2
+    TRANSLATION_POLICY_VERSION = "cjk-qa-v1"
 
     def __init__(self, cache_dir: Optional[str] = None):
         self.cache_dir = Path(cache_dir or "storage/cache/direct-text")
@@ -37,6 +41,7 @@ class DirectTranslationCache:
                 "chapter_id": chapter_id or "",
                 "provider": provider,
                 "model": model or "",
+                "translation_policy_version": DirectTranslationCache.TRANSLATION_POLICY_VERSION,
             },
             ensure_ascii=False,
             sort_keys=True,
@@ -62,6 +67,12 @@ class DirectTranslationCache:
                 data = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, ValueError, TypeError) as exc:
                 logger.warning("[CACHE] invalid key=%s error=%s", key[:12], exc)
+                return None
+            if (
+                data.get("cache_version") != self.CACHE_VERSION
+                or data.get("translation_policy_version") != self.TRANSLATION_POLICY_VERSION
+                or data.get("qa_status") != "passed"
+            ):
                 return None
             cache_timestamp = data.get("created_at")
             if cache_timestamp is None:
@@ -97,10 +108,16 @@ class DirectTranslationCache:
         translated_text: str,
         book_bible: BookBible,
     ) -> None:
+        if cjk_sequences(translated_text):
+            logger.warning("[CACHE] refusing to persist translation with CJK output")
+            return
         key = self._key(novel_id, text, chapter_index, chapter_id, provider, model)
         path = self.cache_dir / f"{key}.json"
         temporary_path = path.with_suffix(".tmp")
         data = {
+            "cache_version": self.CACHE_VERSION,
+            "translation_policy_version": self.TRANSLATION_POLICY_VERSION,
+            "qa_status": "passed",
             "created_at": time.time(),
             "source_bible_revision": source_bible_revision,
             "result_bible_revision": book_bible.bible_revision,

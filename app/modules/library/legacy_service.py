@@ -36,8 +36,9 @@ from app.schemas.library import (
     NovelSummary,
     NovelUpdateRequest,
 )
-from app.modules.translation.application.facade import TranslationPipelineService
 from app.modules.book_bible.application.facade import BookBibleService
+from app.modules.book_bible.domain.legacy_address_resolver import AddressRuleResolver
+from app.modules.translation.application.qa_service import QAService
 from app.modules.translation.application.terminology_consistency_service import TerminologyConsistencyService
 
 logger = logging.getLogger("EpubBackend.LibraryService")
@@ -610,7 +611,7 @@ class LegacyLibraryService:
         try:
             # Khởi tạo LLM và pipeline
             llm_client = create_llm_client(provider=provider, api_key=api_key, model=model)
-            pipeline = TranslationPipelineService(llm_client)
+            qa_service = QAService(llm_client)
 
             # Lấy Book Bible hiện tại của truyện
             bible = storage_repo.get_bible(novel_id) or BookBible(novel_id=novel_id)
@@ -626,17 +627,25 @@ class LegacyLibraryService:
                 logger.warning("Book Bible scan chương %d chưa hoàn tất: %s", chapter_index, scan_result.errors)
 
             # Dịch nội dung chương
-            filtered_bible = BookBibleService.filter_bible_for_text(bible, orig_content)
-            translated_text = await llm_client.translate_prose_chunk(
-                chunk_text=orig_content,
+            effective_bible = AddressRuleResolver.apply(bible, chapter_index=chapter_index)
+            filtered_bible = BookBibleService.filter_bible_for_text(effective_bible, orig_content)
+            quality_result = await qa_service.translate_with_quality(
+                original_text=orig_content,
                 book_bible=filtered_bible,
                 previous_context="",
                 model=model,
             )
+            translated_text = quality_result.translated_text
 
-            terminology_issues = TerminologyConsistencyService.check_translation(
-                orig_content, translated_text, bible
-            )
+            terminology_issues = list(quality_result.report.issues)
+            for issue in TerminologyConsistencyService.check_translation(
+                orig_content, translated_text, effective_bible
+            ):
+                if not any(
+                    existing.issue == issue.issue and existing.found == issue.found
+                    for existing in terminology_issues
+                ):
+                    terminology_issues.append(issue)
             if (terminology_issues or not scan_result.complete) and not preview_only:
                 draft_key = f"novels/{novel_id}/drafts/ch_{chapter_index:04d}.txt"
                 self._save_raw_file(

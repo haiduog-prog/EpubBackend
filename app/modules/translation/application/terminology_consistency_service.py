@@ -12,6 +12,8 @@ from typing import Any, List, Optional, Sequence, Tuple
 
 from app.llm.errors import GeminiProviderError
 from app.modules.book_bible.application.facade import BookBibleService
+from app.modules.book_bible.domain.address_term_policy import cjk_sequences
+from app.modules.book_bible.domain.review_policy import HybridPolicyEngine
 from app.modules.shared.ports import LLMClient
 from app.schemas.book_bible import BookBible, TermEntry
 from app.schemas.translation import QAIssue
@@ -86,6 +88,19 @@ class TerminologyConsistencyService:
                 seen.add(key)
                 issues.append(issue)
 
+        for sequence in cjk_sequences(translated_text):
+            position = translated_text.find(sequence)
+            add(
+                QAIssue(
+                    issue=f"Bản dịch còn chứa chữ Hán/CJK '{sequence}', phải chuyển sang tiếng Việt",
+                    found=sequence,
+                    expected="Tiếng Việt",
+                    location=translated_text[
+                        max(0, position - 20) : position + len(sequence) + 20
+                    ],
+                )
+            )
+
         for term in bible.terms:
             if not cls._contains(original_text, term.original_name):
                 continue
@@ -142,15 +157,20 @@ class TerminologyConsistencyService:
         working = bible.model_copy(deep=True)
         errors: List[str] = []
         scanned = 0
+        policy = HybridPolicyEngine()
         try:
-            for window in windows:
+            for window_index, window in enumerate(windows):
                 known_names = BookBibleService.get_known_names_index(working)
                 delta = await llm_client.extract_book_bible_delta(
                     window, known_names, model=model
                 )
                 if delta:
-                    working = BookBibleService.merge_delta(
-                        working, delta, chapter_index=chapter_index
+                    working, _ = policy.apply_delta(
+                        working,
+                        delta,
+                        chapter_index=chapter_index,
+                        chapter_id=f"chapter-{chapter_index or 'unknown'}",
+                        chunk_id=f"scan-{window_index}",
                     )
                 scanned += 1
         except GeminiProviderError:

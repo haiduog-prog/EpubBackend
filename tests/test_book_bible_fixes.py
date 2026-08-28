@@ -27,7 +27,7 @@ class OrderedLLM(BaseLLMClient):
     async def translate_prose_chunk(self, chunk_text, book_bible, previous_context="", model=None):
         has_entity = any(c.original_name == "LateEntity" for c in book_bible.characters)
         self.events.append(("translate", chunk_text, has_entity))
-        return chunk_text
+        return chunk_text.replace("LateEntity", "Thực Thể Muộn")
 
     async def translate_html_json(self, input_items, book_bible, model=None):
         return [HTMLTranslationItem(id=item.id, text_vi=item.text) for item in input_items]

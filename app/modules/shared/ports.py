@@ -1,7 +1,7 @@
 from typing import Any, List, Optional, Protocol
 
 from app.schemas.book_bible import BookBible, BookBibleDelta
-from app.schemas.translation import HTMLInputItem, HTMLTranslationItem, QAReport
+from app.schemas.translation import HTMLInputItem, HTMLTranslationItem, QAIssue, QAReport
 
 
 class LLMClient(Protocol):
@@ -19,6 +19,15 @@ class LLMClient(Protocol):
         chunk_text: str,
         book_bible: BookBible,
         previous_context: str = "",
+        model: Optional[str] = None,
+    ) -> str: ...
+
+    async def correct_translation_terms(
+        self,
+        source_text: str,
+        translated_text: str,
+        book_bible: BookBible,
+        issues: List[QAIssue],
         model: Optional[str] = None,
     ) -> str: ...
 

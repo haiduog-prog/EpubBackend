@@ -1,5 +1,6 @@
 ﻿from app.core.storage import StorageRepository
 from app.schemas.book_bible import (
+    AddressObservation,
     AddressObservationCandidate,
     BookBible,
     BookBibleDelta,
@@ -61,6 +62,81 @@ def test_low_confidence_observation_is_pending_and_not_applied():
     assert pending_ids
     assert len(bible.pending_changes) == 1
     assert not AddressRuleResolver.apply(bible, 20).characters[0].address_terms
+
+
+def test_cjk_address_observation_is_not_applied_to_translation_bible():
+    bible = BookBible(
+        novel_id="novel-1",
+        characters=[
+            CharacterEntry(original_name="萧炎", vi_name="Tiêu Viêm"),
+            CharacterEntry(original_name="药老", vi_name="Dược Lão"),
+        ],
+    )
+
+    dirty_delta = _delta("我", "老师")
+    dirty_delta.address_observations[0].character_original_name = "萧炎"
+    dirty_delta.address_observations[0].counterpart_original_name = "药老"
+    dirty_delta.address_observations[0].counterpart_text = "老师"
+    bible, pending_ids = HybridPolicyEngine().apply_delta(
+        bible, dirty_delta, 1, "ch-1", "chunk-1"
+    )
+
+    effective = AddressRuleResolver.apply(bible, 1)
+
+    assert pending_ids == []
+    assert effective.characters[0].address_terms == []
+
+
+def test_resolver_uses_canonical_counterpart_name_over_surface_address():
+    bible = BookBible(
+        novel_id="novel-1",
+        characters=[
+            CharacterEntry(original_name="萧炎", vi_name="Tiêu Viêm"),
+            CharacterEntry(original_name="药老", vi_name="Dược Lão"),
+        ],
+    )
+    delta = _delta("ta", "sư phụ")
+    delta.address_observations[0].character_original_name = "萧炎"
+    delta.address_observations[0].counterpart_original_name = "药老"
+    delta.address_observations[0].counterpart_text = "老师"
+    bible, _ = HybridPolicyEngine().apply_delta(bible, delta, 1, "ch-1", "chunk-1")
+
+    effective = AddressRuleResolver.apply(bible, 1)
+
+    assert effective.characters[0].address_terms[0].with_person == "Dược Lão"
+
+
+def test_resolver_does_not_fallback_to_cjk_original_counterpart_name():
+    bible = BookBible(
+        novel_id="demo",
+        characters=[
+            CharacterEntry(
+                character_id="speaker",
+                original_name="萧炎",
+                vi_name="Tiêu Viêm",
+            ),
+            CharacterEntry(
+                character_id="counterpart",
+                original_name="药老",
+                vi_name="",
+            ),
+        ],
+        address_observations=[
+            AddressObservation(
+                observation_id="obs-cjk-counterpart",
+                character_id="speaker",
+                counterpart_id="counterpart",
+                counterpart_text="药老",
+                self_term="ta",
+                other_term="sư phụ",
+                resolution="confirmed",
+            )
+        ],
+    )
+
+    effective = AddressRuleResolver.apply(bible, 1)
+
+    assert effective.characters[0].address_terms[0].with_person == "đối phương"
 
 
 def test_legacy_address_terms_are_migrated_to_timeline():

@@ -6,14 +6,15 @@ import anthropic
 
 from app.config import settings
 from app.schemas.book_bible import BookBible, BookBibleDelta
-from app.schemas.translation import HTMLInputItem, HTMLTranslationItem, HTMLTranslationOutput, QAReport
+from app.schemas.translation import HTMLInputItem, HTMLTranslationItem, HTMLTranslationOutput, QAIssue, QAReport
 from app.prompts.templates import (
     PROMPT_1_EXTRACT_BOOK_BIBLE_DELTA,
     PROMPT_2_TRANSLATE_CHUNK_SYSTEM,
     PROMPT_2_TRANSLATE_CHUNK_USER,
     PROMPT_3_TRANSLATE_HTML_SYSTEM,
     PROMPT_3_TRANSLATE_HTML_USER,
-    PROMPT_4_QA_CHECK
+    PROMPT_4_QA_CHECK,
+    PROMPT_5_CORRECT_TERMINOLOGY,
 )
 from app.llm.base import BaseLLMClient
 
@@ -92,6 +93,33 @@ class AnthropicProvider(BaseLLMClient):
                 result_text += block.text
 
         return result_text.strip()
+
+    async def correct_translation_terms(
+        self,
+        source_text: str,
+        translated_text: str,
+        book_bible: BookBible,
+        issues: List[QAIssue],
+        model: Optional[str] = None,
+    ) -> str:
+        prompt = PROMPT_5_CORRECT_TERMINOLOGY.format(
+            book_bible_json=book_bible.model_dump_json(indent=2),
+            issues_json=json.dumps([issue.model_dump() for issue in issues], ensure_ascii=False, indent=2),
+            source_text=source_text,
+            translated_text=translated_text,
+        )
+        target_model = model or self.default_model
+        response = await self.client.messages.create(
+            model=target_model,
+            max_tokens=4096,
+            system="Bạn là biên tập viên hiệu đính bản dịch tiếng Việt. Chỉ sửa đúng các issue được nêu.",
+            messages=[{"role": "user", "content": prompt}],
+        )
+        result_text = ""
+        for block in response.content:
+            if block.type == "text":
+                result_text += block.text
+        return result_text.strip() or translated_text
 
     async def translate_html_json(
         self,

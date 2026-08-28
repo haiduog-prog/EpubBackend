@@ -9,6 +9,7 @@ from app.schemas.book_bible import (
     PendingBibleChange,
 )
 from app.modules.book_bible.application.facade import BookBibleService
+from app.modules.book_bible.domain.address_term_policy import is_valid_address_observation
 
 
 class HybridPolicyEngine:
@@ -87,6 +88,8 @@ class HybridPolicyEngine:
         for candidate in delta.address_observations:
             character = self._find_character(bible, candidate.character_original_name)
             if not character:
+                continue
+            if not is_valid_address_observation(candidate):
                 continue
             counterpart_id = self._find_counterpart_id(
                 bible, candidate.counterpart_original_name

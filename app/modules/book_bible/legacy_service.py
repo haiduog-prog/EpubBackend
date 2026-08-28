@@ -10,6 +10,10 @@ from app.schemas.book_bible import (
     PlaceEntry,
     TermEntry,
 )
+from app.modules.book_bible.domain.address_term_policy import (
+    filter_valid_address_terms,
+    is_valid_address_term,
+)
 
 
 def _is_cjk(text: str) -> bool:
@@ -38,6 +42,8 @@ class LegacyBookBibleService:
         existing_ids = {item.observation_id for item in bible.address_observations}
         for character in bible.characters:
             for index, term in enumerate(character.address_terms):
+                if not is_valid_address_term(term):
+                    continue
                 observation_id = hashlib.sha256(
                     f"legacy:{character.character_id}:{index}:{term.with_person}:{term.self_term}:{term.other_term}".encode(
                         "utf-8"
@@ -87,6 +93,7 @@ class LegacyBookBibleService:
         for new_char in delta.new_characters:
             if new_char.first_seen_chapter is None:
                 new_char.first_seen_chapter = chapter_index
+            valid_address_terms = filter_valid_address_terms(new_char.address_terms)
             name_key = BookBibleService._key(new_char.original_name)
             vi_key = BookBibleService._key(new_char.vi_name)
             existing = char_map.get(name_key) or alias_map.get(name_key) or vi_map.get(vi_key)
@@ -118,26 +125,30 @@ class LegacyBookBibleService:
                         alias_map[BookBibleService._key(alias)] = existing
                 if new_char.vi_name:
                     vi_map[BookBibleService._key(new_char.vi_name)] = existing
-                for address_term in new_char.address_terms:
+                for address_term in valid_address_terms:
                     if address_term not in existing.address_terms:
                         existing.address_terms.append(address_term)
             else:
-                new_char.character_id = new_char.character_id or BookBibleService.character_id(
+                new_char_to_add = new_char.model_copy(deep=True)
+                new_char_to_add.address_terms = valid_address_terms
+                new_char_to_add.character_id = new_char_to_add.character_id or BookBibleService.character_id(
                     bible.novel_id, new_char.original_name
                 )
-                char_map[name_key] = new_char
-                bible.characters.append(new_char)
-                for alias in new_char.aliases:
+                char_map[name_key] = new_char_to_add
+                bible.characters.append(new_char_to_add)
+                for alias in new_char_to_add.aliases:
                     if alias:
-                        alias_map[BookBibleService._key(alias)] = new_char
-                if new_char.vi_name:
-                    vi_map[BookBibleService._key(new_char.vi_name)] = new_char
+                        alias_map[BookBibleService._key(alias)] = new_char_to_add
+                if new_char_to_add.vi_name:
+                    vi_map[BookBibleService._key(new_char_to_add.vi_name)] = new_char_to_add
 
         for update in delta.new_address_terms_for_existing:
             name_key = BookBibleService._key(update.character_original_name)
             target_char = char_map.get(name_key) or alias_map.get(name_key) or vi_map.get(name_key)
             if target_char:
                 for address_term in update.address_terms:
+                    if not is_valid_address_term(address_term):
+                        continue
                     if address_term not in target_char.address_terms:
                         target_char.address_terms.append(address_term)
 

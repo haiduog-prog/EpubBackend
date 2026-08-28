@@ -1,7 +1,7 @@
 # Novel Translation Engine
 
 > Tổng hợp kiến thức về hệ thống dịch truyện thuần Việt (v2) hỗ trợ EPUB/HTML/TXT với Structured Outputs, Prompt Caching và Decoupled LLM Providers.
-> Cập nhật lần cuối: 2026-08-27
+> Cập nhật lần cuối: 2026-08-28
 
 ---
 
@@ -115,9 +115,14 @@
 ---
 
 ### Chapter Terminology Consistency & Review Gate
-- **Ngày**: 2026-08-27
-- **Chi tiết**: Quét Book Bible theo toàn chương; chương dài dùng cửa sổ chồng lấn. Canonical term chỉ bắt buộc với tên định danh đủ điều kiện, tránh false positive với term một chữ. Nếu scan/QA chưa đạt, lưu draft và đánh dấu `NEEDS_REVIEW`, không ghi đè bản publish.
-- **Files liên quan**: `app/modules/translation/application/terminology_consistency_service.py`, `app/modules/library/legacy_service.py`, `app/modules/library/schemas.py`
+- **Ngày**: 2026-08-28
+- **Chi tiết**: Quét Book Bible theo toàn chương; chương dài dùng cửa sổ chồng lấn. Luồng dịch dùng chung `translate -> deterministic QA -> correct tối đa một lần -> re-check`. Nếu scan/QA chưa đạt, direct trả `needs_review`, chapter lưu draft `NEEDS_REVIEW`, còn TXT/EPUB không publish file lỗi. Cache chỉ nhận kết quả có `qa_status=passed` và đúng policy version.
+- **Files liên quan**: `app/modules/translation/application/qa_service.py`, `app/modules/translation/legacy_pipeline.py`, `app/modules/translation/application/terminology_consistency_service.py`, `app/modules/library/legacy_service.py`, `app/infrastructure/cache/direct_translation.py`
+
+### Vietnamese-only Effective Address Rules
+- **Ngày**: 2026-08-28
+- **Chi tiết**: Address term có thể giữ tên/đại từ gốc trong observation để audit, nhưng `self_term` và `other_term` phải là tiếng Việt. Resolver dựng Bible hiệu lực theo chapter, loại observation CJK và chỉ chọn counterpart name không-CJK; nếu không có tên dịch dùng `đối phương`.
+- **Files liên quan**: `app/modules/book_bible/domain/address_term_policy.py`, `app/modules/book_bible/domain/legacy_address_resolver.py`, `app/modules/book_bible/domain/legacy_review_policy.py`
 
 ## Bugs & Solutions
 
@@ -264,6 +269,20 @@ esponse_schema vào 	ypes.GenerateContentConfig, bổ sung regex dọn dẹp tra
 - **Fix**: Library chapter mới giữ fail-closed để chuyển review; TXT/EPUB/direct bắt `StructuredOutputError`, log và tiếp tục với `BookBibleDelta()` rỗng.
 - **Files liên quan**: `app/llm/gemini_provider.py`, `app/modules/translation/legacy_pipeline.py`
 
+### Raw Chinese Address Terms Leaked into Vietnamese Output
+- **Ngày**: 2026-08-28
+- **Vấn đề**: Output còn các cụm `老师`, `好小子`, `老夫` dù tên nhân vật đã được dịch đúng.
+- **Root cause**: Extractor đưa cách xưng hô source vào `self/other`; prompt chỉ hướng dẫn nhưng không có rule deterministic phát hiện CJK, nên Book Bible hiệu lực truyền raw term cho model.
+- **Fix**: Validate trước merge, resolver rebuild address rules theo observation hợp lệ, prompt yêu cầu term tiếng Việt, QA quét toàn bộ CJK và gọi correction adapter tối đa một lần. Cache/publish bị chặn nếu re-check vẫn lỗi.
+- **Files liên quan**: `app/modules/book_bible/domain/address_term_policy.py`, `app/modules/translation/application/qa_service.py`, `app/prompts/templates.py`, `tests/test_translation_regression_fixes.py`
+
+### Counterpart CJK Fallback in Effective Bible
+- **Ngày**: 2026-08-28
+- **Vấn đề**: Counterpart tồn tại nhưng thiếu `vi_name`, resolver lấy `original_name` CJK và lại đưa chữ Hán vào prompt.
+- **Root cause**: Fallback chỉ kiểm tra counterpart có tồn tại, không kiểm tra từng candidate name.
+- **Fix**: Chọn lần lượt `vi_name`, `original_name`, `counterpart_text` nhưng chỉ nhận candidate không-CJK; nếu không có thì dùng `đối phương`.
+- **Files liên quan**: `app/modules/book_bible/domain/legacy_address_resolver.py`, `tests/test_book_bible_timeline.py`
+
 ### Locked Canonical Merge Policy
 - **Ngày**: 2026-08-27
 - **Vấn đề**: Tên mới từ LLM bị đưa vào `forbidden_variants` dù canonical cũ chưa được xác nhận.
@@ -396,7 +415,26 @@ esponse_schema vào 	ypes.GenerateContentConfig, bổ sung regex dọn dẹp tra
   3. Chạy `PYTHONPATH=. pytest -q` trước khi bàn giao.
 - **Files liên quan**: `tests/test_terminology_consistency.py`, `tests/test_translation_regression_fixes.py`
 
+### Repair Legacy CJK Address Data
+- **Ngày**: 2026-08-28
+- **Bước thực hiện**:
+  1. Chạy `python scripts/repair_cjk_address_terms.py` để audit read-only.
+  2. Đọc số term bị xóa, observation bị reject và cache liên quan.
+  3. Dừng server nếu đang chạy, chạy thêm `--apply`, rồi khởi động lại.
+  4. Chạy dry-run lần nữa; kết quả sạch phải là `changed_bibles=[]` và `related_cache_entries=0`.
+- **Files liên quan**: `scripts/repair_cjk_address_terms.py`, `app/infrastructure/storage/legacy_storage.py`, `app/infrastructure/cache/direct_translation.py`
+
 ## Patterns
+
+### Single-pass Correction with Publish Gate
+- **Ngày**: 2026-08-28
+- **Chi tiết**: Tách kiểm tra deterministic khỏi AI correction. Output sạch không gọi AI QA/correction; output lỗi gọi `correct_translation_terms` đúng một lần rồi re-check. Nếu vẫn lỗi, direct trả candidate kèm issue, còn pipeline file ném `TranslationQualityError` trước khi ghi output.
+- **Files liên quan**: `app/modules/translation/application/qa_service.py`, `app/llm/base.py`, `app/llm/gemini_provider.py`, `app/llm/anthropic_provider.py`
+
+### Versioned Translation Cache Acceptance
+- **Ngày**: 2026-08-28
+- **Chi tiết**: Cache translation lưu `cache_version`, `translation_policy_version` và `qa_status=passed`. Khi policy QA đổi, cache cũ tự miss qua key/payload version; `put` từ chối output còn CJK. Migration có thể xóa cache liên quan sau khi tăng `bible_revision`.
+- **Files liên quan**: `app/infrastructure/cache/direct_translation.py`, `scripts/repair_cjk_address_terms.py`
 
 ### Relative & Human-friendly Date Formatting Pattern
 - **Ngày**: 2026-08-25

@@ -4,7 +4,8 @@ from app.llm.errors import StructuredOutputError
 from app.modules.book_bible.legacy_service import LegacyBookBibleService
 from app.modules.reader.schemas import ReaderChapterSummary
 from app.modules.translation.legacy_pipeline import LegacyTranslationPipelineService
-from app.schemas.book_bible import BookBible, BookBibleDelta, TermEntry
+from app.modules.translation.application.qa_service import QAService
+from app.schemas.book_bible import AddressTerm, BookBible, BookBibleDelta, CharacterEntry, TermEntry
 from app.modules.translation.application.terminology_consistency_service import (
     TerminologyConsistencyService,
 )
@@ -16,6 +17,28 @@ def test_short_generic_term_does_not_require_canonical_name():
     issues = TerminologyConsistencyService.check_translation("熊 xuất hiện", "Con gấu xuất hiện", bible)
 
     assert issues == []
+
+
+def test_translation_qa_rejects_untranslated_cjk_address_terms():
+    bible = BookBible(
+        characters=[
+            CharacterEntry(
+                original_name="萧炎",
+                vi_name="Tiêu Viêm",
+                address_terms=[
+                    AddressTerm(with_person="药老", self="我", other="老师", context="đối thoại")
+                ],
+            )
+        ]
+    )
+
+    issues = QAService(None).fast_rule_check(
+        "萧炎看着药老说：老师，我们走吧。",
+        'Tiêu Viêm nhìn Dược Lão: "老师, chúng ta đi thôi."',
+        bible,
+    )
+
+    assert any("CJK" in issue.issue for issue in issues)
 
 
 def test_unlocked_term_can_be_improved_without_forbidding_new_name():

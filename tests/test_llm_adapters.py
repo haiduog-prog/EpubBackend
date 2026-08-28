@@ -13,8 +13,9 @@ from app.llm.gemini_provider import (
     _normalise_provider_error,
     _parse_retry_after,
 )
-from app.schemas.book_bible import BookBibleDelta
+from app.schemas.book_bible import BookBible, BookBibleDelta
 from app.prompts.templates import PROMPT_1_EXTRACT_BOOK_BIBLE_DELTA, PROMPT_4_QA_CHECK
+from app.schemas.translation import QAIssue
 
 
 @pytest.mark.asyncio
@@ -25,6 +26,45 @@ async def test_anthropic_extract_uses_instance_default_model(monkeypatch):
     await provider.extract_book_bible_delta("source", "known")
 
     assert provider._call_structured.await_args.kwargs["model"] == "instance-model"
+
+
+@pytest.mark.asyncio
+async def test_gemini_correction_uses_correction_prompt_and_preferred_model():
+    provider = object.__new__(GeminiProvider)
+    provider._call_with_fallback = AsyncMock(return_value=SimpleNamespace(text="fixed"))
+    issue = QAIssue(issue="CJK", found="老师", expected="Sư phụ", location="老师")
+
+    result = await provider.correct_translation_terms(
+        "老师，我们走吧。",
+        "老师, chúng ta đi thôi.",
+        BookBible(),
+        [issue],
+        model="correction-model",
+    )
+
+    assert result == "fixed"
+    kwargs = provider._call_with_fallback.await_args.kwargs
+    assert kwargs["preferred_model"] == "correction-model"
+    assert "Sư phụ" in kwargs["contents"]
+    assert "老师, chúng ta đi thôi." in kwargs["contents"]
+
+
+@pytest.mark.asyncio
+async def test_anthropic_correction_returns_text_from_adapter():
+    provider = AnthropicProvider(api_key="dummy", model="instance-model")
+    provider.client.messages.create = AsyncMock(
+        return_value=SimpleNamespace(content=[SimpleNamespace(type="text", text="fixed")])
+    )
+
+    result = await provider.correct_translation_terms(
+        "老师，我们走吧。",
+        "老师, chúng ta đi thôi.",
+        BookBible(),
+        [QAIssue(issue="CJK", found="老师", expected="Sư phụ", location="老师")],
+    )
+
+    assert result == "fixed"
+    assert provider.client.messages.create.await_args.kwargs["model"] == "instance-model"
 
 
 def test_prompt_json_examples_survive_formatting():

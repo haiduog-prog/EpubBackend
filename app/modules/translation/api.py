@@ -4,7 +4,7 @@ from math import ceil
 import os
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse, RedirectResponse
@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from app.infrastructure.storage.facade import storage_repo
 from app.llm import create_llm_client
 from app.schemas.book_bible import BookBible
-from app.schemas.translation import InputType, JobStatusEnum, TranslationJob
+from app.schemas.translation import InputType, JobStatusEnum, QAIssue, TranslationJob
 from app.modules.book_bible.application.facade import BookBibleService
 from app.modules.book_bible.domain.address_resolver import AddressRuleResolver
 from app.modules.translation.application.facade import TranslationPipelineService
@@ -66,6 +66,8 @@ class DirectTextResponse(BaseModel):
     translated_text: str
     book_bible: BookBible
     address_resolution: AddressResolutionResponse
+    qa_status: Literal["passed", "needs_review"] = "passed"
+    qa_issues: list[QAIssue] = Field(default_factory=list)
 
 
 @limited_background_work
@@ -124,6 +126,7 @@ async def run_translation_background_job(
                 on_bible_updated=on_bible_updated,
                 chapter_index_offset=chapter_index or 0,
                 chapter_id_prefix=chapter_id or "txt",
+                model=model,
             )
         elif input_type == InputType.EPUB:
             bible = await pipeline.translate_epub_file(
@@ -134,6 +137,7 @@ async def run_translation_background_job(
                 on_bible_updated=on_bible_updated,
                 chapter_index_offset=chapter_index or 0,
                 chapter_id_prefix=chapter_id or "epub",
+                model=model,
             )
         else:
             raise ValueError(f"Input type {input_type} currently unsupported.")
@@ -233,6 +237,7 @@ async def translate_text_direct_endpoint(
             model=mod,
             current_bible_revision=source_revision,
         )
+        qa_issues = []
         if cached:
             translated_text = cached["translated_text"]
             updated_bible = BookBible.model_validate(cached["book_bible"])
@@ -249,18 +254,30 @@ async def translate_text_direct_endpoint(
                 existing_bible,
                 chapter_index=req.chapter_index,
                 chapter_id=req.chapter_id,
+                model=mod,
             )
             storage_repo.save_bible(novel_key, updated_bible)
-            direct_translation_cache.put(
-                novel_id=novel_key,
-                text=req.text,
-                chapter_index=req.chapter_index,
-                chapter_id=req.chapter_id,
-                provider=prov,
-                model=mod,
-                source_bible_revision=source_revision,
+            qa_issues = pipeline.last_quality_report.issues
+            if not qa_issues:
+                direct_translation_cache.put(
+                    novel_id=novel_key,
+                    text=req.text,
+                    chapter_index=req.chapter_index,
+                    chapter_id=req.chapter_id,
+                    provider=prov,
+                    model=mod,
+                    source_bible_revision=source_revision,
+                    translated_text=translated_text,
+                    book_bible=updated_bible,
+                )
+        if qa_issues:
+            resolution = AddressRuleResolver.resolve(updated_bible, req.chapter_index)
+            return DirectTextResponse(
                 translated_text=translated_text,
                 book_bible=updated_bible,
+                address_resolution=AddressResolutionResponse(**resolution),
+                qa_status="needs_review",
+                qa_issues=qa_issues,
             )
 
         job_id = str(uuid.uuid4())

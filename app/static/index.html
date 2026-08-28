@@ -2248,6 +2248,13 @@
                     const data = await response.json();
                     outArea.value = data.translated_text;
 
+                    if (data.qa_status === 'needs_review') {
+                        const firstIssue = data.qa_issues?.[0]?.issue || 'Bản dịch cần được rà soát lại.';
+                        showToast('Cần rà soát QA: ' + firstIssue, 'error');
+                    } else {
+                        showToast('Bản dịch đã vượt qua kiểm tra QA.', 'success');
+                    }
+
                     renderBookBible(data.book_bible);
                 } catch (err) {
                     alert("Lỗi: " + err.message);

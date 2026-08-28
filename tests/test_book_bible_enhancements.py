@@ -40,13 +40,39 @@ class MockLLMClient(BaseLLMClient):
     async def translate_prose_chunk(self, chunk_text: str, book_bible: BookBible, previous_context: str = "") -> str:
         if "FAIL_TRIGGER" in chunk_text:
             raise RuntimeError("Dịch lỗi giữa chừng!")
-        return f"[Dịch]: {chunk_text}"
+        return (
+            f"[Dịch]: {chunk_text}"
+            .replace("MiddleEntity", "Thực Thể Giữa")
+            .replace("EndEntity", "Thực Thể Cuối")
+            .replace("DeepEntity", "Thực Thể Sâu")
+        )
 
     async def translate_html_json(self, input_items: List[HTMLInputItem], book_bible: BookBible) -> List[HTMLTranslationItem]:
         return [HTMLTranslationItem(id=item.id, text=f"[Dịch]: {item.text}") for item in input_items]
 
     async def qa_check_chunk(self, original_text: str, translated_text: str, book_bible: BookBible) -> str:
         return translated_text
+
+
+def test_book_bible_drops_cjk_address_terms_before_merge():
+    bible = BookBible(novel_id="address-policy")
+    delta = BookBibleDelta(
+        new_characters=[
+            CharacterEntry(
+                original_name="萧炎",
+                vi_name="Tiêu Viêm",
+                address_terms=[
+                    AddressTerm(with_person="药老", self="我", other="老师", context="đối thoại"),
+                    AddressTerm(with_person="Dược Lão", self="ta", other="sư phụ", context="đối thoại"),
+                ],
+            )
+        ]
+    )
+
+    merged = BookBibleService.merge_delta(bible, delta)
+
+    assert len(merged.characters) == 1
+    assert [term.other_term for term in merged.characters[0].address_terms] == ["sư phụ"]
 
 
 # Requirement 1: TXT 5-10 chunks, entity only in chunk 3/4 and final chunk

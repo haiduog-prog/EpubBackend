@@ -1,7 +1,7 @@
 from typing import Any, List, Optional, Protocol
 
 from app.schemas.book_bible import BookBible, BookBibleDelta
-from app.schemas.translation import HTMLInputItem, HTMLTranslationItem, QAIssue, QAReport
+from app.schemas.translation import HTMLInputItem, HTMLTranslationItem, QAIssue, QAReport, SemanticReviewReport
 
 
 class LLMClient(Protocol):
@@ -44,6 +44,14 @@ class LLMClient(Protocol):
         book_bible: BookBible,
         model: Optional[str] = None,
     ) -> QAReport: ...
+
+    async def semantic_review_chapter(
+        self,
+        source_text: str,
+        translated_text: str,
+        book_bible: BookBible,
+        model: Optional[str] = None,
+    ) -> SemanticReviewReport: ...
 
 
 class BlobStore(Protocol):

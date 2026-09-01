@@ -33,6 +33,11 @@ class LibraryRepository:
             r2_original_key=model.original_r2_key or '',
             r2_translated_key=model.translated_r2_key or '',
             r2_translated_url=model.translated_r2_url,
+            review_status=model.review_status or "pending",
+            review_issues=model.review_issues or [],
+            reviewer_model=model.reviewer_model,
+            reviewed_at=model.reviewed_at.isoformat() if model.reviewed_at else None,
+            review_error=model.review_error,
         )
 
     @staticmethod
@@ -143,6 +148,11 @@ class LibraryRepository:
             ch_model.original_r2_key = ch.r2_original_key
             ch_model.translated_r2_key = ch.r2_translated_key
             ch_model.translated_r2_url = ch.r2_translated_url
+            ch_model.review_status = ch.review_status or "pending"
+            ch_model.review_issues = [issue.model_dump() if hasattr(issue, "model_dump") else issue for issue in (ch.review_issues or [])]
+            ch_model.reviewer_model = ch.reviewer_model
+            ch_model.reviewed_at = datetime.fromisoformat(ch.reviewed_at) if ch.reviewed_at else None
+            ch_model.review_error = ch.review_error
             ch_model.updated_at = now
 
         session.flush()

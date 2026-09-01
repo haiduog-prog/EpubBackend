@@ -180,3 +180,25 @@ PROMPT_5_CORRECT_TERMINOLOGY = """Bạn là biên tập viên hiệu đính bả
 <translated_text>
 {translated_text}
 </translated_text>"""
+
+
+PROMPT_6_SEMANTIC_REVIEW = """QUY TẮC XƯNG HÔ VÀ NGÔI KỂ (BẮT BUỘC): Giữ nguyên ngôi kể và sắc thái đại từ mà nguyên văn hỗ trợ. Không tự ý đổi đại từ ngôi thứ ba như “hắn”, “y”, “gã” thành “anh”, “chị”, “cô ấy” hoặc ngược lại chỉ vì nghe tự nhiên hơn. Trong văn kể trung tính, đổi “hắn” thành “anh” là lỗi sai sắc thái/xưng hô, trừ khi ngữ cảnh hoặc Book Bible nêu rõ cách gọi thân mật hay kính trọng. Phân biệt lời người kể với lời thoại. Bảo toàn cả đại từ ngôi thứ ba (“hắn”, “y”, “gã”) và đại từ đối thoại (“ngươi”, “ta”, “ngài”, “bổn tọa”); không đổi thành “anh”, “cậu”, “tôi” chỉ vì nghe tự nhiên hơn. Chỉ đổi đại từ khi có bằng chứng ngữ cảnh cụ thể hoặc Book Bible.
+Bạn là reviewer kiểm lỗi bản dịch tiểu thuyết, không phải người dịch lại.
+
+Đối chiếu <source_text> với <translated_text> và chỉ phát hiện lỗi chắc chắn làm sai nghĩa: nhầm chủ thể/hành động, mất hoặc thêm thông tin, sai phủ định, số lượng, thời gian, phương hướng, tên riêng hoặc thuật ngữ theo Book Bible. Không nhận xét văn phong, không sửa câu vốn đúng, không viết lại toàn chương.
+
+Mỗi issue phải là một patch cục bộ. `old_text` phải chép nguyên văn một đoạn liên tục, xuất hiện đúng một lần trong bản dịch. `replacement` chỉ thay đúng đoạn đó. Confidence là mức chắc chắn từ 0 đến 1; nếu không chắc, vẫn trả issue nhưng confidence dưới 0.90. Nếu không có lỗi chắc chắn, trả `issues: []`.
+
+<book_bible>
+{book_bible_json}
+</book_bible>
+
+<source_text>
+{source_text}
+</source_text>
+
+<translated_text>
+{translated_text}
+</translated_text>
+
+Trả về đúng JSON object dạng `{{"issues": [{{"old_text": "...", "replacement": "...", "reason": "...", "confidence": 0.97}}]}}`, không markdown và không giải thích ngoài JSON."""

@@ -60,6 +60,24 @@ class Settings(BaseModel):
     default_translation_model: str = Field(default="gemini-flash-latest")
     default_extraction_model: str = Field(default="gemini-flash-latest")
     default_qa_model: str = Field(default="gemini-flash-latest")
+    gemini_review_enabled: bool = Field(
+        default_factory=lambda: os.getenv("GEMINI_REVIEW_ENABLED", "true").lower() in {"1", "true", "yes", "on"}
+    )
+    gemini_review_model: str = Field(
+        default_factory=lambda: os.getenv("GEMINI_REVIEW_MODEL", "gemini-pro-latest")
+    )
+    gemini_review_min_confidence: float = Field(
+        default_factory=lambda: float(os.getenv("GEMINI_REVIEW_MIN_CONFIDENCE", "0.90"))
+    )
+    gemini_review_max_change_ratio: float = Field(
+        default_factory=lambda: float(os.getenv("GEMINI_REVIEW_MAX_CHANGE_RATIO", "0.20"))
+    )
+    gemini_review_timeout_seconds: float = Field(
+        default_factory=lambda: float(os.getenv("GEMINI_REVIEW_TIMEOUT_SECONDS", "45"))
+    )
+    gemini_review_max_issues: int = Field(
+        default_factory=lambda: int(os.getenv("GEMINI_REVIEW_MAX_ISSUES", "20"))
+    )
     default_gemini_model: str = Field(
         default_factory=lambda: os.getenv("GEMINI_DEFAULT_MODEL", "gemini-flash-latest")
     )

@@ -56,6 +56,11 @@ class ChapterModel(Base):
     original_r2_key: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     translated_r2_key: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     translated_r2_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    review_status: Mapped[str] = mapped_column(String, nullable=False, default='pending')
+    review_issues: Mapped[list] = mapped_column(JSONType, nullable=False, default=list)
+    reviewer_model: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    review_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

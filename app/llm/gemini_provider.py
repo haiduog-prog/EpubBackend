@@ -9,7 +9,7 @@ from google.genai import types
 
 from app.config import settings
 from app.schemas.book_bible import BookBible, BookBibleDelta
-from app.schemas.translation import HTMLInputItem, HTMLTranslationItem, HTMLTranslationOutput, QAIssue, QAReport
+from app.schemas.translation import HTMLInputItem, HTMLTranslationItem, HTMLTranslationOutput, QAIssue, QAReport, SemanticReviewReport
 from app.prompts.templates import (
     PROMPT_1_EXTRACT_BOOK_BIBLE_DELTA,
     PROMPT_2_TRANSLATE_CHUNK_SYSTEM,
@@ -18,6 +18,7 @@ from app.prompts.templates import (
     PROMPT_3_TRANSLATE_HTML_USER,
     PROMPT_4_QA_CHECK,
     PROMPT_5_CORRECT_TERMINOLOGY,
+    PROMPT_6_SEMANTIC_REVIEW,
 )
 from app.llm.base import BaseLLMClient
 from app.llm.errors import (
@@ -236,7 +237,8 @@ class GeminiProvider(BaseLLMClient):
         self,
         contents: Any,
         config: types.GenerateContentConfig,
-        preferred_model: Optional[str] = None
+        preferred_model: Optional[str] = None,
+        allow_fallback: bool = True,
     ) -> Any:
         target_model = preferred_model or self.default_model
         legacy_map = {
@@ -290,6 +292,9 @@ class GeminiProvider(BaseLLMClient):
                 cooldown_expiries.append(_GLOBAL_MODEL_COOLDOWNS[m])
             else:
                 candidates.append(m)
+
+        if not allow_fallback:
+            candidates = [target_model] if target_model in candidates else []
 
         # Never bypass a cooldown: doing so turns a provider quota event into
         # a burst of retries and makes every subsequent request fail as well.
@@ -538,3 +543,37 @@ class GeminiProvider(BaseLLMClient):
                 raise
             logger.warning("QA check parse failed (%s), returning default consistent QAReport", qa_err)
             return QAReport(is_consistent=True, issues=[])
+
+    async def semantic_review_chapter(
+        self,
+        source_text: str,
+        translated_text: str,
+        book_bible: BookBible,
+        model: Optional[str] = None,
+    ) -> SemanticReviewReport:
+        prompt = PROMPT_6_SEMANTIC_REVIEW.format(
+            book_bible_json=book_bible.model_dump_json(indent=2),
+            source_text=source_text,
+            translated_text=translated_text,
+        )
+        reviewer_model = model or settings.gemini_review_model
+        try:
+            response = await self._call_with_fallback(
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction="Bạn là reviewer semantic bản dịch. Chỉ trả JSON patch cục bộ theo schema yêu cầu.",
+                    response_mime_type="application/json",
+                ),
+                preferred_model=reviewer_model,
+                allow_fallback=False,
+            )
+            raw_text = getattr(response, "text", "") or "{}"
+            return SemanticReviewReport.model_validate_json(_clean_json_str(raw_text))
+        except Exception as err:
+            if isinstance(err, GeminiProviderError):
+                raise
+            raise StructuredOutputError(
+                "Semantic review output không hợp lệ",
+                operation="semantic_review_chapter",
+                details=str(err),
+            ) from err

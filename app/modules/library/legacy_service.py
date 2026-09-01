@@ -39,6 +39,7 @@ from app.schemas.library import (
 from app.modules.book_bible.application.facade import BookBibleService
 from app.modules.book_bible.domain.legacy_address_resolver import AddressRuleResolver
 from app.modules.translation.application.qa_service import QAService
+from app.modules.translation.application.semantic_review_service import SemanticReviewService
 from app.modules.translation.application.terminology_consistency_service import TerminologyConsistencyService
 
 logger = logging.getLogger("EpubBackend.LibraryService")
@@ -675,14 +676,61 @@ class LegacyLibraryService:
                     for existing in terminology_issues
                 ):
                     terminology_issues.append(issue)
-            if (terminology_issues or not scan_result.complete) and not preview_only:
+
+            semantic_issues: List[Dict[str, Any]] = []
+            semantic_status = "skipped"
+            semantic_error: Optional[str] = None
+            reviewer_model: Optional[str] = None
+            if (provider or "gemini").strip().lower() == "gemini":
+                reviewer_model = SemanticReviewService.resolve_reviewer_model(
+                    model or getattr(llm_client, "default_model", None)
+                )
+                review_result = await SemanticReviewService(llm_client).review_chapter(
+                    source_text=orig_content,
+                    translated_text=translated_text,
+                    book_bible=filtered_bible,
+                    model=reviewer_model,
+                )
+                translated_text = review_result.translated_text
+                semantic_issues = review_result.issues
+                semantic_status = review_result.status
+                semantic_error = review_result.error
+
+            review_issues = list(semantic_issues)
+            review_issues.extend(
+                {
+                    "old_text": issue.found,
+                    "replacement": issue.expected,
+                    "reason": issue.issue,
+                    "confidence": 1.0,
+                }
+                for issue in terminology_issues
+            )
+            chapter_review_status = (
+                "needs_review"
+                if (review_issues or not scan_result.complete)
+                else semantic_status
+            )
+            if not preview_only:
+                chapter.review_status = chapter_review_status
+                chapter.review_issues = review_issues
+                chapter.reviewer_model = reviewer_model
+                chapter.reviewed_at = datetime.now(timezone.utc).isoformat()
+                chapter.review_error = semantic_error
+
+            if (terminology_issues or semantic_issues or semantic_error or not scan_result.complete) and not preview_only:
                 draft_key = f"novels/{novel_id}/drafts/ch_{chapter_index:04d}.txt"
                 self._save_raw_file(
                     draft_key,
                     translated_text.encode("utf-8"),
                     content_type="text/plain; charset=utf-8",
                 )
-                review_reason = terminology_issues[0].issue if terminology_issues else "Book Bible scan chưa hoàn tất"
+                review_reason = (
+                    terminology_issues[0].issue
+                    if terminology_issues
+                    else (semantic_issues[0].get("reason") if semantic_issues else semantic_error)
+                    or "Book Bible scan chưa hoàn tất"
+                )
                 chapter.status = ChapterStatus.NEEDS_REVIEW
                 chapter.translated_text_preview = (
                     f"NEEDS_REVIEW: {review_reason}; "
@@ -1125,7 +1173,6 @@ class LegacyLibraryService:
                 c_item.add_item(default_css)
                 book.add_item(c_item)
                 epub_chapters.append(c_item)
-
         if not epub_chapters:
             raise ValueError(f"Bộ truyện '{meta.title}' chưa có nội dung chương để xuất sách EPUB.")
 

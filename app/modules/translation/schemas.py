@@ -36,6 +36,36 @@ class QAReport(BaseModel):
     issues: List[QAIssue] = Field(default_factory=list)
 
 
+class TranslationPatch(BaseModel):
+    """A minimal exact replacement proposed by the semantic reviewer."""
+
+    old_text: str = Field(..., min_length=1)
+    replacement: str = Field(..., min_length=1)
+    reason: str = ""
+    confidence: float = Field(..., ge=0.0, le=1.0)
+
+
+class SemanticReviewReport(BaseModel):
+    """Structured output returned by the chapter-level semantic reviewer."""
+
+    issues: List[TranslationPatch] = Field(default_factory=list)
+
+
+class TranslationPatch(BaseModel):
+    """A minimal exact replacement proposed by the semantic reviewer."""
+
+    old_text: str = Field(..., min_length=1)
+    replacement: str = Field(..., min_length=1)
+    reason: str = ""
+    confidence: float = Field(..., ge=0.0, le=1.0)
+
+
+class SemanticReviewReport(BaseModel):
+    """Structured output returned by the chapter-level semantic reviewer."""
+
+    issues: List[TranslationPatch] = Field(default_factory=list)
+
+
 class JobStatusEnum(str, Enum):
     PENDING = "pending"
     PROCESSING = "processing"

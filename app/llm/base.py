@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional
 from app.schemas.book_bible import BookBible, BookBibleDelta
-from app.schemas.translation import HTMLInputItem, HTMLTranslationItem, QAIssue, QAReport
+from app.schemas.translation import HTMLInputItem, HTMLTranslationItem, QAIssue, QAReport, SemanticReviewReport
 
 
 class BaseLLMClient(ABC):
@@ -60,3 +60,13 @@ class BaseLLMClient(ABC):
     ) -> QAReport:
         """Prompt 4: Kiểm tra QA nhất quán (Tên riêng, xưng hô, thuật ngữ)"""
         pass
+
+    async def semantic_review_chapter(
+        self,
+        source_text: str,
+        translated_text: str,
+        book_bible: BookBible,
+        model: Optional[str] = None,
+    ) -> SemanticReviewReport:
+        """Review a complete chapter and return exact local replacement patches."""
+        raise NotImplementedError("This LLM adapter does not support semantic chapter review.")

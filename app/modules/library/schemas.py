@@ -2,6 +2,7 @@ from typing import List, Optional
 from enum import Enum
 from datetime import datetime, timezone
 from pydantic import BaseModel, Field
+from app.schemas.translation import TranslationPatch
 
 
 class ChapterStatus(str, Enum):
@@ -30,6 +31,11 @@ class ChapterItem(BaseModel):
     r2_original_key: str = ""
     r2_translated_key: str = ""
     r2_translated_url: Optional[str] = None
+    review_status: str = "pending"
+    review_issues: List[TranslationPatch] = Field(default_factory=list)
+    reviewer_model: Optional[str] = None
+    reviewed_at: Optional[str] = None
+    review_error: Optional[str] = None
 
 
 

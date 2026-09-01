@@ -383,21 +383,21 @@ def export_novel_epub_endpoint(
             )
             return RedirectResponse(url=cdn_url, status_code=307)
 
-        # 2. File does not exist on storage or force_rebuild requested -> compile / patch full EPUB
-        output_path = library_service.export_full_epub(
-            novel_id,
-            start_chapter=start_chapter,
-            end_chapter=end_chapter,
-            target_chapters=target_chapters,
-        )
+        # 2-3. Build and cache under one per-novel lock. This keeps two
+        # concurrent rebuilds from racing on the same output path/storage key.
+        with library_service.rebuild_lock(novel_id):
+            output_path = library_service.export_full_epub(
+                novel_id,
+                start_chapter=start_chapter,
+                end_chapter=end_chapter,
+                target_chapters=target_chapters,
+            )
 
-        # 3. Cache the compiled EPUB to storage so subsequent requests hit CDN
-        if storage_repo.is_blob_active:
-            try:
-                storage_repo.upload_file(output_path, storage_key, content_type="application/epub+zip")
-            except Exception as exc:
-                logger.warning("Failed to cache compiled EPUB to storage: %s", exc)
-
+            if storage_repo.is_blob_active:
+                try:
+                    storage_repo.upload_file(output_path, storage_key, content_type="application/epub+zip")
+                except Exception as exc:
+                    logger.warning("Failed to cache compiled EPUB to storage: %s", exc)
         # 4. Return the compiled EPUB file directly
         title = novel.title if novel else novel_id
         safe_ascii_name = f"{novel_id}_vi.epub"

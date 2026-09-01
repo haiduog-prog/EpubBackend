@@ -99,14 +99,27 @@ class LegacyLibraryService:
         self._summaries_cached_at: float = 0.0
         self._summaries_ttl: float = 60.0
         self._import_jobs: Dict[str, ImportJobStatus] = {}
-        self._novel_locks: Dict[str, threading.Lock] = {}
+        self._novel_locks: Dict[str, threading.RLock] = {}
+        self._chapter_extract_locks: Dict[Tuple[str, bool], threading.Lock] = {}
+        self._chapter_extract_cache: Dict[Tuple[str, bool], Dict[int, str]] = {}
         self._global_lock = threading.Lock()
 
-    def _get_novel_lock(self, novel_id: str) -> threading.Lock:
+    def _get_novel_lock(self, novel_id: str) -> threading.RLock:
         with self._global_lock:
             if novel_id not in self._novel_locks:
-                self._novel_locks[novel_id] = threading.Lock()
+                self._novel_locks[novel_id] = threading.RLock()
             return self._novel_locks[novel_id]
+
+    def rebuild_lock(self, novel_id: str) -> threading.RLock:
+        """Lock dùng chung cho toàn bộ chu kỳ build + upload EPUB của một truyện."""
+        return self._get_novel_lock(novel_id)
+
+    def _get_chapter_extract_lock(self, novel_id: str, is_translated: bool) -> threading.Lock:
+        cache_key = (novel_id, is_translated)
+        with self._global_lock:
+            if cache_key not in self._chapter_extract_locks:
+                self._chapter_extract_locks[cache_key] = threading.Lock()
+            return self._chapter_extract_locks[cache_key]
 
     def _novel_meta_key(self, novel_id: str) -> str:
         return f"novels/{novel_id}/metadata.json"
@@ -414,6 +427,25 @@ class LegacyLibraryService:
         novel_id: str,
         is_translated: bool = True,
     ) -> Dict[int, str]:
+        """Single-flight wrapper around the expensive EPUB extraction."""
+        cache_key = (novel_id, is_translated)
+        lock = self._get_chapter_extract_lock(novel_id, is_translated)
+        with lock:
+            cached = self._chapter_extract_cache.get(cache_key)
+            if cached is not None:
+                return dict(cached)
+            result = self._extract_and_cache_chapters_from_epub_storage_unlocked(
+                novel_id, is_translated=is_translated
+            )
+            if result:
+                self._chapter_extract_cache[cache_key] = dict(result)
+            return result
+
+    def _extract_and_cache_chapters_from_epub_storage_unlocked(
+        self,
+        novel_id: str,
+        is_translated: bool = True,
+    ) -> Dict[int, str]:
         """
         On-demand self-healing: Nếu storage thiếu các file txt chương (ch_*.txt),
         tải file full.epub từ storage, trích xuất lại toàn bộ các chương, lưu vào storage
@@ -444,7 +476,6 @@ class LegacyLibraryService:
                 canonical_chapters = self._assign_canonical_chapter_indices(raw_sections, start_chapter_index=1)
                 result_map: Dict[int, str] = {}
                 folder = "translated" if is_translated else "original"
-                other_folder = "original" if is_translated else "translated"
 
                 for actual_index, ch_title, full_text in canonical_chapters:
                     result_map[actual_index] = full_text
@@ -452,9 +483,7 @@ class LegacyLibraryService:
                     ch_key = f"novels/{novel_id}/{folder}/ch_{actual_index:04d}.txt"
                     if not storage_repo.file_exists(ch_key):
                         self._save_raw_file(ch_key, full_text.encode("utf-8"), content_type="text/plain; charset=utf-8")
-                    other_key = f"novels/{novel_id}/{other_folder}/ch_{actual_index:04d}.txt"
-                    if not storage_repo.file_exists(other_key):
-                        self._save_raw_file(other_key, full_text.encode("utf-8"), content_type="text/plain; charset=utf-8")
+
                 return result_map
             finally:
                 if os.path.exists(tmp_epub_path):
@@ -471,6 +500,7 @@ class LegacyLibraryService:
         novel_id: str,
         chapter_index: int,
         version: str = "translated",
+        allow_epub_self_heal: bool = True,
     ) -> Optional[str]:
         is_trans = (version.lower() == "translated")
         key = self._chapter_key(novel_id, chapter_index, is_translated=is_trans)
@@ -488,15 +518,14 @@ class LegacyLibraryService:
         if is_trans and chapter and chapter.status != ChapterStatus.COMPLETED and not chapter.r2_translated_key:
             return None
 
-        # Self-healing fallback: extract all chapters directly from full.epub
+        # Self-healing is intentionally opt-in for rebuilds. A missing blob must
+        # not make every export worker download/extract the entire EPUB.
+        if not allow_epub_self_heal:
+            return None
+
         extracted_map = self._extract_and_cache_chapters_from_epub_storage(novel_id, is_translated=is_trans)
         if chapter_index in extracted_map:
             return extracted_map[chapter_index]
-
-        # Positional index fallback if chapter numbering in EPUB differed
-        extracted_values = list(extracted_map.values())
-        if 1 <= chapter_index <= len(extracted_values):
-            return extracted_values[chapter_index - 1]
 
         # Fallback: check if other version already exists on storage (e.g. novel imported as single version or requesting original when only translated was uploaded)
         if not is_trans or (meta and meta.translated_chapters == meta.total_chapters and meta.total_chapters > 0):
@@ -759,7 +788,7 @@ class LegacyLibraryService:
             for ch in chapters_to_scan:
                 content = self.get_chapter_content(novel_id, ch.chapter_index, version="original")
                 if not content:
-                    content = self.get_chapter_content(novel_id, ch.chapter_index, version="translated")
+                    content = self.get_chapter_content(novel_id, ch.chapter_index, version="translated", allow_epub_self_heal=False)
                 if not content:
                     continue
 
@@ -871,13 +900,31 @@ class LegacyLibraryService:
         end_chapter: Optional[int] = None,
         target_chapters: Optional[str] = None,
     ) -> str:
+        """Build one novel at a time to avoid concurrent output/storage races."""
+        with self._get_novel_lock(novel_id):
+            return self._export_full_epub_unlocked(
+                novel_id=novel_id,
+                output_path=output_path,
+                start_chapter=start_chapter,
+                end_chapter=end_chapter,
+                target_chapters=target_chapters,
+            )
+    def _export_full_epub_unlocked(
+        self,
+        novel_id: str,
+        output_path: Optional[str] = None,
+        start_chapter: Optional[int] = None,
+        end_chapter: Optional[int] = None,
+        target_chapters: Optional[str] = None,
+    ) -> str:
         meta = self.get_novel(novel_id)
         if not meta:
             raise ValueError(f"Không tìm thấy bộ truyện '{novel_id}'")
 
         if not output_path:
             os.makedirs(os.path.join("storage", "outputs"), exist_ok=True)
-            output_path = os.path.join("storage", "outputs", f"{slugify(novel_id)}_vi.epub")
+            # Mỗi request dùng file riêng để FileResponse không bị request kế tiếp ghi đè.
+            output_path = os.path.join("storage", "outputs", f"{slugify(novel_id)}_{uuid.uuid4().hex}_vi.epub")
 
         # Parse target range if specified
         target_indexes = set()
@@ -922,27 +969,13 @@ class LegacyLibraryService:
                     try:
                         base_book = read_epub_safe(tmp_base_path)
 
-                        # Style CSS
-                        style = """
-                        @namespace epub "http://www.idpf.org/2007/ops";
-                        body { font-family: sans-serif; line-height: 1.6; margin: 5%; }
-                        h1 { text-align: center; margin-bottom: 1.5em; font-size: 1.4em; }
-                        p { text-indent: 1.5em; margin: 0.5em 0; text-align: justify; }
-                        """
-                        default_css = epub.EpubItem(
-                            uid="style_default",
-                            file_name="style/default.css",
-                            media_type="text/css",
-                            content=style.encode("utf-8"),
-                        )
-                        base_book.add_item(default_css)
 
                         # Fetch ONLY the translated chapters in parallel (e.g. 50 out of 4000)
                         from concurrent.futures import ThreadPoolExecutor
                         from html import escape
 
                         def _fetch_trans_text(ch):
-                            txt = self.get_chapter_content(novel_id, ch.chapter_index, version="translated")
+                            txt = self.get_chapter_content(novel_id, ch.chapter_index, version="translated", allow_epub_self_heal=False)
                             return ch.chapter_index, txt
 
                         # Keep export concurrency below the DB pool capacity. A missing storage object may make get_chapter_content() consult Postgres, so one worker per chapter can exhaust the pool during a delta rebuild.
@@ -952,11 +985,6 @@ class LegacyLibraryService:
 
                         doc_items = list(base_book.get_items_of_type(ebooklib.ITEM_DOCUMENT))
                         doc_by_filename = {item.get_name(): item for item in doc_items}
-
-                        spine_doc_ids = [s[0] if isinstance(s, tuple) else s for s in base_book.spine if s not in ("nav", "ncx")]
-                        spine_docs = [base_book.get_item_with_id(item_id) for item_id in spine_doc_ids if base_book.get_item_with_id(item_id)]
-                        if not spine_docs:
-                            spine_docs = doc_items
 
                         # Patch translated chapters
                         patched_count = 0
@@ -971,8 +999,13 @@ class LegacyLibraryService:
                             expected_name = f"ch_{ch.chapter_index:04d}.xhtml"
                             if expected_name in doc_by_filename:
                                 target_doc = doc_by_filename[expected_name]
-                            elif 0 <= (ch.chapter_index - 1) < len(spine_docs):
-                                target_doc = spine_docs[ch.chapter_index - 1]
+                            else:
+                                logger.warning(
+                                    "Bỏ qua patch chương %s của '%s': không tìm thấy file XHTML %s",
+                                    ch.chapter_index,
+                                    novel_id,
+                                    expected_name,
+                                )
 
                             if target_doc:
                                 target_doc.content = html_content.encode("utf-8")
@@ -1029,22 +1062,51 @@ class LegacyLibraryService:
         )
         book.add_item(default_css)
 
-        # Tải song song nội dung các chương qua Connection Pool để tăng tốc độ gấp 10x-20x
+        # Chỉ xuất những chương đã có bản dịch. Tuyệt đối không rơi về bản gốc,
+        # nếu không EPUB tiếng Việt sẽ chứa lẫn nội dung nguồn.
+        chapters_to_export = [
+            ch for ch in meta.chapters
+            if ch.status == ChapterStatus.COMPLETED or ch.r2_translated_key
+        ]
+        if target_indexes:
+            logger.info(
+                "Không có EPUB nền cho '%s'; rebuild đầy đủ %d chương đã dịch (bỏ qua range %s)",
+                novel_id,
+                len(chapters_to_export),
+                sorted(target_indexes),
+            )
+
+        # Tải song song nội dung các chương qua Connection Pool, nhưng không tự
+        # động tải/giải nén full.epub cho từng chương bị thiếu blob.
         from concurrent.futures import ThreadPoolExecutor
 
         def _fetch_chapter_text(ch):
-            txt = self.get_chapter_content(novel_id, ch.chapter_index, version="translated")
-            if not txt:
-                txt = self.get_chapter_content(novel_id, ch.chapter_index, version="original")
+            txt = self.get_chapter_content(
+                novel_id,
+                ch.chapter_index,
+                version="translated",
+                allow_epub_self_heal=False,
+            )
             return ch.chapter_index, txt
 
-        # A full rebuild may fall back to DB metadata for missing chapter blobs. Limit concurrent readers so the 5+5 SQLAlchemy pool is not exhausted.
-        export_workers = max(1, min(4, len(meta.chapters)))
+        export_workers = max(1, min(4, len(chapters_to_export)))
         with ThreadPoolExecutor(max_workers=export_workers) as executor:
-            chapter_texts = dict(executor.map(_fetch_chapter_text, meta.chapters))
+            chapter_texts = dict(executor.map(_fetch_chapter_text, chapters_to_export)) if chapters_to_export else {}
+
+        missing_chapters = [
+            ch.chapter_index for ch in chapters_to_export
+            if not chapter_texts.get(ch.chapter_index)
+        ]
+        if missing_chapters:
+            logger.warning(
+                "Bỏ qua %d chương đã đánh dấu dịch nhưng thiếu nội dung lưu trữ của '%s': %s",
+                len(missing_chapters),
+                novel_id,
+                missing_chapters[:20],
+            )
 
         epub_chapters = []
-        for ch in meta.chapters:
+        for ch in chapters_to_export:
             content = chapter_texts.get(ch.chapter_index)
             if content:
                 from html import escape

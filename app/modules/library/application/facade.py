@@ -67,6 +67,9 @@ class LibraryService:
     def get_character_snapshot_at_chapter(self, novel_id, chapter_index):
         return self.chapters.snapshot(novel_id, chapter_index)
 
+    def rebuild_lock(self, novel_id):
+        return self._legacy.rebuild_lock(novel_id)
+
     def export_full_epub(self, novel_id, output_path=None, **kwargs):
         return self.exports.export(novel_id, output_path, **kwargs)
 

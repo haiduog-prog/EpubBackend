@@ -46,6 +46,9 @@ class LibraryService:
     def get_chapter_content(self, novel_id, chapter_index, version="translated"):
         return self.chapters.content(novel_id, chapter_index, version)
 
+    def get_chapter_draft_content(self, novel_id, chapter_index):
+        return self._legacy.get_chapter_draft_content(novel_id, chapter_index)
+
     def get_chapter_content_url(self, chapter, version="translated"):
         return self.chapters.content_url(chapter, version)
 

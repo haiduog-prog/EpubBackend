@@ -3069,10 +3069,11 @@
                             statusBadge += ` <span style="color:#fbbf24; font-size:0.75rem;" title="${escapeHtml(issueSummary)}">(${reviewIssues.length} lỗi review)</span>`;
                         }
 
-                        const translateBtn = ch.status === 'completed'
-                            ? `<button class="btn btn-secondary chapter-translate-btn" data-novel-id="${escapeHtml(novelId)}" data-chapter-index="${ch.chapter_index}" style="padding:0.25rem 0.6rem; font-size:0.75rem;"><i class="fa-solid fa-rotate-right"></i> Dịch lại</button>`
-                            : `<button class="btn chapter-translate-btn" data-novel-id="${escapeHtml(novelId)}" data-chapter-index="${ch.chapter_index}" style="padding:0.25rem 0.6rem; font-size:0.75rem;"><i class="fa-solid fa-bolt"></i> Dịch ngay</button>`;
-
+                        const translateBtn = ch.status === 'needs_review'
+                            ? `<button class="btn btn-secondary chapter-review-btn" data-novel-id="${escapeHtml(novelId)}" data-chapter-index="${ch.chapter_index}" style="padding:0.25rem 0.6rem; font-size:0.75rem; color:#fbbf24; border-color:rgba(251,191,36,0.45);"><i class="fa-solid fa-eye"></i> Duyệt draft</button>`
+                            : ch.status === 'completed'
+                                ? `<button class="btn btn-secondary chapter-translate-btn" data-novel-id="${escapeHtml(novelId)}" data-chapter-index="${ch.chapter_index}" style="padding:0.25rem 0.6rem; font-size:0.75rem;"><i class="fa-solid fa-rotate-right"></i> Dịch lại</button>`
+                                : `<button class="btn chapter-translate-btn" data-novel-id="${escapeHtml(novelId)}" data-chapter-index="${ch.chapter_index}" style="padding:0.25rem 0.6rem; font-size:0.75rem;"><i class="fa-solid fa-bolt"></i> Dịch ngay</button>`;
                         const isChecked = selectedChapterIndexes.has(ch.chapter_index);
                         const formattedDate = (ch.status === 'completed' && ch.updated_at)
                             ? `<span style="font-size:0.78rem; color:#cbd5e1; white-space:nowrap;" title="${escapeHtml(ch.updated_at || '')}"><i class="fa-regular fa-calendar-check" style="color:#818cf8; margin-right:3px;"></i>${formatDateFriendly(ch.updated_at)}</span>`
@@ -3104,6 +3105,12 @@
                     });
                     chaptersBody.querySelectorAll('.chapter-translate-btn').forEach(button => {
                         button.addEventListener('click', () => triggerTranslateChapter(
+                            button.dataset.novelId || '',
+                            Number(button.dataset.chapterIndex)
+                        ));
+                    });
+                    chaptersBody.querySelectorAll('.chapter-review-btn').forEach(button => {
+                        button.addEventListener('click', () => openChapterDraftReview(
                             button.dataset.novelId || '',
                             Number(button.dataset.chapterIndex)
                         ));
@@ -3371,9 +3378,59 @@
         function cancelAndCloseRetranslateModal() {
             stopRetranslateTimer();
             closeModal('modal-chapter-retranslate-diff');
+            const retryBtn = document.getElementById('btn-retranslate-retry');
+            if (retryBtn) retryBtn.style.display = '';
+            const applyBtn = document.getElementById('btn-retranslate-apply');
+            if (applyBtn) applyBtn.innerHTML = '<i class="fa-solid fa-check"></i> ✓ Áp Dụng Bản Dịch Mới';
             currentRetranslateData = null;
         }
+        async function openChapterDraftReview(novelId, chapterIndex) {
+            let chapterTitle = `Chương ${chapterIndex}`;
+            if (currentNovelData && Array.isArray(currentNovelData.chapters)) {
+                const ch = currentNovelData.chapters.find(c => c.chapter_index === chapterIndex);
+                if (ch && ch.chapter_title) chapterTitle = ch.chapter_title;
+            }
 
+            currentRetranslateData = {
+                novelId,
+                chapterIndex,
+                chapterTitle,
+                mode: 'review',
+                originalText: '',
+                prevText: '',
+                newText: ''
+            };
+
+            document.getElementById('retranslate-modal-title').innerHTML = `<i class="fa-solid fa-eye" style="color:#fbbf24;"></i> Duyệt draft: ${escapeHtml(chapterTitle)}`;
+            document.getElementById('retranslate-model-badge').innerHTML = '<i class="fa-solid fa-shield-check"></i> Semantic review';
+            document.getElementById('retranslate-loading-step').innerText = 'Đang tải bản dịch cần duyệt...';
+            document.getElementById('retranslate-loading-sub').innerText = 'Kiểm tra và chỉnh sửa draft trước khi xuất bản.';
+            document.getElementById('retranslate-loading-view').style.display = 'flex';
+            document.getElementById('retranslate-diff-view').style.display = 'none';
+            document.getElementById('modal-chapter-retranslate-diff').classList.add('active');
+            const retryBtn = document.getElementById('btn-retranslate-retry');
+            if (retryBtn) retryBtn.style.display = 'none';
+            const applyBtn = document.getElementById('btn-retranslate-apply');
+            if (applyBtn) applyBtn.innerHTML = '<i class="fa-solid fa-check"></i> ✓ Duyệt & Áp dụng';
+            startRetranslateTimer();
+
+            try {
+                const [original, draft] = await Promise.all([
+                    fetchWithCache(apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/chapters/${chapterIndex}/content?version=original`), {}, 300000, true),
+                    fetchWithCache(apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/chapters/${chapterIndex}/draft`), {}, 300000, true)
+                ]);
+                if (!currentRetranslateData || currentRetranslateData.mode !== 'review') return;
+                currentRetranslateData.originalText = original.content || '';
+                currentRetranslateData.prevText = '(Chưa có bản dịch đã duyệt)';
+                currentRetranslateData.newText = draft.content || '';
+                stopRetranslateTimer();
+                renderRetranslateDiffView();
+            } catch (err) {
+                stopRetranslateTimer();
+                alert('Không thể tải draft cần duyệt: ' + err.message);
+                cancelAndCloseRetranslateModal();
+            }
+        }
         async function triggerTranslateChapter(novelId, chapterIndex) {
             ensureApiKey(async (apiKey) => {
                 const provider = document.getElementById('api-provider').value;
@@ -3456,6 +3513,14 @@
         function renderRetranslateDiffView() {
             if (!currentRetranslateData) return;
 
+            const isReview = currentRetranslateData.mode === 'review';
+            const retryBtn = document.getElementById('btn-retranslate-retry');
+            if (retryBtn) retryBtn.style.display = isReview ? 'none' : '';
+            const applyBtn = document.getElementById('btn-retranslate-apply');
+            if (applyBtn) applyBtn.innerHTML = isReview
+                ? '<i class="fa-solid fa-check"></i> ✓ Duyệt & Áp dụng'
+                : '<i class="fa-solid fa-check"></i> ✓ Áp Dụng Bản Dịch Mới';
+
             const origWords = (currentRetranslateData.originalText || '').trim().split(/\s+/).filter(Boolean).length;
             const prevWords = (currentRetranslateData.prevText || '').trim().split(/\s+/).filter(Boolean).length;
             const newWords = (currentRetranslateData.newText || '').trim().split(/\s+/).filter(Boolean).length;
@@ -3536,7 +3601,10 @@
                     throw new Error(err.detail || "Không thể áp dụng bản dịch");
                 }
 
-                showToast(`✓ Đã áp dụng thành công bản dịch mới cho Chương ${chapterIndex}!`, "success");
+                const isReview = currentRetranslateData.mode === 'review';
+                showToast(isReview
+                    ? `✓ Đã duyệt và áp dụng draft cho Chương ${chapterIndex}!`
+                    : `✓ Đã áp dụng thành công bản dịch mới cho Chương ${chapterIndex}!`, "success");
                 cancelAndCloseRetranslateModal();
                 openNovelDetail(novelId);
 
@@ -3973,6 +4041,12 @@
             }
 
             document.getElementById('batch-progress-status-text').innerHTML = `<span style="color:#10b981; font-weight:700;"><i class="fa-solid fa-circle-check"></i> Đã xử lý ${processed}/${total} chương${needsReview ? ` (cần duyệt: ${needsReview})` : ''}!</span>`;
+            const batchFooterInfo = document.getElementById('batch-footer-info');
+            if (batchFooterInfo) {
+                batchFooterInfo.innerHTML = needsReview
+                    ? '<i class="fa-solid fa-eye" style="color:#fbbf24;"></i> Đóng cửa sổ, sau đó bấm <strong>Duyệt draft</strong> ở từng chương cần duyệt để sửa và áp dụng.'
+                    : 'Đã xử lý xong hàng đợi dịch.';
+            }
             document.getElementById('btn-batch-abort').style.display = 'none';
             document.getElementById('btn-batch-done-close').style.display = 'inline-block';
             showToast(`✓ Đã xử lý ${processed} chương${needsReview ? `; cần duyệt ${needsReview}` : ''}!`, needsReview ? "warning" : "success");

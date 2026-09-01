@@ -542,6 +542,20 @@ class LegacyLibraryService:
 
         return None
 
+    def get_chapter_draft_content(
+        self,
+        novel_id: str,
+        chapter_index: int,
+    ) -> Optional[str]:
+        """Return the review draft without exposing it as the published translation."""
+        draft_key = f"novels/{novel_id}/drafts/ch_{chapter_index:04d}.txt"
+        data_bytes = storage_repo.get_bytes(draft_key)
+        if data_bytes is None:
+            return None
+        try:
+            return data_bytes.decode("utf-8")
+        except Exception:
+            return data_bytes.decode("latin1", errors="ignore")
     def get_chapter_content_url(
         self,
         novel_id: str,
@@ -795,6 +809,7 @@ class LegacyLibraryService:
         trans_key = self._chapter_key(novel_id, chapter_index, is_translated=True)
         trans_url = self._save_raw_file(trans_key, content.encode("utf-8"), content_type="text/plain; charset=utf-8")
 
+        chapter.review_issues = []
         chapter.status = ChapterStatus.COMPLETED
         chapter.r2_translated_key = trans_key
         chapter.r2_translated_url = trans_url

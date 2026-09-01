@@ -281,6 +281,18 @@ def get_chapter_content_endpoint(
     return {"novel_id": novel_id, "chapter_index": chapter_index, "version": version, "content": content}
 
 
+@router.get("/novels/{novel_id}/chapters/{chapter_index}/draft")
+def get_chapter_draft_endpoint(
+    novel_id: str,
+    chapter_index: int,
+    _: None = Depends(require_write_access),
+):
+    """Return the unpublished semantic-review draft for an authenticated reviewer."""
+    content = library_service.get_chapter_draft_content(novel_id, chapter_index)
+    if content is None:
+        raise HTTPException(status_code=404, detail="Bản draft cần duyệt không tồn tại.")
+    return {"novel_id": novel_id, "chapter_index": chapter_index, "version": "draft", "content": content}
+
 @router.get("/novels/{novel_id}/chapters/{chapter_index}/character-snapshot")
 def get_chapter_character_snapshot_endpoint(novel_id: str, chapter_index: int, response: Response):
     try:

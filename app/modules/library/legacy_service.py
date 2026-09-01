@@ -945,7 +945,9 @@ class LegacyLibraryService:
                             txt = self.get_chapter_content(novel_id, ch.chapter_index, version="translated")
                             return ch.chapter_index, txt
 
-                        with ThreadPoolExecutor(max_workers=20) as executor:
+                        # Keep export concurrency below the DB pool capacity. A missing storage object may make get_chapter_content() consult Postgres, so one worker per chapter can exhaust the pool during a delta rebuild.
+                        export_workers = max(1, min(4, len(translated_chapters)))
+                        with ThreadPoolExecutor(max_workers=export_workers) as executor:
                             trans_texts = dict(executor.map(_fetch_trans_text, translated_chapters))
 
                         doc_items = list(base_book.get_items_of_type(ebooklib.ITEM_DOCUMENT))
@@ -1036,7 +1038,9 @@ class LegacyLibraryService:
                 txt = self.get_chapter_content(novel_id, ch.chapter_index, version="original")
             return ch.chapter_index, txt
 
-        with ThreadPoolExecutor(max_workers=25) as executor:
+        # A full rebuild may fall back to DB metadata for missing chapter blobs. Limit concurrent readers so the 5+5 SQLAlchemy pool is not exhausted.
+        export_workers = max(1, min(4, len(meta.chapters)))
+        with ThreadPoolExecutor(max_workers=export_workers) as executor:
             chapter_texts = dict(executor.map(_fetch_chapter_text, meta.chapters))
 
         epub_chapters = []

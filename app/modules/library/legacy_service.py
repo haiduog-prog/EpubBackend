@@ -1048,7 +1048,14 @@ class LegacyLibraryService:
 
                         doc_items = list(base_book.get_items_of_type(ebooklib.ITEM_DOCUMENT))
                         doc_by_filename = {item.get_name(): item for item in doc_items}
-
+                        expected_base_names = {
+                            f"ch_{ch.chapter_index:04d}.xhtml" for ch in meta.chapters
+                        }
+                        missing_base_names = sorted(expected_base_names - set(doc_by_filename))
+                        if missing_base_names:
+                            raise ValueError(
+                                f"EPUB nền thiếu {len(missing_base_names)} chương; chuyển sang full compile"
+                            )
                         # Patch translated chapters
                         patched_count = 0
                         for ch in translated_chapters:
@@ -1125,15 +1132,12 @@ class LegacyLibraryService:
         )
         book.add_item(default_css)
 
-        # Chỉ xuất những chương đã có bản dịch. Tuyệt đối không rơi về bản gốc,
-        # nếu không EPUB tiếng Việt sẽ chứa lẫn nội dung nguồn.
-        chapters_to_export = [
-            ch for ch in meta.chapters
-            if ch.status == ChapterStatus.COMPLETED or ch.r2_translated_key
-        ]
+        # Xuất toàn bộ chương theo thứ tự. Chương đã dịch dùng bản dịch;
+        # chương chưa dịch dùng bản gốc để EPUB luôn là một bộ đầy đủ.
+        chapters_to_export = sorted(meta.chapters, key=lambda ch: ch.chapter_index)
         if target_indexes:
             logger.info(
-                "Không có EPUB nền cho '%s'; rebuild đầy đủ %d chương đã dịch (bỏ qua range %s)",
+                "Không có EPUB nền cho '%s'; rebuild đầy đủ %d chương (ưu tiên bản dịch, fallback bản gốc; bỏ qua range %s)",
                 novel_id,
                 len(chapters_to_export),
                 sorted(target_indexes),
@@ -1144,14 +1148,22 @@ class LegacyLibraryService:
         from concurrent.futures import ThreadPoolExecutor
 
         def _fetch_chapter_text(ch):
-            txt = self.get_chapter_content(
+            translated = self.get_chapter_content(
                 novel_id,
                 ch.chapter_index,
                 version="translated",
                 allow_epub_self_heal=False,
             )
-            return ch.chapter_index, txt
+            if translated:
+                return ch.chapter_index, translated
 
+            original = self.get_chapter_content(
+                novel_id,
+                ch.chapter_index,
+                version="original",
+                allow_epub_self_heal=False,
+            )
+            return ch.chapter_index, original
         export_workers = max(1, min(4, len(chapters_to_export)))
         with ThreadPoolExecutor(max_workers=export_workers) as executor:
             chapter_texts = dict(executor.map(_fetch_chapter_text, chapters_to_export)) if chapters_to_export else {}
@@ -1162,7 +1174,7 @@ class LegacyLibraryService:
         ]
         if missing_chapters:
             logger.warning(
-                "Bỏ qua %d chương đã đánh dấu dịch nhưng thiếu nội dung lưu trữ của '%s': %s",
+                "Bỏ qua %d chương không có cả bản dịch lẫn bản gốc trong storage của '%s': %s",
                 len(missing_chapters),
                 novel_id,
                 missing_chapters[:20],

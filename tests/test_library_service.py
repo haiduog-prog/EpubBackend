@@ -143,6 +143,33 @@ def _create_mock_epub(title: str, chapters: List[Tuple[str, str]]) -> bytes:
             os.unlink(tmp_path)
 
 
+def test_library_export_epub_includes_untranslated_original(tmp_path):
+    from ebooklib import epub, ITEM_DOCUMENT
+
+    service = LibraryService()
+    unique_id = f"full-export-test-{uuid.uuid4().hex[:6]}"
+    service.create_novel(NovelCreateRequest(title="Full Export", novel_id=unique_id))
+    service.add_or_update_chapter(unique_id, 1, "Chương 1", "Nội dung gốc chương một.")
+    service.add_or_update_chapter(unique_id, 2, "Chương 2", "Nội dung gốc chương hai chưa dịch.")
+
+    meta = service.get_novel(unique_id)
+    meta.chapters[0].status = ChapterStatus.COMPLETED
+    service._save_metadata(meta)
+    trans_key = service._chapter_key(unique_id, 1, is_translated=True)
+    service._save_raw_file(trans_key, "Nội dung đã dịch chương một.".encode("utf-8"))
+
+    output_path = service.export_full_epub(unique_id, output_path=str(tmp_path / "full.epub"))
+    book = epub.read_epub(output_path)
+    document_text = "\n".join(
+        item.get_content().decode("utf-8", errors="ignore")
+        for item in book.get_items_of_type(ITEM_DOCUMENT)
+    )
+
+    assert len(list(book.get_items_of_type(ITEM_DOCUMENT))) >= 2
+    assert "Nội dung đã dịch chương một." in document_text
+    assert "Nội dung gốc chương hai chưa dịch." in document_text
+    service.delete_novel(unique_id)
+
 def test_parse_chapter_index_from_title():
     assert parse_chapter_index_from_title("Chương 101: Đại Chiến Tiêu Gia") == 101
     assert parse_chapter_index_from_title("Hồi 12: Gặp gỡ người lạ") == 12

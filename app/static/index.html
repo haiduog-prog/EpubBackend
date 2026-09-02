@@ -1399,7 +1399,7 @@
                             <i class="fa-solid fa-file-arrow-down"></i> Xuất EPUB
                         </button>
                         <div style="display:inline-flex; align-items:center; gap:0.25rem; background:rgba(15,23,42,0.6); padding:0.2rem 0.45rem; border-radius:8px; border:1px solid rgba(99,102,241,0.35);">
-                            <span style="font-size:0.72rem; color:var(--text-sub);" title="Tùy chọn khoảng chương cần nạp vào EPUB (để trống để nạp toàn bộ các chương đã dịch)">Chương:</span>
+                            <span style="font-size:0.72rem; color:var(--text-sub);" title="Tùy chọn khoảng chương cần nạp vào EPUB (để trống để nạp toàn bộ chương (dịch + chưa dịch))">Chương:</span>
                             <input type="number" id="rebuild-start-ch" placeholder="Từ" min="1" style="width:46px; padding:0.2rem 0.25rem; font-size:0.75rem; background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.15); border-radius:4px; color:#fff; text-align:center; outline:none;" title="Chương bắt đầu">
                             <span style="color:var(--text-sub); font-size:0.72rem;">-</span>
                             <input type="number" id="rebuild-end-ch" placeholder="Đến" min="1" style="width:46px; padding:0.2rem 0.25rem; font-size:0.75rem; background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.15); border-radius:4px; color:#fff; text-align:center; outline:none;" title="Chương kết thúc">
@@ -4099,7 +4099,7 @@
             button.classList.add('epub-rebuild-progress');
             const startedAt = Date.now();
             let percent = 4;
-            const countLabel = chapterCount > 0 ? `${chapterCount} chương` : 'các chương đã dịch';
+            const countLabel = chapterCount > 0 ? `${chapterCount} chương` : 'toàn bộ chương';
             const render = (value, phase = 'Đang dựng EPUB') => {
                 const safeValue = Math.max(0, Math.min(100, Math.round(value)));
                 button.innerHTML = `<span style="display:inline-flex; align-items:center; gap:0.35rem;"><i class="fa-solid fa-arrows-rotate ${safeValue < 100 ? 'spinner' : ''}"></i><span>${phase}</span></span><small style="display:block; margin-top:0.16rem; font-size:0.68rem; color:#c7d2fe; font-variant-numeric:tabular-nums;">~${safeValue}% · ${countLabel}${rangeLabel ? ` · ${rangeLabel}` : ''}</small>`;
@@ -4173,7 +4173,7 @@
                         chapterCount = currentNovelData.chapters.length;
                     }
                     stopEpubProgress = startEpubRebuildProgress(btn, chapterCount, rangeMsg);
-                    showToast(rangeMsg ? `🔄 Đang biên dịch lại EPUB cho ${rangeMsg}...` : "🔄 Đang biên dịch lại tất cả chương đã dịch vào EPUB...", "info");
+                    showToast(rangeMsg ? `🔄 Đang biên dịch lại EPUB cho ${rangeMsg}...` : "🔄 Đang biên dịch lại toàn bộ chương (ưu tiên bản dịch, chưa dịch dùng bản gốc)...", "info");
                 }
                 let url = apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/export/epub${queryParam}`);
                 const requestHeaders = {};

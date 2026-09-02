@@ -1052,11 +1052,19 @@ class LegacyLibraryService:
                             f"ch_{ch.chapter_index:04d}.xhtml" for ch in meta.chapters
                         }
                         missing_base_names = sorted(expected_base_names - set(doc_by_filename))
-                        if missing_base_names:
+                        if missing_base_names and not target_indexes:
                             raise ValueError(
                                 f"EPUB nền thiếu {len(missing_base_names)} chương; chuyển sang full compile"
                             )
-                        # Patch translated chapters
+                        if missing_base_names and target_indexes:
+                            logger.warning(
+                                "EPUB nền thiếu %d chương ngoài phạm vi rebuild của '%s'; chỉ patch phạm vi được yêu cầu",
+                                len(missing_base_names),
+                                novel_id,
+                            )
+
+                        # Patch translated chapters in the requested range. A range rebuild
+                        # intentionally does not scan chapters outside that range.
                         patched_count = 0
                         for ch in translated_chapters:
                             txt = trans_texts.get(ch.chapter_index)

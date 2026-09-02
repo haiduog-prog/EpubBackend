@@ -501,12 +501,20 @@ class LibraryRepository:
 
         # Detect existing base EPUB (either versioned key or legacy full.epub on storage)
         from app.infrastructure.storage.facade import storage_repo
-        has_existing_base = bool(
-            novel.current_epub_key
-            or storage_repo.file_exists(f"novels/{novel_id}/full.epub")
-        )
-        if not novel.current_epub_key and storage_repo.file_exists(f"novels/{novel_id}/full.epub"):
-            novel.current_epub_key = f"novels/{novel_id}/full.epub"
+        legacy_candidates = [
+            f"novels/{novel_id}/full.epub",
+            f"{novel_id}/full.epub",
+        ]
+        found_base_key = novel.current_epub_key
+        if not found_base_key:
+            for cand in legacy_candidates:
+                if storage_repo.file_exists(cand):
+                    found_base_key = cand
+                    novel.current_epub_key = cand
+                    break
+
+        has_existing_base = bool(found_base_key)
+        is_scoped_range = bool(dirty_indexes and not force_rebuild)
 
         if existing_job:
             # Coalesce into existing queued job
@@ -520,9 +528,12 @@ class LibraryRepository:
 
             job_dict.update(dirty_dict)
             existing_job.dirty_chapters = job_dict
-            if is_structural or force_rebuild or novel.is_structural_dirty or not has_existing_base:
+            if is_structural or force_rebuild or (novel.is_structural_dirty and not is_scoped_range) or not has_existing_base:
                 existing_job.is_structural = True
                 existing_job.strategy = "full_rebuild"
+            elif has_existing_base and is_scoped_range:
+                existing_job.is_structural = False
+                existing_job.strategy = "fast_patch"
             existing_job.target_revision = current_rev
             session.flush()
             return cls._model_to_epub_build_job(existing_job)
@@ -532,7 +543,7 @@ class LibraryRepository:
         needs_full = bool(
             is_structural
             or force_rebuild
-            or novel.is_structural_dirty
+            or (novel.is_structural_dirty and not is_scoped_range)
             or not has_existing_base
         )
         strategy = "full_rebuild" if needs_full else "fast_patch"

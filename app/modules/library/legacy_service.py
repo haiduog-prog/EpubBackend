@@ -1189,16 +1189,18 @@ class LegacyLibraryService:
         )
         book.add_item(default_css)
 
-        # Xuất toàn bộ chương theo thứ tự. Chương đã dịch dùng bản dịch;
-        # chương chưa dịch dùng bản gốc để EPUB luôn là một bộ đầy đủ.
-        chapters_to_export = sorted(meta.chapters, key=lambda ch: ch.chapter_index)
+        # Nếu có target_indexes (người dùng chọn dải chương cụ thể, ví dụ 151-151),
+        # chỉ xuất các chương trong dải đó để không phải duyệt tải toàn bộ chương khác.
         if target_indexes:
+            chapters_to_export = [ch for ch in sorted(meta.chapters, key=lambda ch: ch.chapter_index) if ch.chapter_index in target_indexes]
             logger.info(
-                "Không có EPUB nền cho '%s'; rebuild đầy đủ %d chương (ưu tiên bản dịch, fallback bản gốc; bỏ qua range %s)",
+                "Biên dịch EPUB theo phạm vi cho '%s': %d chương (phạm vi: %s)",
                 novel_id,
                 len(chapters_to_export),
                 sorted(target_indexes),
             )
+        else:
+            chapters_to_export = sorted(meta.chapters, key=lambda ch: ch.chapter_index)
 
         # Tải song song nội dung các chương qua Connection Pool, nhưng không tự
         # động tải/giải nén full.epub cho từng chương bị thiếu blob.

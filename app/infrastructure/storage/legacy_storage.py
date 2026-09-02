@@ -998,6 +998,12 @@ class StorageRepository:
             if data is not None:
                 return data
 
+        # Keep Supabase files readable while R2 is the primary provider.
+        if active_provider != self.supabase_provider and self.supabase_provider.is_active:
+            data = self.supabase_provider.get_bytes(object_name, raise_on_error=raise_on_error)
+            if data is not None:
+                return data
+
         # Public R2 CDN remains readable for legacy objects even without S3 credentials.
         if settings.cloudflare_r2_public_url:
             public_url = self.r2_provider.get_public_url(object_name)
@@ -1030,18 +1036,31 @@ class StorageRepository:
 
     def download_file_stream(self, object_name: str, target_file_path: str) -> bool:
         if self.is_blob_active:
-            success = self.active_provider.download_file_stream(object_name, target_file_path)
-            if success:
+            if self.active_provider and self.active_provider.download_file_stream(object_name, target_file_path):
                 return True
+            # Cross-cloud fallback between R2 and Supabase
+            if self.active_provider == self.r2_provider and self.supabase_provider.is_active:
+                if self.supabase_provider.download_file_stream(object_name, target_file_path):
+                    return True
+            elif self.active_provider == self.supabase_provider and self.r2_provider.is_active:
+                if self.r2_provider.download_file_stream(object_name, target_file_path):
+                    return True
         return self.local_provider.download_file_stream(object_name, target_file_path)
 
     def upload_file_to_r2(self, file_path: str, object_name: str) -> Optional[str]:
         return self.upload_file_stream(file_path, object_name)
 
     def file_exists(self, object_name: str) -> bool:
-        if self.active_provider.file_exists(object_name):
+        if self.active_provider and self.active_provider.file_exists(object_name):
             return True
-        if self.active_provider != self.local_provider:
+        # Cross-cloud fallback between R2 and Supabase
+        if self.active_provider == self.r2_provider and self.supabase_provider.is_active:
+            if self.supabase_provider.file_exists(object_name):
+                return True
+        elif self.active_provider == self.supabase_provider and self.r2_provider.is_active:
+            if self.r2_provider.file_exists(object_name):
+                return True
+        if self.local_provider and self.active_provider != self.local_provider:
             return self.local_provider.file_exists(object_name)
         return False
 

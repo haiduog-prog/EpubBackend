@@ -328,9 +328,12 @@ def test_export_novel_epub_endpoint_fallback_and_redirect(monkeypatch):
     assert resp_redirect.headers["location"] == f"https://pub-test.r2.dev/novels/{novel_id}/full.epub"
 
     # Scenario 3: Force rebuild bypasses CDN redirect
+    monkeypatch.setattr(storage_repo, "upload_file_stream", lambda path, key, content_type=None: f"https://pub-test.r2.dev/{key}")
+    monkeypatch.setattr(storage_repo, "file_exists_on_r2", lambda key: True)
     resp_force = client.get(f"/api/v1/library/novels/{novel_id}/export/epub?force_rebuild=true", follow_redirects=False)
     assert resp_force.status_code == 200
     assert resp_force.headers["content-type"] == "application/epub+zip"
+
 
     # Clean up
     library_service.delete_novel(novel_id)

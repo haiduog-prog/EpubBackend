@@ -7,21 +7,26 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from app.config import settings
 from app.api import api_v1_router
 from app.api.auth import router as auth_router
-from app.config import settings
 from app.modules.translation.api import recover_pending_translation_jobs
 from app.modules.library.application.facade import library_service
+from app.modules.library.application.epub_build_worker import start_epub_build_worker, stop_epub_build_worker
 from app.modules.library.seed import seed_demo_novel_if_empty
+
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     recover_pending_translation_jobs()
     library_service.recover_import_jobs()
+    start_epub_build_worker()
     if settings.seed_demo_data and settings.app_env.lower() in {"development", "dev", "local", "test"}:
         seed_demo_novel_if_empty()
     yield
+    stop_epub_build_worker()
+
 
 app = FastAPI(
     title="EpubBackend API",

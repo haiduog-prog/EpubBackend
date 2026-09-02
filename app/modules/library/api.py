@@ -356,6 +356,98 @@ def apply_chapter_translation_endpoint(
 
 
 
+from app.db.session import db_session
+from app.modules.library.persistence.legacy_repository import LibraryRepository
+from app.schemas.library import EpubBuildJobCreateRequest, EpubBuildJobResponse
+
+
+@router.post("/novels/{novel_id}/epub-builds", response_model=EpubBuildJobResponse, status_code=202)
+def trigger_epub_build_endpoint(
+    novel_id: str,
+    req: Optional[EpubBuildJobCreateRequest] = None,
+    _user: dict = Depends(require_write_access),
+):
+    novel = library_service.get_novel(novel_id)
+    if not novel:
+        raise HTTPException(status_code=404, detail=f"Không tìm thấy bộ truyện '{novel_id}'")
+
+    target_chapters = req.target_chapters if req else None
+    force_rebuild = req.force_rebuild if req else False
+
+    target_indexes = []
+    if target_chapters:
+        for part in str(target_chapters).split(","):
+            part = part.strip()
+            if "-" in part:
+                p1, _, p2 = part.partition("-")
+                if p1.strip().isdigit() and p2.strip().isdigit():
+                    target_indexes.extend(range(int(p1.strip()), int(p2.strip()) + 1))
+            elif part.isdigit():
+                target_indexes.append(int(part))
+
+    with db_session() as session:
+        job_resp = LibraryRepository.mark_dirty_and_enqueue_job(
+            session=session,
+            novel_id=novel_id,
+            dirty_indexes=target_indexes if target_indexes else None,
+            is_structural=force_rebuild,
+            force_rebuild=force_rebuild,
+        )
+        session.commit()
+
+    return job_resp
+
+
+@router.get("/novels/{novel_id}/epub-builds/{job_id}", response_model=EpubBuildJobResponse)
+def get_epub_build_job_endpoint(novel_id: str, job_id: str):
+    novel = library_service.get_novel(novel_id)
+    if not novel:
+        raise HTTPException(status_code=404, detail=f"Không tìm thấy bộ truyện '{novel_id}'")
+
+    if job_id == "status" or job_id == "latest":
+        return get_epub_build_status_endpoint(novel_id)
+
+    with db_session() as session:
+        job = LibraryRepository.get_epub_build_job_by_id(session, novel_id=novel_id, job_id=job_id)
+
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Không tìm thấy job build '{job_id}' cho bộ truyện '{novel_id}'")
+
+    download_key = job.epub_key or novel.current_epub_key or f"novels/{novel_id}/full.epub"
+    if storage_repo.file_exists(download_key):
+        job.download_url = storage_repo.get_public_url(download_key)
+    return job
+
+
+@router.get("/novels/{novel_id}/epub-builds/status", response_model=EpubBuildJobResponse)
+def get_epub_build_status_endpoint(novel_id: str):
+    novel = library_service.get_novel(novel_id)
+    if not novel:
+        raise HTTPException(status_code=404, detail=f"Không tìm thấy bộ truyện '{novel_id}'")
+
+    with db_session() as session:
+        job = LibraryRepository.get_latest_build_job_for_novel(session, novel_id)
+
+    if not job:
+        current_key = novel.current_epub_key or f"novels/{novel_id}/full.epub"
+        download_url = storage_repo.get_public_url(current_key) if storage_repo.file_exists(current_key) else None
+        return EpubBuildJobResponse(
+            job_id="current",
+            novel_id=novel_id,
+            status="completed" if download_url else "idle",
+            strategy="fast_patch",
+            built_revision=novel.built_revision,
+            epub_key=current_key if download_url else None,
+            download_url=download_url,
+        )
+
+    download_key = job.epub_key or novel.current_epub_key or f"novels/{novel_id}/full.epub"
+    if storage_repo.file_exists(download_key):
+        job.download_url = storage_repo.get_public_url(download_key)
+    return job
+
+
+
 @router.get("/novels/{novel_id}/export/epub")
 def export_novel_epub_endpoint(
     novel_id: str,
@@ -369,10 +461,10 @@ def export_novel_epub_endpoint(
         if not novel:
             raise HTTPException(status_code=404, detail=f"Không tìm thấy bộ truyện '{novel_id}'")
 
-        storage_key = f"novels/{novel_id}/full.epub"
         has_specific_range = start_chapter is not None or end_chapter is not None or bool(target_chapters)
+        storage_key = novel.current_epub_key or f"novels/{novel_id}/full.epub"
 
-        # 1. If public CDN URL is configured or available on active storage provider:
+        # 1. If not forcing rebuild and cache exists, redirect directly to CDN URL (0% server bandwidth)
         if (
             not force_rebuild
             and not has_specific_range
@@ -395,22 +487,15 @@ def export_novel_epub_endpoint(
             )
             return RedirectResponse(url=cdn_url, status_code=307)
 
-        # 2-3. Build and cache under one per-novel lock. This keeps two
-        # concurrent rebuilds from racing on the same output path/storage key.
+        # 2. Build on-demand via orchestrator under per-novel lock
         with library_service.rebuild_lock(novel_id):
-            output_path = library_service.export_full_epub(
-                novel_id,
-                start_chapter=start_chapter,
-                end_chapter=end_chapter,
+            result = library_service.export_service.build_and_publish_epub(
+                novel_id=novel_id,
                 target_chapters=target_chapters,
+                force_rebuild=force_rebuild,
             )
+            output_path = result["output_path"]
 
-            if storage_repo.is_blob_active:
-                try:
-                    storage_repo.upload_file(output_path, storage_key, content_type="application/epub+zip")
-                except Exception as exc:
-                    logger.warning("Failed to cache compiled EPUB to storage: %s", exc)
-        # 4. Return the compiled EPUB file directly
         title = novel.title if novel else novel_id
         safe_ascii_name = f"{novel_id}_vi.epub"
         encoded_name = quote(f"{title}.epub")
@@ -429,3 +514,4 @@ def export_novel_epub_endpoint(
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Lỗi khi xuất file EPUB: {exc}")
+

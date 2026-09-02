@@ -198,19 +198,18 @@ class LegacyLibraryService:
         return metadata
 
     def get_novel(self, novel_id: str) -> Optional[NovelMetadata]:
-        # 1. Read from database if postgres is configured
-        if settings.structured_storage_read_source == "postgres" or settings.structured_storage_backend == "postgres":
+        # 1. Read from database if postgres/dual is configured
+        if settings.structured_storage_read_source in ("postgres", "dual") or settings.structured_storage_backend in ("postgres", "dual"):
             try:
                 with db_session() as session:
                     db_novel = LibraryRepository.get_novel(session, novel_id)
                     if db_novel:
                         self._cache[novel_id] = db_novel
-                    return db_novel
+                        return db_novel
             except Exception as exc:
                 if settings.structured_storage_backend == "postgres":
                     raise exc
                 logger.warning("Failed to read novel %s from database: %s", novel_id, exc)
-
 
         meta_key = self._novel_meta_key(novel_id)
         data = storage_repo.download_json(meta_key)
@@ -218,8 +217,17 @@ class LegacyLibraryService:
         if data:
             meta = NovelMetadata.model_validate(data)
             self._cache[novel_id] = meta
+            if settings.structured_storage_backend in ("postgres", "dual") or settings.structured_storage_read_source in ("postgres", "dual"):
+                try:
+                    with db_session() as session:
+                        LibraryRepository.save_novel(session, meta)
+                        session.commit()
+                except Exception as sync_exc:
+                    logger.warning("Failed to auto-sync legacy novel %s to DB: %s", novel_id, sync_exc)
             return meta
+
         return self._cache.get(novel_id)
+
 
     def list_novels(self) -> List[NovelSummary]:
         now = time.time()
@@ -228,8 +236,8 @@ class LegacyLibraryService:
 
         summaries: Dict[str, NovelSummary] = {}
 
-        # 1. Read from database if postgres is configured
-        if settings.structured_storage_read_source == "postgres" or settings.structured_storage_backend == "postgres":
+        # 1. Read from database if postgres/dual is configured
+        if settings.structured_storage_read_source in ("postgres", "dual") or settings.structured_storage_backend in ("postgres", "dual"):
             try:
                 with db_session() as session:
                     db_novels = LibraryRepository.list_novels(session)
@@ -241,6 +249,7 @@ class LegacyLibraryService:
                     return result
             except Exception as exc:
                 logger.warning("Failed to list novels from database: %s", exc)
+
 
         if storage_repo.is_blob_active:
             raw_objects = storage_repo.active_provider.list_json_objects("novels/")
@@ -310,7 +319,9 @@ class LegacyLibraryService:
         meta.updated_at = datetime.now(timezone.utc).isoformat()
         self._save_metadata(meta)
         self._cache[novel_id] = meta
+        self.mark_dirty(novel_id, is_structural=True)
         return meta
+
 
     def delete_novel(self, novel_id: str) -> bool:
         meta = self.get_novel(novel_id)
@@ -421,7 +432,12 @@ class LegacyLibraryService:
 
         self._save_metadata(meta)
         self._cache[novel_id] = meta
+        if existing_item:
+            self.mark_dirty(novel_id, dirty_indexes=[chapter_index], is_structural=False)
+        else:
+            self.mark_dirty(novel_id, dirty_indexes=[chapter_index], is_structural=True)
         return chapter_item
+
 
     def _extract_and_cache_chapters_from_epub_storage(
         self,
@@ -780,6 +796,7 @@ class LegacyLibraryService:
             meta.updated_at = datetime.now(timezone.utc).isoformat()
             self._save_metadata(meta)
             self._cache[novel_id] = meta
+            self.mark_dirty(novel_id, dirty_indexes=[chapter_index], is_structural=False)
             return chapter
 
         except Exception as exc:
@@ -788,6 +805,28 @@ class LegacyLibraryService:
                 chapter.status = ChapterStatus.FAILED
                 self._save_metadata(meta)
             raise
+
+    def mark_dirty(
+        self,
+        novel_id: str,
+        dirty_indexes: Optional[List[int]] = None,
+        is_structural: bool = False,
+        force_rebuild: bool = False,
+    ) -> None:
+        """Helper to record dirty chapters or structural changes in database."""
+        if settings.structured_storage_backend in ("dual", "postgres"):
+            try:
+                with db_session() as session:
+                    LibraryRepository.mark_dirty_and_enqueue_job(
+                        session=session,
+                        novel_id=novel_id,
+                        dirty_indexes=dirty_indexes,
+                        is_structural=is_structural,
+                        force_rebuild=force_rebuild,
+                    )
+                    session.commit()
+            except Exception as exc:
+                logger.warning("Failed to record dirty state for novel '%s': %s", novel_id, exc)
 
     def apply_chapter_translation(
         self,
@@ -821,7 +860,9 @@ class LegacyLibraryService:
         meta.updated_at = datetime.now(timezone.utc).isoformat()
         self._save_metadata(meta)
         self._cache[novel_id] = meta
+        self.mark_dirty(novel_id, dirty_indexes=[chapter_index], is_structural=False)
         return chapter
+
 
     async def scan_characters_and_timeline(
         self,
@@ -962,6 +1003,7 @@ class LegacyLibraryService:
         start_chapter: Optional[int] = None,
         end_chapter: Optional[int] = None,
         target_chapters: Optional[str] = None,
+        force_rebuild: bool = False,
     ) -> str:
         """Build one novel at a time to avoid concurrent output/storage races."""
         with self._get_novel_lock(novel_id):
@@ -971,6 +1013,7 @@ class LegacyLibraryService:
                 start_chapter=start_chapter,
                 end_chapter=end_chapter,
                 target_chapters=target_chapters,
+                force_rebuild=force_rebuild,
             )
     def _export_full_epub_unlocked(
         self,
@@ -979,6 +1022,7 @@ class LegacyLibraryService:
         start_chapter: Optional[int] = None,
         end_chapter: Optional[int] = None,
         target_chapters: Optional[str] = None,
+        force_rebuild: bool = False,
     ) -> str:
         meta = self.get_novel(novel_id)
         if not meta:
@@ -1008,7 +1052,7 @@ class LegacyLibraryService:
                     target_indexes.add(int(part))
 
         # ---------------------------------------------------------
-        # STRATEGY 1: Delta Patching if Base EPUB exists (Ultra Fast for 1000-5000+ chapters)
+        # STRATEGY 1: Delta Patching if Base EPUB exists (Only when targeting specific range and not force_rebuild)
         # ---------------------------------------------------------
         full_key = f"novels/{novel_id}/full.epub"
         if target_indexes:
@@ -1022,7 +1066,8 @@ class LegacyLibraryService:
                 if c.status == ChapterStatus.COMPLETED or c.r2_translated_key
             ]
 
-        if storage_repo.file_exists(full_key):
+        if not force_rebuild and target_indexes and storage_repo.file_exists(full_key):
+
             try:
                 base_bytes = storage_repo.get_bytes(full_key)
                 if base_bytes:
@@ -1561,8 +1606,10 @@ class LegacyLibraryService:
             meta.updated_at = datetime.now(timezone.utc).isoformat()
             self._save_metadata(meta)
             self._cache[actual_id] = meta
+            self.mark_dirty(actual_id, is_structural=True, force_rebuild=True)
             gc.collect()
             return meta
+
 
     def import_epub_novel(
         self,

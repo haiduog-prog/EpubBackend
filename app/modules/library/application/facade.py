@@ -21,6 +21,8 @@ class LibraryService:
         self.chapters = ChapterService(self._legacy)
         self.imports = EpubImportService(self._legacy)
         self.exports = EpubExportService(self._legacy)
+        self.export_service = self.exports
+
 
     def create_novel(self, request, **kwargs):
         return self.novels.create(request, **kwargs)

@@ -53,6 +53,18 @@ class BaseStorageProvider:
     def upload_file(self, file_path: str, object_name: str, content_type: Optional[str] = None) -> Optional[str]:
         raise NotImplementedError
 
+    def upload_file_stream(self, file_path: str, object_name: str, content_type: Optional[str] = None) -> Optional[str]:
+        return self.upload_file(file_path, object_name, content_type=content_type)
+
+    def download_file_stream(self, object_name: str, target_file_path: str) -> bool:
+        data = self.get_bytes(object_name)
+        if data is None:
+            return False
+        os.makedirs(os.path.dirname(os.path.abspath(target_file_path)), exist_ok=True)
+        with open(target_file_path, "wb") as f:
+            f.write(data)
+        return True
+
     def put_json(self, object_name: str, data: dict) -> bool:
         raise NotImplementedError
 
@@ -168,18 +180,63 @@ class SupabaseStorageProvider(BaseStorageProvider):
             logger.warning("Supabase put_bytes exception (%s): %s", clean_key, exc)
             return None
 
-    def upload_file(self, file_path: str, object_name: str, content_type: Optional[str] = None) -> Optional[str]:
+    def upload_file_stream(self, file_path: str, object_name: str, content_type: Optional[str] = None) -> Optional[str]:
         if not self.is_active or not os.path.exists(file_path):
             return None
+        clean_key = object_name.lstrip("/")
+        url = f"{self.base_url}/storage/v1/object/{self.bucket}/{clean_key}"
+        headers = self._get_headers()
         guessed_type, _ = mimetypes.guess_type(file_path)
-        actual_type = content_type or guessed_type or "application/octet-stream"
-        try:
+        headers["Content-Type"] = content_type or guessed_type or "application/octet-stream"
+        headers["x-upsert"] = "true"
+
+        def file_chunk_generator():
             with open(file_path, "rb") as f:
-                data = f.read()
-            return self.put_bytes(object_name, data, content_type=actual_type)
-        except Exception as exc:
-            logger.error("Failed to upload file to Supabase Storage (%s): %s", object_name, exc)
+                while chunk := f.read(65536):
+                    yield chunk
+
+        try:
+            client = self._get_client()
+            resp = client.post(url, headers=headers, content=file_chunk_generator())
+            if resp.status_code in (200, 201):
+                return self.get_public_url(clean_key)
+            logger.warning("Supabase upload_file_stream failed (%s, status=%d): %s", clean_key, resp.status_code, resp.text)
             return None
+        except Exception as exc:
+            logger.error("Failed to upload_file_stream to Supabase Storage (%s): %s", clean_key, exc)
+            return None
+
+    def upload_file(self, file_path: str, object_name: str, content_type: Optional[str] = None) -> Optional[str]:
+        return self.upload_file_stream(file_path, object_name, content_type=content_type)
+
+    def download_file_stream(self, object_name: str, target_file_path: str) -> bool:
+        if not self.is_active:
+            return False
+        clean_key = object_name.lstrip("/")
+        url = f"{self.base_url}/storage/v1/object/authenticated/{self.bucket}/{clean_key}"
+        headers = self._get_headers()
+        os.makedirs(os.path.dirname(os.path.abspath(target_file_path)), exist_ok=True)
+
+        try:
+            client = self._get_client()
+            with client.stream("GET", url, headers=headers) as resp:
+                if resp.status_code == 200:
+                    with open(target_file_path, "wb") as out_f:
+                        for chunk in resp.iter_bytes(chunk_size=65536):
+                            out_f.write(chunk)
+                    return True
+                if resp.status_code == 404:
+                    pub_url = f"{self.base_url}/storage/v1/object/public/{self.bucket}/{clean_key}"
+                    with client.stream("GET", pub_url) as pub_resp:
+                        if pub_resp.status_code == 200:
+                            with open(target_file_path, "wb") as out_f:
+                                for chunk in pub_resp.iter_bytes(chunk_size=65536):
+                                    out_f.write(chunk)
+                            return True
+            return False
+        except Exception as exc:
+            logger.warning("Supabase download_file_stream exception (%s): %s", clean_key, exc)
+            return False
 
     def get_bytes(self, object_name: str, raise_on_error: bool = False) -> Optional[bytes]:
         if not self.is_active:
@@ -409,7 +466,7 @@ class R2StorageProvider(BaseStorageProvider):
             logger.warning("Failed to put bytes to Cloudflare R2 (%s): %s", clean_key, exc)
             return None
 
-    def upload_file(self, file_path: str, object_name: str, content_type: Optional[str] = None) -> Optional[str]:
+    def upload_file_stream(self, file_path: str, object_name: str, content_type: Optional[str] = None) -> Optional[str]:
         if not self.is_active or not os.path.exists(file_path):
             return None
         clean_key = object_name.lstrip("/")
@@ -424,6 +481,21 @@ class R2StorageProvider(BaseStorageProvider):
         except Exception as exc:
             logger.error("Failed to upload file to Cloudflare R2 (%s): %s", clean_key, exc)
             return None
+
+    def upload_file(self, file_path: str, object_name: str, content_type: Optional[str] = None) -> Optional[str]:
+        return self.upload_file_stream(file_path, object_name, content_type=content_type)
+
+    def download_file_stream(self, object_name: str, target_file_path: str) -> bool:
+        if not self.is_active:
+            return False
+        clean_key = object_name.lstrip("/")
+        os.makedirs(os.path.dirname(os.path.abspath(target_file_path)), exist_ok=True)
+        try:
+            self.r2_client.download_file(self.bucket_name, clean_key, target_file_path)
+            return True
+        except Exception as exc:
+            logger.warning("Failed to download file stream from Cloudflare R2 (%s): %s", clean_key, exc)
+            return False
 
     def get_bytes(self, object_name: str, raise_on_error: bool = False) -> Optional[bytes]:
         if not self.is_active:
@@ -631,16 +703,34 @@ class LocalStorageProvider(BaseStorageProvider):
             logger.warning("Failed to write local file %s: %s", object_name, exc)
             return None
 
-    def upload_file(self, file_path: str, object_name: str, content_type: Optional[str] = None) -> Optional[str]:
+    def upload_file_stream(self, file_path: str, object_name: str, content_type: Optional[str] = None) -> Optional[str]:
         if not os.path.exists(file_path):
             return None
         try:
-            with open(file_path, "rb") as f:
-                data = f.read()
-            return self.put_bytes(object_name, data)
+            target_path = self._safe_path(object_name)
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            import shutil
+            shutil.copyfile(file_path, str(target_path))
+            return self.get_public_url(object_name)
         except Exception as exc:
-            logger.warning("Failed to copy local file %s: %s", file_path, exc)
+            logger.warning("Failed to copy local file stream %s: %s", file_path, exc)
             return None
+
+    def upload_file(self, file_path: str, object_name: str, content_type: Optional[str] = None) -> Optional[str]:
+        return self.upload_file_stream(file_path, object_name, content_type=content_type)
+
+    def download_file_stream(self, object_name: str, target_file_path: str) -> bool:
+        try:
+            paths = self._candidate_paths(object_name)
+        except ValueError:
+            return False
+        import shutil
+        for p in paths:
+            if p.exists() and p.is_file():
+                os.makedirs(os.path.dirname(os.path.abspath(target_file_path)), exist_ok=True)
+                shutil.copyfile(str(p), target_file_path)
+                return True
+        return False
 
     def get_bytes(self, object_name: str, raise_on_error: bool = False) -> Optional[bytes]:
         try:
@@ -929,15 +1019,24 @@ class StorageRepository:
 
         return None
 
-    def upload_file(self, file_path: str, object_name: str, content_type: Optional[str] = None) -> Optional[str]:
-        url = self.active_provider.upload_file(file_path, object_name, content_type=content_type)
+    def upload_file_stream(self, file_path: str, object_name: str, content_type: Optional[str] = None) -> Optional[str]:
+        url = self.active_provider.upload_file_stream(file_path, object_name, content_type=content_type)
         if self.active_provider != self.local_provider:
-            self.local_provider.upload_file(file_path, object_name, content_type=content_type)
+            self.local_provider.upload_file_stream(file_path, object_name, content_type=content_type)
         return url
 
+    def upload_file(self, file_path: str, object_name: str, content_type: Optional[str] = None) -> Optional[str]:
+        return self.upload_file_stream(file_path, object_name, content_type=content_type)
+
+    def download_file_stream(self, object_name: str, target_file_path: str) -> bool:
+        if self.is_blob_active:
+            success = self.active_provider.download_file_stream(object_name, target_file_path)
+            if success:
+                return True
+        return self.local_provider.download_file_stream(object_name, target_file_path)
+
     def upload_file_to_r2(self, file_path: str, object_name: str) -> Optional[str]:
-        """Tương thích ngược: tự động chuyển tiếp tới active provider (Supabase / R2)."""
-        return self.upload_file(file_path, object_name)
+        return self.upload_file_stream(file_path, object_name)
 
     def file_exists(self, object_name: str) -> bool:
         if self.active_provider.file_exists(object_name):
@@ -947,12 +1046,14 @@ class StorageRepository:
         return False
 
     def file_exists_in_r2(self, object_name: str) -> bool:
-        """Backward-compatible alias for checking the configured active storage."""
         return self.file_exists(object_name)
 
     def file_exists_on_r2(self, object_name: str) -> bool:
-        """Check the R2 bucket specifically, never the active provider fallback."""
         return self.r2_provider.file_exists(object_name)
+
+    def file_exists_on_supabase(self, object_name: str) -> bool:
+        return self.supabase_provider.file_exists(object_name)
+
 
     def get_public_url(self, object_name: str) -> str:
         return self.active_provider.get_public_url(object_name.lstrip("/"))

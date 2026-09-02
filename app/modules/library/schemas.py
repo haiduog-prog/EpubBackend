@@ -70,10 +70,42 @@ class NovelSummary(BaseModel):
     translated_chapters: int = 0
     created_at: str = ""
     updated_at: str = ""
+    current_epub_key: Optional[str] = None
+    desired_revision: int = 0
+    built_revision: int = 0
+    is_structural_dirty: bool = False
+    layout_standardized: bool = False
+    dirty_chapters: List[int] = Field(default_factory=list)
 
 
 class NovelMetadata(NovelSummary):
     chapters: List[ChapterItem] = Field(default_factory=list)
+
+
+class EpubBuildJobCreateRequest(BaseModel):
+    target_chapters: Optional[str] = Field(default=None, description="Danh sách chương cần cập nhật, vd: 1,2,5-10")
+    force_rebuild: bool = Field(default=False, description="Bắt buộc build toàn bộ thay vì fast patch")
+
+
+class EpubBuildJobResponse(BaseModel):
+    job_id: str
+    novel_id: str
+    status: str = "queued"  # queued, processing, completed, failed
+    strategy: str = "fast_patch"  # fast_patch, full_rebuild
+    dirty_chapters: List[int] = Field(default_factory=list)
+    claimed_dirty_chapters: List[int] = Field(default_factory=list)
+    is_structural: bool = False
+    target_revision: int = 0
+    built_revision: Optional[int] = None
+    epub_key: Optional[str] = None
+    download_url: Optional[str] = None
+    attempts: int = 0
+    error_message: Optional[str] = None
+    created_at: str = ""
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
+
+
 
 
 class ChapterCreateRequest(BaseModel):

@@ -90,15 +90,17 @@ def test_static_ui_does_not_persist_api_key_and_has_html_escape_helper():
 def test_api_contract_is_stable_after_router_move():
     paths = app.openapi()["paths"]
 
-    # The authenticated reader flow adds the Supabase config and reader sync
-    # endpoints to the public contract.
-    assert len(paths) == 55
+    # The authenticated reader flow adds the Supabase config, reader sync, and epub build endpoints.
+    assert len(paths) == 58
     assert "/api/v1/translate/text" in paths
     assert "/api/v1/translate/file" in paths
     assert "/api/v1/library/novels" in paths
     assert "/api/v1/library/novels/bulk-delete" in paths
     assert "/api/v1/library/novels/{novel_id}/chapters/{chapter_index}/apply-translation" in paths
     assert "/api/v1/library/novels/{novel_id}/chapters/{chapter_index}/draft" in paths
+    assert "/api/v1/library/novels/{novel_id}/epub-builds" in paths
+    assert "/api/v1/library/novels/{novel_id}/epub-builds/{job_id}" in paths
+    assert "/api/v1/library/novels/{novel_id}/epub-builds/status" in paths
     assert "/api/v1/book-bible/editions/{edition_id}/chapters/{local_chapter}/snapshot" in paths
     assert "/api/v1/reader/books" in paths
     assert "/api/v1/reader/me/state" in paths
@@ -108,3 +110,4 @@ def test_api_contract_is_stable_after_router_move():
     assert "/api/v1/reader/books/{novel_id}/cover" in paths
     assert "/api/auth/config" in paths
     assert "/reader" in paths
+

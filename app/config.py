@@ -142,5 +142,17 @@ class Settings(BaseModel):
     db_pool_timeout_seconds: int = Field(default_factory=lambda: int(os.getenv("DB_POOL_TIMEOUT_SECONDS", "10")))
     book_bible_write_token: str = Field(default_factory=lambda: os.getenv("BOOK_BIBLE_WRITE_TOKEN", ""))
 
+    # EPUB Fast Patch & Retention Configuration
+    epub_fast_patch_enabled: bool = Field(
+        default_factory=lambda: os.getenv("EPUB_FAST_PATCH_ENABLED", "true").lower() in {"1", "true", "yes", "on"}
+    )
+    epub_build_debounce_seconds: float = Field(
+        default_factory=lambda: float(os.getenv("EPUB_BUILD_DEBOUNCE_SECONDS", "3.0"))
+    )
+    epub_storage_retention_copies: int = Field(
+        default_factory=lambda: int(os.getenv("EPUB_STORAGE_RETENTION_COPIES", "2"))
+    )
+
 
 settings = Settings()
+

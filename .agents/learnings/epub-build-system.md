@@ -1,7 +1,7 @@
 # EPUB Build System
 
-> Tổng hợp kiến thức về hệ thống biên dịch EPUB: Fast Patch, Background Build Worker, Advisory Lock, Revision Tracking, và Retention Management.
-> Cập nhật lần cuối: 2026-09-02
+> Tổng hợp kiến thức về hệ thống biên dịch EPUB: Fast Patch, Background Build Worker, Advisory Lock, Revision Tracking, Retention Management, Realtime Progress Reporting và Graceful Cancellation.
+> Cập nhật lần cuối: 2026-09-03
 
 ---
 
@@ -26,6 +26,11 @@
 - **Ngày**: 2026-09-02
 - **Chi tiết**: Mỗi build tạo file `novels/{id}/exports/r{rev}.epub` trên Object Storage (Supabase/R2). File là immutable — không bao giờ ghi đè. Retention policy xóa revision cũ: `oldest_to_keep = current_rev - retention_copies + 1`. Novel model lưu `current_epub_key` trỏ vào revision mới nhất.
 - **Files liên quan**: `app/modules/library/application/epub_export_service.py`
+
+### Realtime Progress & Graceful Cancellation Architecture
+- **Ngày**: 2026-09-03
+- **Chi tiết**: Client poll trạng thái job qua API và nhận thông tin `current_step`, `current_chapter`, `processed_chapters`, `total_chapters`, `progress_percentage`. Khi người dùng bấm "Hủy", client gọi `POST /epub-builds/{job_id}/cancel`. Worker/Exporter kiểm tra qua `is_cancelled_callback()` trước mỗi lượt tải chương. Nếu bị hủy, hệ thống raise `EpubBuildCancelledException`, dọn dẹp file tạm, không cập nhật storage và chuyển job sang trạng thái `cancelled`.
+- **Files liên quan**: `app/modules/library/application/epub_export_service.py`, `app/modules/library/application/epub_build_worker.py`, `app/modules/library/api.py`
 
 ---
 
@@ -94,6 +99,19 @@
 - **Fix**: Dùng `raw_cover.split('/novels/')[-1].lstrip('/')` để lấy đúng phần đuôi và chuẩn hóa thành `novels/{tail}`.
 - **Files liên quan**: `app/modules/library/legacy_service.py`
 
+### Alembic Multiple Head Revisions Khi Có Nhiều Migration Nhánh Song Song
+- **Ngày**: 2026-09-03
+- **Vấn đề**: Lệnh `python -m alembic upgrade head` báo lỗi `Multiple head revisions are present`.
+- **Root cause**: Hai file migration khác nhau cùng khai báo chung một `down_revision`, tạo ra phân nhánh.
+- **Fix**: Sửa `down_revision` của file migration mới nhất trỏ vào ID revision của file head còn lại để tạo chuỗi tuyến tính.
+- **Files liên quan**: `alembic/versions/f4a5b6c7d8e9_add_epub_build_job_progress_columns.py`
+
+### psycopg InFailedSqlTransaction Do Thiếu Cột Trong Database Chưa Migrate
+- **Ngày**: 2026-09-03
+- **Vấn đề**: Bất kỳ query nào tới `epub_build_jobs` đều crash với lỗi `InFailedSqlTransaction: current transaction is aborted`.
+- **Root cause**: Model SQLAlchemy đã khai báo các cột mới (`current_step`, `total_chapters`...), nhưng database thực tế chưa được chạy DDL thêm cột. Câu lệnh SELECT đầu tiên fail làm hỏng toàn bộ transaction Postgres.
+- **Fix**: Tạo migration Alembic thêm các cột mới và chạy `python -m alembic upgrade head`.
+- **Files liên quan**: `alembic/versions/f4a5b6c7d8e9_add_epub_build_job_progress_columns.py`, `app/modules/library/persistence/legacy_models.py`
 
 ---
 
@@ -108,6 +126,15 @@
   4. Thêm test trong `tests/test_epub_fast_patch.py`.
   5. Chạy benchmark trong `tests/test_epub_benchmark.py`.
 - **Files liên quan**: `app/modules/library/application/epub_export_service.py`, `app/modules/library/persistence/legacy_repository.py`
+
+### Quy Trình Triển Khai Graceful Cancellation Cho Background Task
+- **Ngày**: 2026-09-03
+- **Bước thực hiện**:
+  1. Thêm trạng thái `'cancelled'` vào model và response schema.
+  2. Tạo endpoint `POST /.../{job_id}/cancel` chuyển trạng thái job trong DB sang `'cancelled'`.
+  3. Trong hàm xử lý tác vụ nặng (vòng lặp I/O), tiêm callback `is_cancelled_callback()` kiểm tra DB trước mỗi bước.
+  4. Khi cờ `cancelled` bật, raise một Exception riêng biệt (`EpubBuildCancelledException`), dọn dẹp file tạm trên đĩa và dừng worker mà không ghi đè storage.
+- **Files liên quan**: `app/modules/library/api.py`, `app/modules/library/application/epub_export_service.py`, `app/modules/library/application/epub_build_worker.py`
 
 ---
 
@@ -132,3 +159,8 @@
 - **Ngày**: 2026-09-02
 - **Chi tiết**: `mark_dirty()` là trigger duy nhất để enqueue rebuild job. Nếu nó fail mà log ở `debug` (mặc định không hiển thị), EPUB sẽ không bao giờ cập nhật mà không có dấu hiệu. Luôn dùng `logger.warning` cho các hàm "fire-and-forget" quan trọng.
 - **Files liên quan**: `app/modules/library/legacy_service.py`
+
+### Realtime Progress Callback Injection Pattern
+- **Ngày**: 2026-09-03
+- **Chi tiết**: Hàm xử lý I/O nặng độc lập (`build_and_publish_epub`) không phụ thuộc trực tiếp vào DB session dài hạn. Thay vào đó, worker tiêm một callback nhẹ: mỗi khi tải xong một phần tử, callback mở một transaction con ngắn hạn ghi nhận `current_step` và commit ngay lập tức. Client poll status sẽ nhận được dòng trạng thái live mượt mà mà không gây database lock contention.
+- **Files liên quan**: `app/modules/library/application/epub_export_service.py`, `app/modules/library/application/epub_build_worker.py`

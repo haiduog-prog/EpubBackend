@@ -1157,12 +1157,16 @@ class LegacyLibraryService:
         # Check and add cover image if available, preserving the uploaded extension.
         cover_key = ""
         if meta.cover_url:
-            if "/novels/" in meta.cover_url:
-                cover_key = "novels/" + meta.cover_url.split("/novels/", 1)[1]
+            raw_cover = meta.cover_url.strip()
+            if "/novels/" in raw_cover:
+                tail = raw_cover.split("/novels/")[-1].lstrip("/")
+                cover_key = f"novels/{tail}"
             else:
-                cover_key = meta.cover_url.split("/storage/", 1)[-1]
-                if not cover_key.startswith("novels/"):
-                    cover_key = f"novels/{novel_id}/{cover_key}"
+                tail = raw_cover.split("/storage/", 1)[-1].lstrip("/")
+                if not tail.startswith("novels/"):
+                    cover_key = f"novels/{novel_id}/{tail}"
+                else:
+                    cover_key = tail
         cover_content = storage_repo.get_bytes(cover_key) if cover_key else None
         if cover_content:
             try:

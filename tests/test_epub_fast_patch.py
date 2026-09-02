@@ -358,3 +358,48 @@ def test_lease_loss_guards_worker_completion():
         )
         assert comp_result is False
 
+
+def test_legacy_full_epub_enables_fast_patch_without_current_key():
+    """Verify that a novel with null current_epub_key uses fast_patch if full.epub exists on storage."""
+    test_novel_id = "test-legacy-epub-strategy"
+    with db_session() as session:
+        session.query(EpubBuildJobModel).filter(EpubBuildJobModel.novel_id.like("test-%")).delete()
+        novel = session.get(NovelModel, test_novel_id)
+        if not novel:
+            novel = NovelModel(
+                novel_id=test_novel_id,
+                title="Test Legacy Strategy Novel",
+                status="ongoing",
+            )
+            session.add(novel)
+        novel.current_epub_key = None
+        novel.is_structural_dirty = False
+        session.commit()
+
+        # Mock existence of novels/{id}/full.epub
+        legacy_key = f"novels/{test_novel_id}/full.epub"
+        storage_repo.put_bytes(legacy_key, b"dummy epub content")
+
+        try:
+            # Enqueue a content-only update for Chapter 151
+            job_resp = LibraryRepository.mark_dirty_and_enqueue_job(
+                session=session,
+                novel_id=test_novel_id,
+                dirty_indexes=[151],
+                is_structural=False,
+                force_rebuild=False,
+            )
+            session.commit()
+
+            # Strategy MUST be fast_patch, NOT full_rebuild!
+            assert job_resp.strategy == "fast_patch"
+            assert job_resp.is_structural is False
+            assert 151 in LibraryRepository._normalize_dirty_chapters(job_resp.dirty_chapters)
+
+            # Novel should automatically have its current_epub_key initialized
+            updated_novel = session.get(NovelModel, test_novel_id)
+            assert updated_novel.current_epub_key == legacy_key
+        finally:
+            storage_repo.delete_file(legacy_key)
+
+

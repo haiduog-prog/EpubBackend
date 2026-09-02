@@ -494,6 +494,15 @@ class LibraryRepository:
         except Exception:
             existing_job = session.execute(stmt_job).scalars().first()
 
+        # Detect existing base EPUB (either versioned key or legacy full.epub on storage)
+        from app.infrastructure.storage.facade import storage_repo
+        has_existing_base = bool(
+            novel.current_epub_key
+            or storage_repo.file_exists(f"novels/{novel_id}/full.epub")
+        )
+        if not novel.current_epub_key and storage_repo.file_exists(f"novels/{novel_id}/full.epub"):
+            novel.current_epub_key = f"novels/{novel_id}/full.epub"
+
         if existing_job:
             # Coalesce into existing queued job
             raw_job_dirty = existing_job.dirty_chapters
@@ -506,7 +515,7 @@ class LibraryRepository:
 
             job_dict.update(dirty_dict)
             existing_job.dirty_chapters = job_dict
-            if is_structural or force_rebuild or novel.is_structural_dirty:
+            if is_structural or force_rebuild or novel.is_structural_dirty or not has_existing_base:
                 existing_job.is_structural = True
                 existing_job.strategy = "full_rebuild"
             existing_job.target_revision = current_rev
@@ -519,7 +528,7 @@ class LibraryRepository:
             is_structural
             or force_rebuild
             or novel.is_structural_dirty
-            or not novel.current_epub_key
+            or not has_existing_base
         )
         strategy = "full_rebuild" if needs_full else "fast_patch"
 

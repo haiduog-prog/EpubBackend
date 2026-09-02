@@ -135,7 +135,11 @@ class EpubExportService:
         # Fallback to FULL_REBUILD if FAST_PATCH was not applicable or failed
         if not final_output_path or not os.path.exists(final_output_path):
             logger.info("Executing FULL_REBUILD for novel %s", novel_id)
-            final_output_path = self._legacy.export_full_epub(novel_id, force_rebuild=True)
+            final_output_path = self._legacy.export_full_epub(
+                novel_id,
+                force_rebuild=True,
+                target_chapters=target_chapters,
+            )
             strategy = "full_rebuild"
             patched_count = len(novel.chapters)
 

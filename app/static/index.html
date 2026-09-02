@@ -4227,11 +4227,12 @@
                         targetChaptersStr = `${inputStart}`;
                     }
 
+                    const isSpecificRange = Boolean(targetChaptersStr);
                     const enqueueRes = await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/epub-builds`), {
                         method: 'POST',
                         headers: requestHeaders,
                         body: JSON.stringify({
-                            force_rebuild: true,
+                            force_rebuild: !isSpecificRange,
                             target_chapters: targetChaptersStr,
                         }),
                     });

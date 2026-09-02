@@ -101,6 +101,11 @@ class EpubBuildJobResponse(BaseModel):
     download_url: Optional[str] = None
     attempts: int = 0
     error_message: Optional[str] = None
+    current_step: Optional[str] = ""
+    current_chapter: Optional[int] = None
+    total_chapters: int = 0
+    processed_chapters: int = 0
+    progress_percentage: int = 0
     created_at: str = ""
     started_at: Optional[str] = None
     completed_at: Optional[str] = None

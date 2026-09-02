@@ -110,6 +110,11 @@ class EpubBuildJobModel(Base, TimestampMixin):
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    current_step: Mapped[Optional[str]] = mapped_column(String, nullable=True, default='')
+    current_chapter: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=None)
+    total_chapters: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    processed_chapters: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    progress_percentage: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 

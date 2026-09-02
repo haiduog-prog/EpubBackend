@@ -403,3 +403,93 @@ def test_legacy_full_epub_enables_fast_patch_without_current_key():
             storage_repo.delete_file(legacy_key)
 
 
+def test_epub_build_job_progress_reporting():
+    """Verify that job progress is updated with step description and chapter index."""
+    test_novel_id = "test-progress-novel"
+    with db_session() as session:
+        session.query(EpubBuildJobModel).filter(EpubBuildJobModel.novel_id == test_novel_id).delete()
+        novel = session.get(NovelModel, test_novel_id)
+        if not novel:
+            novel = NovelModel(
+                novel_id=test_novel_id,
+                title="Test Progress Novel",
+                status="ongoing",
+            )
+            session.add(novel)
+        session.commit()
+
+        job_resp = LibraryRepository.mark_dirty_and_enqueue_job(
+            session=session,
+            novel_id=test_novel_id,
+            dirty_indexes=[151],
+            is_structural=False,
+            force_rebuild=False,
+        )
+        session.commit()
+
+        # Update progress
+        update_ok = LibraryRepository.update_job_progress(
+            session=session,
+            job_id=job_resp.job_id,
+            current_step="Đang tải nội dung Chương 151: Sơn thôn thiếu niên...",
+            current_chapter=151,
+            processed_chapters=1,
+            total_chapters=1,
+            progress_percentage=75,
+        )
+        session.commit()
+        assert update_ok is True
+
+        # Fetch and verify
+        fetched = LibraryRepository.get_epub_build_job_by_id(session, novel_id=test_novel_id, job_id=job_resp.job_id)
+        assert fetched is not None
+        assert fetched.current_step == "Đang tải nội dung Chương 151: Sơn thôn thiếu niên..."
+        assert fetched.current_chapter == 151
+        assert fetched.processed_chapters == 1
+        assert fetched.total_chapters == 1
+        assert fetched.progress_percentage == 75
+
+
+def test_epub_build_job_cancel_api():
+    """Verify cancel endpoint cancels a queued/processing build job."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    client = TestClient(app)
+    test_novel_id = "test-cancel-novel"
+
+    existing = library_service.get_novel(test_novel_id)
+    if not existing:
+        library_service.create_novel(
+            NovelCreateRequest(
+                title="Test Cancel Novel",
+                novel_id=test_novel_id,
+            )
+        )
+
+    with db_session() as session:
+        session.query(EpubBuildJobModel).filter(EpubBuildJobModel.novel_id == test_novel_id).delete()
+        session.commit()
+
+        job_resp = LibraryRepository.mark_dirty_and_enqueue_job(
+            session=session,
+            novel_id=test_novel_id,
+            dirty_indexes=[151],
+            is_structural=False,
+            force_rebuild=False,
+        )
+        session.commit()
+
+    # Call Cancel API
+    res = client.post(f"/api/v1/library/novels/{test_novel_id}/epub-builds/{job_resp.job_id}/cancel")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "cancelled"
+    assert "hủy" in data["error_message"].lower()
+
+    # Verify repository status
+    with db_session() as session:
+        assert LibraryRepository.is_job_cancelled(session, job_resp.job_id) is True
+
+
+

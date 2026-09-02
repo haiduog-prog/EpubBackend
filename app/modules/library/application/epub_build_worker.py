@@ -17,6 +17,7 @@ from sqlalchemy import text
 from app.config import settings
 from app.db.session import engine, db_session
 from app.modules.library.application.facade import library_service
+from app.modules.library.application.epub_export_service import EpubBuildCancelledException
 from app.modules.library.persistence.legacy_repository import LibraryRepository
 
 logger = logging.getLogger("EpubBackend.EpubBuildWorker")
@@ -132,6 +133,33 @@ async def run_epub_build_consumer() -> None:
                         # Brief debounce
                         await asyncio.sleep(1.0)
 
+                        def _make_progress_reporter(target_job_id: str):
+                            def _cb(step: str, ch_idx: Optional[int], processed: int, total: int, pct: int):
+                                try:
+                                    with db_session() as p_session:
+                                        LibraryRepository.update_job_progress(
+                                            session=p_session,
+                                            job_id=target_job_id,
+                                            current_step=step,
+                                            current_chapter=ch_idx,
+                                            processed_chapters=processed,
+                                            total_chapters=total,
+                                            progress_percentage=pct,
+                                        )
+                                        p_session.commit()
+                                except Exception as p_err:
+                                    logger.debug("Failed to record progress for job '%s': %s", target_job_id, p_err)
+                            return _cb
+
+                        def _make_cancel_checker(target_job_id: str):
+                            def _chk() -> bool:
+                                try:
+                                    with db_session() as c_session:
+                                        return LibraryRepository.is_job_cancelled(c_session, target_job_id)
+                                except Exception:
+                                    return False
+                            return _chk
+
                         # Execute build in thread executor
                         loop = asyncio.get_running_loop()
                         result = await loop.run_in_executor(
@@ -140,6 +168,9 @@ async def run_epub_build_consumer() -> None:
                                 novel_id=novel_id,
                                 force_rebuild=bool(is_structural or strategy == "full_rebuild"),
                                 dirty_chapters=dirty_chapters,
+                                job_id=job_id,
+                                progress_callback=_make_progress_reporter(job_id),
+                                is_cancelled_callback=_make_cancel_checker(job_id),
                             ),
                         )
 
@@ -171,6 +202,15 @@ async def run_epub_build_consumer() -> None:
                                     result["epub_key"],
                                 )
 
+                    except EpubBuildCancelledException as cancel_exc:
+                        logger.info("EPUB build job '%s' cancelled by user: %s", job_id, cancel_exc)
+                        with db_session() as cancel_session:
+                            LibraryRepository.cancel_job(
+                                session=cancel_session,
+                                novel_id=novel_id,
+                                job_id=job_id,
+                            )
+                            cancel_session.commit()
                     except Exception as build_exc:
                         logger.error("EPUB build job '%s' failed: %s", job_id, build_exc, exc_info=True)
                         with db_session() as fail_session:

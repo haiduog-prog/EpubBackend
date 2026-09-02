@@ -419,6 +419,27 @@ def get_epub_build_job_endpoint(novel_id: str, job_id: str):
     return job
 
 
+@router.post("/novels/{novel_id}/epub-builds/{job_id}/cancel", response_model=EpubBuildJobResponse)
+def cancel_epub_build_endpoint(
+    novel_id: str,
+    job_id: str,
+    _user: dict = Depends(require_write_access),
+):
+    novel = library_service.get_novel(novel_id)
+    if not novel:
+        raise HTTPException(status_code=404, detail=f"Không tìm thấy bộ truyện '{novel_id}'")
+
+    with db_session() as session:
+        job = LibraryRepository.cancel_job(session, novel_id=novel_id, job_id=job_id)
+        session.commit()
+
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Không tìm thấy job build '{job_id}' cho bộ truyện '{novel_id}'")
+
+    return job
+
+
+
 @router.get("/novels/{novel_id}/epub-builds/status", response_model=EpubBuildJobResponse)
 def get_epub_build_status_endpoint(novel_id: str):
     novel = library_service.get_novel(novel_id)

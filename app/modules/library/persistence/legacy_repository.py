@@ -429,6 +429,11 @@ class LibraryRepository:
             epub_key=model.epub_key,
             attempts=model.attempts or 0,
             error_message=model.error_message,
+            current_step=model.current_step or "",
+            current_chapter=model.current_chapter,
+            total_chapters=model.total_chapters or 0,
+            processed_chapters=model.processed_chapters or 0,
+            progress_percentage=model.progress_percentage or 0,
             created_at=model.created_at.isoformat() if model.created_at else "",
             started_at=model.started_at.isoformat() if model.started_at else None,
             completed_at=model.completed_at.isoformat() if model.completed_at else None,
@@ -791,5 +796,59 @@ class LibraryRepository:
         if not job:
             return None
         return cls._model_to_epub_build_job(job)
+
+    @classmethod
+    def update_job_progress(
+        cls,
+        session: Session,
+        job_id: str,
+        current_step: Optional[str] = None,
+        current_chapter: Optional[int] = None,
+        processed_chapters: Optional[int] = None,
+        total_chapters: Optional[int] = None,
+        progress_percentage: Optional[int] = None,
+    ) -> bool:
+        job = session.get(EpubBuildJobModel, job_id)
+        if not job or job.status in ("completed", "failed", "cancelled"):
+            return False
+
+        if current_step is not None:
+            job.current_step = current_step
+        if current_chapter is not None:
+            job.current_chapter = current_chapter
+        if processed_chapters is not None:
+            job.processed_chapters = processed_chapters
+        if total_chapters is not None:
+            job.total_chapters = total_chapters
+        if progress_percentage is not None:
+            job.progress_percentage = max(0, min(100, progress_percentage))
+
+        session.flush()
+        return True
+
+    @classmethod
+    def cancel_job(cls, session: Session, novel_id: str, job_id: str) -> Optional[EpubBuildJobResponse]:
+        job = session.get(EpubBuildJobModel, job_id)
+        if not job or job.novel_id != novel_id:
+            return None
+
+        if job.status in ("completed", "failed"):
+            # Cannot cancel an already finished job
+            return cls._model_to_epub_build_job(job)
+
+        job.status = "cancelled"
+        job.error_message = "Quá trình biên dịch đã bị người dùng hủy."
+        job.current_step = "Đã hủy biên dịch."
+        job.completed_at = datetime.now(timezone.utc)
+        session.flush()
+        return cls._model_to_epub_build_job(job)
+
+    @classmethod
+    def is_job_cancelled(cls, session: Session, job_id: str) -> bool:
+        job = session.get(EpubBuildJobModel, job_id)
+        if not job:
+            return True
+        return job.status == "cancelled"
+
 
 

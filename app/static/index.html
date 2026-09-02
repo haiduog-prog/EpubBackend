@@ -1786,6 +1786,86 @@
             </div>
         </div>
 
+        <!-- MODAL: EPUB BUILD & PACKAGING PROGRESS -->
+        <div id="modal-epub-build-progress" class="modal">
+            <div class="modal-content" style="max-width:680px; width:95vw; display:flex; flex-direction:column; gap:1rem; padding:1.5rem;">
+                <!-- Header -->
+                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--card-border); padding-bottom:0.75rem;">
+                    <div style="display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap;">
+                        <h3 style="font-size:1.15rem; font-weight:700; color:#f8fafc; margin:0; display:flex; align-items:center; gap:0.5rem;">
+                            <i class="fa-solid fa-box-archive" style="color:#10b981;"></i> Tiến Trình Đóng Gói EPUB
+                        </h3>
+                        <span id="epub-build-strategy-badge" class="tag" style="background:rgba(16,185,129,0.15); border:1px solid rgba(16,185,129,0.4); color:#34d399; font-size:0.75rem; font-weight:600;">
+                            ⚡ FAST_PATCH
+                        </span>
+                        <span id="epub-build-timer-badge" class="tag" style="background:rgba(245,158,11,0.15); border:1px solid rgba(245,158,11,0.3); color:#fbbf24; font-size:0.75rem;">
+                            <i class="fa-regular fa-clock"></i> 00:00s
+                        </span>
+                    </div>
+                    <button id="btn-epub-build-close-x" onclick="closeEpubBuildModal()" style="background:none; border:none; color:var(--text-sub); font-size:1.3rem; cursor:pointer;" title="Đóng">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+
+                <!-- Info summary -->
+                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(30,41,59,0.4); padding:0.6rem 0.9rem; border-radius:8px; border:1px solid var(--card-border); font-size:0.83rem;">
+                    <div>
+                        <span style="color:var(--text-sub);">Tiểu thuyết:</span>
+                        <strong id="epub-build-novel-title" style="color:#f8fafc; margin-left:0.3rem;">-</strong>
+                    </div>
+                    <div>
+                        <span style="color:var(--text-sub);">Phạm vi:</span>
+                        <span id="epub-build-range-text" style="color:#38bdf8; font-weight:600; margin-left:0.3rem;">Toàn bộ chương</span>
+                    </div>
+                </div>
+
+                <!-- Live Progress Status & Bar -->
+                <div style="background:rgba(15,23,42,0.6); border:1px solid var(--card-border); border-radius:10px; padding:0.9rem 1.1rem; display:flex; flex-direction:column; gap:0.6rem;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.88rem;">
+                        <span id="epub-build-status-line" style="font-weight:600; color:#e2e8f0; display:flex; align-items:center; gap:0.5rem;">
+                            <i class="fa-solid fa-spinner spinner" style="color:#38bdf8;"></i> Đang khởi tạo hàng đợi biên dịch...
+                        </span>
+                        <span id="epub-build-stats" style="font-weight:700; color:#10b981; font-size:0.88rem;">
+                            0%
+                        </span>
+                    </div>
+
+                    <!-- Progress Bar Track & Fill -->
+                    <div style="height:10px; background:rgba(255,255,255,0.08); border-radius:9999px; overflow:hidden; border:1px solid rgba(255,255,255,0.05); position:relative;">
+                        <div id="epub-build-progress-bar-fill" style="height:100%; width:0%; background:linear-gradient(90deg, #10b981, #06b6d4); border-radius:9999px; transition:width 0.3s cubic-bezier(0.4, 0, 0.2, 1);"></div>
+                    </div>
+                </div>
+
+                <!-- Detailed Realtime Log Box -->
+                <div>
+                    <div style="font-size:0.78rem; font-weight:600; color:var(--text-sub); margin-bottom:0.35rem; display:flex; align-items:center; gap:0.4rem;">
+                        <i class="fa-solid fa-terminal" style="font-size:0.72rem;"></i> NHẬT KÝ BIÊN DỊCH CHI TIẾT THEO THỜI GIAN THỰC
+                    </div>
+                    <div id="epub-build-log-box" style="height:140px; overflow-y:auto; background:rgba(15,23,42,0.85); border:1px solid var(--card-border); border-radius:8px; padding:0.6rem 0.8rem; font-family:monospace; font-size:0.76rem; line-height:1.6; color:#94a3b8;">
+                        <!-- Realtime log entries injected here -->
+                    </div>
+                </div>
+
+                <!-- Footer Action Buttons -->
+                <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--card-border); padding-top:0.85rem; flex-wrap:wrap; gap:0.6rem;">
+                    <div id="epub-build-footer-tip" style="font-size:0.8rem; color:var(--text-sub);">
+                        Tiến trình chạy hoàn toàn ở chế độ nền. Bạn có thể hủy bất kỳ lúc nào.
+                    </div>
+                    <div style="display:flex; gap:0.6rem; align-items:center;">
+                        <button type="button" class="btn btn-danger" id="btn-epub-build-cancel" onclick="cancelCurrentEpubBuild()" style="padding:0.45rem 1rem; font-size:0.82rem;">
+                            <i class="fa-solid fa-ban"></i> Hủy Biên Dịch
+                        </button>
+                        <button type="button" class="btn" id="btn-epub-build-download" onclick="downloadCurrentEpubBuild()" style="display:none; padding:0.45rem 1.1rem; font-size:0.82rem; background:#10b981; color:#fff; border:none; box-shadow:0 0 15px rgba(16,185,129,0.35);">
+                            <i class="fa-solid fa-file-arrow-down"></i> Tải File EPUB Về Máy
+                        </button>
+                        <button type="button" class="btn btn-secondary" id="btn-epub-build-close" onclick="closeEpubBuildModal()" style="display:none; padding:0.45rem 1.1rem; font-size:0.82rem;">
+                            Đóng
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- MODAL: CONFIRM DELETE NOVEL -->
         <div id="modal-confirm-delete" class="modal">
             <div class="modal-content" style="max-width:480px; border:1px solid rgba(239,68,68,0.4); box-shadow:0 0 35px rgba(239,68,68,0.25);">
@@ -4153,20 +4233,184 @@
                 if (completed) render('Hoàn tất', true);
             };
         }
+        let currentEpubBuildJobId = null;
+        let currentEpubBuildNovelId = null;
+        let epubBuildTimerInterval = null;
+        let epubBuildStartTime = null;
+        let epubBuildIsCancelled = false;
+
+        function openEpubBuildModal({ novelId, novelTitle, rangeText, strategy = 'fast_patch' }) {
+            currentEpubBuildNovelId = novelId;
+            currentEpubBuildJobId = null;
+            epubBuildIsCancelled = false;
+
+            document.getElementById('epub-build-novel-title').textContent = novelTitle || novelId;
+            document.getElementById('epub-build-range-text').textContent = rangeText || 'Toàn bộ chương';
+
+            const badgeEl = document.getElementById('epub-build-strategy-badge');
+            if (strategy === 'fast_patch') {
+                badgeEl.innerHTML = '⚡ FAST_PATCH';
+                badgeEl.style.background = 'rgba(16,185,129,0.15)';
+                badgeEl.style.borderColor = 'rgba(16,185,129,0.4)';
+                badgeEl.style.color = '#34d399';
+            } else {
+                badgeEl.innerHTML = '🔄 FULL_REBUILD';
+                badgeEl.style.background = 'rgba(99,102,241,0.2)';
+                badgeEl.style.borderColor = 'rgba(99,102,241,0.4)';
+                badgeEl.style.color = '#a5b4fc';
+            }
+
+            document.getElementById('epub-build-status-line').innerHTML = '<i class="fa-solid fa-spinner spinner" style="color:#38bdf8;"></i> Đang khởi tạo hàng đợi biên dịch...';
+            document.getElementById('epub-build-stats').textContent = '0%';
+            document.getElementById('epub-build-progress-bar-fill').style.width = '0%';
+            document.getElementById('epub-build-progress-bar-fill').style.background = 'linear-gradient(90deg, #10b981, #06b6d4)';
+
+            const logBox = document.getElementById('epub-build-log-box');
+            logBox.innerHTML = '';
+            appendEpubBuildLog(`Bắt đầu tiến trình đóng gói EPUB cho "${novelTitle || novelId}"...`);
+
+            document.getElementById('btn-epub-build-cancel').style.display = 'inline-flex';
+            document.getElementById('btn-epub-build-cancel').disabled = false;
+            document.getElementById('btn-epub-build-cancel').innerHTML = '<i class="fa-solid fa-ban"></i> Hủy Biên Dịch';
+            document.getElementById('btn-epub-build-download').style.display = 'none';
+            document.getElementById('btn-epub-build-close').style.display = 'none';
+
+            if (epubBuildTimerInterval) clearInterval(epubBuildTimerInterval);
+            epubBuildStartTime = Date.now();
+            epubBuildTimerInterval = setInterval(() => {
+                const elapsedSec = Math.floor((Date.now() - epubBuildStartTime) / 1000);
+                const mm = String(Math.floor(elapsedSec / 60)).padStart(2, '0');
+                const ss = String(elapsedSec % 60).padStart(2, '0');
+                const timerEl = document.getElementById('epub-build-timer-badge');
+                if (timerEl) timerEl.innerHTML = `<i class="fa-regular fa-clock"></i> ${mm}:${ss}s`;
+            }, 1000);
+
+            openModal('modal-epub-build-progress');
+        }
+
+        function closeEpubBuildModal() {
+            if (epubBuildTimerInterval) {
+                clearInterval(epubBuildTimerInterval);
+                epubBuildTimerInterval = null;
+            }
+            closeModal('modal-epub-build-progress');
+        }
+
+        function appendEpubBuildLog(msg, type = 'info') {
+            const logBox = document.getElementById('epub-build-log-box');
+            if (!logBox || !msg) return;
+            const now = new Date();
+            const timeStr = now.toTimeString().split(' ')[0];
+            const div = document.createElement('div');
+            div.style.marginBottom = '2px';
+            if (type === 'error') {
+                div.style.color = '#f87171';
+                div.innerHTML = `<span style="color:#64748b;">[${timeStr}]</span> ❌ ${msg}`;
+            } else if (type === 'success') {
+                div.style.color = '#34d399';
+                div.innerHTML = `<span style="color:#64748b;">[${timeStr}]</span> ✅ ${msg}`;
+            } else if (type === 'warn') {
+                div.style.color = '#fbbf24';
+                div.innerHTML = `<span style="color:#64748b;">[${timeStr}]</span> ⚠️ ${msg}`;
+            } else {
+                div.innerHTML = `<span style="color:#64748b;">[${timeStr}]</span> ℹ️ ${msg}`;
+            }
+            logBox.appendChild(div);
+            logBox.scrollTop = logBox.scrollHeight;
+        }
+
+        async function cancelCurrentEpubBuild() {
+            if (!currentEpubBuildJobId || !currentEpubBuildNovelId) {
+                closeEpubBuildModal();
+                return;
+            }
+            const cancelBtn = document.getElementById('btn-epub-build-cancel');
+            if (cancelBtn) {
+                cancelBtn.disabled = true;
+                cancelBtn.innerHTML = '<i class="fa-solid fa-spinner spinner"></i> Đang hủy...';
+            }
+            epubBuildIsCancelled = true;
+            appendEpubBuildLog('Người dùng yêu cầu dừng tiến trình biên dịch...', 'warn');
+
+            try {
+                const reqHeaders = { 'Content-Type': 'application/json' };
+                if (window.EpubAuth && typeof window.EpubAuth.getAccessToken === 'function') {
+                    const tok = await window.EpubAuth.getAccessToken();
+                    if (tok) reqHeaders.Authorization = `Bearer ${tok}`;
+                }
+                const res = await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(currentEpubBuildNovelId)}/epub-builds/${encodeURIComponent(currentEpubBuildJobId)}/cancel`), {
+                    method: 'POST',
+                    headers: reqHeaders,
+                });
+                if (res.ok) {
+                    appendEpubBuildLog('Đã hủy tiến trình biên dịch EPUB.', 'warn');
+                    document.getElementById('epub-build-status-line').innerHTML = '<i class="fa-solid fa-ban" style="color:#ef4444;"></i> Đã hủy biên dịch.';
+                    document.getElementById('epub-build-progress-bar-fill').style.background = '#ef4444';
+                }
+            } catch (err) {
+                appendEpubBuildLog(`Lỗi khi gửi yêu cầu hủy: ${err.message}`, 'error');
+            } finally {
+                if (epubBuildTimerInterval) {
+                    clearInterval(epubBuildTimerInterval);
+                    epubBuildTimerInterval = null;
+                }
+                document.getElementById('btn-epub-build-cancel').style.display = 'none';
+                document.getElementById('btn-epub-build-close').style.display = 'inline-flex';
+            }
+        }
+
+        async function downloadCurrentEpubBuild() {
+            if (!currentEpubBuildNovelId) return;
+            const dlBtn = document.getElementById('btn-epub-build-download');
+            if (dlBtn) {
+                dlBtn.disabled = true;
+                dlBtn.innerHTML = '<i class="fa-solid fa-spinner spinner"></i> Đang tải file...';
+            }
+            try {
+                const dlHeaders = {};
+                if (window.EpubAuth && typeof window.EpubAuth.getAccessToken === 'function') {
+                    const tok = await window.EpubAuth.getAccessToken();
+                    if (tok) dlHeaders.Authorization = `Bearer ${tok}`;
+                }
+                const url = apiUrl(`/api/v1/library/novels/${encodeURIComponent(currentEpubBuildNovelId)}/export/epub`);
+                const response = await fetch(url, { headers: dlHeaders });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+                const blob = await response.blob();
+                const blobUrl = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = blobUrl;
+                let filename = `${currentEpubBuildNovelId}.epub`;
+                const disposition = response.headers.get('content-disposition');
+                if (disposition && disposition.includes('filename*=')) {
+                    const match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+                    if (match) filename = decodeURIComponent(match[1]);
+                } else if (disposition && disposition.includes('filename=')) {
+                    const match = disposition.match(/filename="?([^";]+)"?/i);
+                    if (match) filename = match[1];
+                }
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+                showToast("✅ Đã tải file EPUB thành công!", "success");
+            } catch (dlErr) {
+                showToast(`❌ Tải file thất bại: ${dlErr.message}`, "error");
+            } finally {
+                if (dlBtn) {
+                    dlBtn.disabled = false;
+                    dlBtn.innerHTML = '<i class="fa-solid fa-file-arrow-down"></i> Tải Lại File EPUB';
+                }
+            }
+        }
+
         async function exportNovelEpub(novelId, forceRebuild = false, startCh = null, endCh = null) {
             const btnId = forceRebuild ? 'btn-rebuild-epub' : 'btn-export-epub';
             const btn = document.getElementById(btnId);
             const originalHtml = btn ? btn.innerHTML : '';
-            let stopEpubProgress = null;
-            let epubRebuildCompleted = false;
-            if (btn) {
-                btn.innerHTML = `<i class="fa-solid fa-spinner spinner"></i> ${forceRebuild ? 'Đang cập nhật...' : 'Đang tải EPUB...'}`;
-                btn.disabled = true;
-            }
 
             try {
-                let queryParam = forceRebuild ? '?force_rebuild=true' : '?force_rebuild=false';
-
                 let inputStart = startCh !== null ? String(startCh).trim() : (document.getElementById('rebuild-start-ch') ? document.getElementById('rebuild-start-ch').value.trim() : '');
                 let inputEnd = endCh !== null ? String(endCh).trim() : (document.getElementById('rebuild-end-ch') ? document.getElementById('rebuild-end-ch').value.trim() : '');
 
@@ -4188,14 +4432,12 @@
                 }
 
                 let rangeMsg = "";
-                if (forceRebuild && inputStart && !isNaN(Number(inputStart))) {
+                if (inputStart && !isNaN(Number(inputStart))) {
                     const sVal = Math.max(1, parseInt(inputStart, 10));
-                    queryParam += `&start_chapter=${encodeURIComponent(sVal)}`;
                     rangeMsg += `từ chương ${sVal}`;
                 }
-                if (forceRebuild && inputEnd && !isNaN(Number(inputEnd))) {
+                if (inputEnd && !isNaN(Number(inputEnd))) {
                     const eVal = Math.max(1, parseInt(inputEnd, 10));
-                    queryParam += `&end_chapter=${encodeURIComponent(eVal)}`;
                     rangeMsg += (rangeMsg ? ` đến ${eVal}` : `đến chương ${eVal}`);
                 }
 
@@ -4207,112 +4449,158 @@
                     } catch (_) {}
                 }
 
-                if (forceRebuild) {
-                    let chapterCount = 0;
-                    if (inputStart && inputEnd && !isNaN(Number(inputStart)) && !isNaN(Number(inputEnd))) {
-                        chapterCount = Math.abs(parseInt(inputEnd, 10) - parseInt(inputStart, 10)) + 1;
-                    } else if (inputStart || inputEnd) {
-                        chapterCount = 1;
-                    } else if (currentNovelData && Array.isArray(currentNovelData.chapters)) {
-                        chapterCount = currentNovelData.chapters.length;
-                    }
-                    stopEpubProgress = startEpubRebuildProgress(btn, chapterCount, rangeMsg);
-                    showToast(rangeMsg ? `🔄 Đang đưa vào hàng đợi biên dịch EPUB cho ${rangeMsg}...` : "🔄 Đang đưa vào hàng đợi biên dịch lại toàn bộ chương...", "info");
+                const novelTitle = (currentNovelData && currentNovelData.title) || novelId;
 
-                    // 1. Enqueue build job asynchronously
-                    let targetChaptersStr = null;
-                    if (inputStart && inputEnd && !isNaN(Number(inputStart)) && !isNaN(Number(inputEnd))) {
-                        targetChaptersStr = `${inputStart}-${inputEnd}`;
-                    } else if (inputStart && !isNaN(Number(inputStart))) {
-                        targetChaptersStr = `${inputStart}`;
-                    }
+                // Open Build Progress Popup Modal
+                openEpubBuildModal({
+                    novelId: novelId,
+                    novelTitle: novelTitle,
+                    rangeText: rangeMsg || 'Toàn bộ chương',
+                    strategy: 'fast_patch',
+                });
 
-                    const isSpecificRange = Boolean(targetChaptersStr);
-                    const enqueueRes = await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/epub-builds`), {
-                        method: 'POST',
-                        headers: requestHeaders,
-                        body: JSON.stringify({
-                            force_rebuild: !isSpecificRange,
-                            target_chapters: targetChaptersStr,
-                        }),
-                    });
-
-                    if (!enqueueRes.ok && enqueueRes.status !== 202) {
-                        const err = await enqueueRes.json().catch(() => ({ detail: `Lỗi hàng đợi build (HTTP ${enqueueRes.status})` }));
-                        throw new Error(err.detail || `HTTP ${enqueueRes.status}`);
-                    }
-
-                    const jobData = await enqueueRes.json().catch(() => ({}));
-                    const targetJobId = jobData.job_id || 'status';
-
-                    // 2. Poll job status
-                    let isDone = false;
-                    let attempts = 0;
-                    while (!isDone && attempts < 80) {
-                        await new Promise(r => setTimeout(r, 1500));
-                        attempts++;
-                        try {
-                            const stRes = await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/epub-builds/${encodeURIComponent(targetJobId)}`), { headers: requestHeaders });
-                            if (stRes.ok) {
-                                const stData = await stRes.json();
-                                if (stData.status === 'completed') {
-                                    isDone = true;
-                                    break;
-                                } else if (stData.status === 'failed') {
-                                    throw new Error(stData.error_message || "Quá trình build EPUB thất bại.");
-                                }
-                            }
-                        } catch (pErr) {
-                            if (pErr.message && pErr.message.includes("thất bại")) throw pErr;
-                        }
-                    }
+                if (btn) {
+                    btn.innerHTML = `<i class="fa-solid fa-spinner spinner"></i> Đang xử lý...`;
+                    btn.disabled = true;
                 }
 
-                // 3. Download the compiled EPUB artifact without force_rebuild (instant 307 CDN redirect)
-                let url = apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/export/epub`);
+                // 1. Enqueue build job asynchronously
+                let targetChaptersStr = null;
+                if (inputStart && inputEnd && !isNaN(Number(inputStart)) && !isNaN(Number(inputEnd))) {
+                    targetChaptersStr = `${inputStart}-${inputEnd}`;
+                } else if (inputStart && !isNaN(Number(inputStart))) {
+                    targetChaptersStr = `${inputStart}`;
+                }
 
-                const dlHeaders = {};
-                if (window.EpubAuth && typeof window.EpubAuth.getAccessToken === 'function') {
+                const isSpecificRange = Boolean(targetChaptersStr);
+                const enqueueRes = await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/epub-builds`), {
+                    method: 'POST',
+                    headers: requestHeaders,
+                    body: JSON.stringify({
+                        force_rebuild: !isSpecificRange && forceRebuild,
+                        target_chapters: targetChaptersStr,
+                    }),
+                });
+
+                if (!enqueueRes.ok && enqueueRes.status !== 202) {
+                    const err = await enqueueRes.json().catch(() => ({ detail: `Lỗi hàng đợi build (HTTP ${enqueueRes.status})` }));
+                    throw new Error(err.detail || `HTTP ${enqueueRes.status}`);
+                }
+
+                const jobData = await enqueueRes.json().catch(() => ({}));
+                const targetJobId = jobData.job_id || 'status';
+                currentEpubBuildJobId = targetJobId;
+
+                // Update strategy badge from server response
+                if (jobData.strategy) {
+                    const badgeEl = document.getElementById('epub-build-strategy-badge');
+                    if (jobData.strategy === 'fast_patch') {
+                        badgeEl.innerHTML = '⚡ FAST_PATCH';
+                        badgeEl.style.background = 'rgba(16,185,129,0.15)';
+                        badgeEl.style.borderColor = 'rgba(16,185,129,0.4)';
+                        badgeEl.style.color = '#34d399';
+                    } else {
+                        badgeEl.innerHTML = '🔄 FULL_REBUILD';
+                        badgeEl.style.background = 'rgba(99,102,241,0.2)';
+                        badgeEl.style.borderColor = 'rgba(99,102,241,0.4)';
+                        badgeEl.style.color = '#a5b4fc';
+                    }
+                }
+                appendEpubBuildLog(`Job #${targetJobId.slice(0, 8)} đã được xếp hàng với chiến lược: ${jobData.strategy || 'fast_patch'}.`);
+
+                // 2. Poll job status & update realtime chapter progress
+                let isDone = false;
+                let attempts = 0;
+                let lastReportedStep = "";
+
+                while (!isDone && attempts < 120 && !epubBuildIsCancelled) {
+                    await new Promise(r => setTimeout(r, 1200));
+                    attempts++;
+                    if (epubBuildIsCancelled) break;
+
                     try {
-                        const tok = await window.EpubAuth.getAccessToken();
-                        if (tok) dlHeaders.Authorization = `Bearer ${tok}`;
-                    } catch (_) {}
-                }
-                const response = await fetch(url, { headers: dlHeaders });
-                if (!response.ok) {
-                    const err = await response.json().catch(() => ({ detail: `Lỗi xuất EPUB (HTTP ${response.status})` }));
-                    throw new Error(err.detail || `Lỗi HTTP ${response.status}`);
+                        const stRes = await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/epub-builds/${encodeURIComponent(targetJobId)}`), { headers: requestHeaders });
+                        if (stRes.ok) {
+                            const stData = await stRes.json();
+
+                            // Realtime step and chapter reporting
+                            if (stData.current_step && stData.current_step !== lastReportedStep) {
+                                lastReportedStep = stData.current_step;
+                                document.getElementById('epub-build-status-line').innerHTML = `<i class="fa-solid fa-spinner spinner" style="color:#38bdf8;"></i> ${escapeHtml(stData.current_step)}`;
+                                appendEpubBuildLog(stData.current_step);
+                            }
+
+                            // Progress percentage
+                            const pct = Math.max(0, Math.min(100, stData.progress_percentage || (stData.status === 'completed' ? 100 : 5)));
+                            document.getElementById('epub-build-progress-bar-fill').style.width = `${pct}%`;
+
+                            // Progress stats: processed / total
+                            if (stData.total_chapters > 0) {
+                                document.getElementById('epub-build-stats').textContent = `${stData.processed_chapters} / ${stData.total_chapters} chương (${pct}%)`;
+                            } else {
+                                document.getElementById('epub-build-stats').textContent = `${pct}%`;
+                            }
+
+                            if (stData.status === 'completed') {
+                                isDone = true;
+                                if (epubBuildTimerInterval) {
+                                    clearInterval(epubBuildTimerInterval);
+                                    epubBuildTimerInterval = null;
+                                }
+                                document.getElementById('epub-build-progress-bar-fill').style.width = '100%';
+                                document.getElementById('epub-build-progress-bar-fill').style.background = '#10b981';
+                                document.getElementById('epub-build-status-line').innerHTML = '<i class="fa-solid fa-circle-check" style="color:#10b981;"></i> Hoàn tất đóng gói file EPUB!';
+                                document.getElementById('epub-build-stats').textContent = '100%';
+                                appendEpubBuildLog('Hoàn tất đóng gói EPUB thành công!', 'success');
+
+                                // Show action buttons
+                                document.getElementById('btn-epub-build-cancel').style.display = 'none';
+                                document.getElementById('btn-epub-build-download').style.display = 'inline-flex';
+                                document.getElementById('btn-epub-build-close').style.display = 'inline-flex';
+
+                                // Auto trigger download
+                                appendEpubBuildLog('Đang tự động tải file EPUB về trình duyệt...', 'info');
+                                await downloadCurrentEpubBuild();
+                                break;
+                            } else if (stData.status === 'cancelled') {
+                                isDone = true;
+                                if (epubBuildTimerInterval) {
+                                    clearInterval(epubBuildTimerInterval);
+                                    epubBuildTimerInterval = null;
+                                }
+                                document.getElementById('epub-build-status-line').innerHTML = '<i class="fa-solid fa-ban" style="color:#ef4444;"></i> Đã hủy biên dịch.';
+                                document.getElementById('epub-build-progress-bar-fill').style.background = '#ef4444';
+                                appendEpubBuildLog('Tiến trình biên dịch đã dừng theo yêu cầu của bạn.', 'warn');
+                                document.getElementById('btn-epub-build-cancel').style.display = 'none';
+                                document.getElementById('btn-epub-build-close').style.display = 'inline-flex';
+                                break;
+                            } else if (stData.status === 'failed') {
+                                throw new Error(stData.error_message || "Quá trình build EPUB thất bại.");
+                            }
+                        }
+                    } catch (pErr) {
+                        if (pErr.message && pErr.message.includes("thất bại")) throw pErr;
+                    }
                 }
 
-                const blob = await response.blob();
-                const blobUrl = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = blobUrl;
-
-                let filename = `${novelId}.epub`;
-                const disposition = response.headers.get('content-disposition');
-                if (disposition && disposition.includes('filename*=')) {
-                    const match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
-                    if (match) filename = decodeURIComponent(match[1]);
-                } else if (disposition && disposition.includes('filename=')) {
-                    const match = disposition.match(/filename="?([^";]+)"?/i);
-                    if (match) filename = match[1];
+                if (!isDone && !epubBuildIsCancelled) {
+                    appendEpubBuildLog('Tiến trình biên dịch đang kéo dài ở chế độ nền. Bạn có thể đóng cửa sổ này và kiểm tra lại sau.', 'warn');
+                    document.getElementById('btn-epub-build-cancel').style.display = 'none';
+                    document.getElementById('btn-epub-build-close').style.display = 'inline-flex';
                 }
 
-                a.download = filename;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
-                epubRebuildCompleted = true;
-                showToast("✓ Đã tải file EPUB thành công!", "success");
             } catch (err) {
-                alert("Lỗi xuất EPUB: " + err.message);
+                appendEpubBuildLog(`Lỗi: ${err.message}`, 'error');
+                const statusLine = document.getElementById('epub-build-status-line');
+                if (statusLine) statusLine.innerHTML = `<i class="fa-solid fa-triangle-exclamation" style="color:#ef4444;"></i> Lỗi: ${escapeHtml(err.message)}`;
+                const cancelBtn = document.getElementById('btn-epub-build-cancel');
+                if (cancelBtn) cancelBtn.style.display = 'none';
+                const closeBtn = document.getElementById('btn-epub-build-close');
+                if (closeBtn) closeBtn.style.display = 'inline-flex';
+                showToast("❌ " + err.message, "error");
             } finally {
-                if (stopEpubProgress) stopEpubProgress(epubRebuildCompleted);
                 if (btn) {
                     btn.innerHTML = originalHtml;
-
                     btn.disabled = false;
                 }
             }

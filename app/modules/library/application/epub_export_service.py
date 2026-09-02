@@ -8,7 +8,7 @@ manages immutable versioned artifact keys on Object Storage, and enforces retent
 import os
 import tempfile
 import logging
-from typing import Any, Dict, List, Optional, Tuple, Set
+from typing import Any, Dict, List, Optional, Tuple, Set, Callable
 
 from app.config import settings
 from app.infrastructure.storage.facade import storage_repo
@@ -16,6 +16,11 @@ from app.modules.library.application.epub_zip_patcher import EpubZipPatcher
 from app.schemas.library import ChapterStatus, NovelMetadata
 
 logger = logging.getLogger("EpubBackend.EpubExportService")
+
+
+class EpubBuildCancelledException(Exception):
+    """Raised when an EPUB build job is cancelled by the user."""
+    pass
 
 
 class EpubExportService:
@@ -34,6 +39,9 @@ class EpubExportService:
         target_chapters: Optional[str] = None,
         force_rebuild: bool = False,
         dirty_chapters: Optional[List[int]] = None,
+        job_id: Optional[str] = None,
+        progress_callback: Optional[Callable[[str, Optional[int], int, int, int], None]] = None,
+        is_cancelled_callback: Optional[Callable[[], bool]] = None,
     ) -> Dict[str, Any]:
         """
         Builds or patches an EPUB with streaming disk I/O, publishes the versioned artifact to storage,
@@ -88,8 +96,20 @@ class EpubExportService:
                             and (ch.status == ChapterStatus.COMPLETED or ch.r2_translated_key)
                         ]
 
+                        total_patch = len(chapters_to_patch)
                         chapter_payloads: Dict[int, Tuple[str, str]] = {}
-                        for ch in chapters_to_patch:
+                        for idx_step, ch in enumerate(chapters_to_patch, start=1):
+                            if is_cancelled_callback and is_cancelled_callback():
+                                raise EpubBuildCancelledException(f"Job '{job_id or novel_id}' đã bị hủy.")
+                            if progress_callback:
+                                pct = int((idx_step / max(1, total_patch)) * 75)
+                                progress_callback(
+                                    f"Đang tải nội dung Chương {ch.chapter_index}: {ch.chapter_title}...",
+                                    ch.chapter_index,
+                                    idx_step,
+                                    total_patch,
+                                    pct,
+                                )
                             txt = self._legacy.get_chapter_content(
                                 novel_id,
                                 ch.chapter_index,
@@ -106,7 +126,18 @@ class EpubExportService:
                             if txt:
                                 chapter_payloads[ch.chapter_index] = (ch.chapter_title, txt)
 
+                        if is_cancelled_callback and is_cancelled_callback():
+                            raise EpubBuildCancelledException(f"Job '{job_id or novel_id}' đã bị hủy.")
+
                         if chapter_payloads:
+                            if progress_callback:
+                                progress_callback(
+                                    f"Đang vá {len(chapter_payloads)} chương vào file EPUB...",
+                                    None,
+                                    len(chapter_payloads),
+                                    total_patch,
+                                    85,
+                                )
                             os.makedirs(os.path.join("storage", "outputs"), exist_ok=True)
                             patched_out_path = os.path.join(
                                 "storage",
@@ -123,6 +154,8 @@ class EpubExportService:
                             logger.info("FAST_PATCH succeeded for novel %s (%d chapters)", novel_id, patched_count)
                     else:
                         logger.info("Base EPUB for %s is not layout-standardized, falling back to FULL_REBUILD", novel_id)
+            except EpubBuildCancelledException:
+                raise
             except Exception as exc:
                 logger.warning("FAST_PATCH failed for novel %s, falling back to FULL_REBUILD: %s", novel_id, exc)
             finally:
@@ -151,6 +184,18 @@ class EpubExportService:
         if not is_valid:
             raise RuntimeError(f"Generated EPUB archive validation failed: {err}")
 
+        if is_cancelled_callback and is_cancelled_callback():
+            raise EpubBuildCancelledException(f"Job '{job_id or novel_id}' đã bị hủy.")
+
+        if progress_callback:
+            progress_callback(
+                "Đang tải file EPUB lên Cloud Storage...",
+                None,
+                patched_count,
+                patched_count,
+                92,
+            )
+
         # Compute next immutable revision key
         current_rev = int(novel.built_revision or 0)
         next_rev = current_rev + 1
@@ -172,6 +217,14 @@ class EpubExportService:
         elif not uploaded_url and not storage_repo.file_exists(versioned_key):
             raise RuntimeError(f"Upload EPUB artifact '{versioned_key}' to storage failed")
 
+        if progress_callback:
+            progress_callback(
+                "Hoàn tất đóng gói EPUB!",
+                None,
+                patched_count,
+                patched_count,
+                100,
+            )
 
         public_download_url = uploaded_url or storage_repo.get_public_url(versioned_key)
 

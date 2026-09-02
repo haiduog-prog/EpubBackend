@@ -4098,25 +4098,23 @@
             if (!button) return () => {};
             button.classList.add('epub-rebuild-progress');
             const startedAt = Date.now();
-            let percent = 4;
-            const countLabel = chapterCount > 0 ? `${chapterCount} chương` : 'toàn bộ chương';
-            const render = (value, phase = 'Đang dựng EPUB') => {
-                const safeValue = Math.max(0, Math.min(100, Math.round(value)));
-                button.innerHTML = `<span style="display:inline-flex; align-items:center; gap:0.35rem;"><i class="fa-solid fa-arrows-rotate ${safeValue < 100 ? 'spinner' : ''}"></i><span>${phase}</span></span><small style="display:block; margin-top:0.16rem; font-size:0.68rem; color:#c7d2fe; font-variant-numeric:tabular-nums;">~${safeValue}% · ${countLabel}${rangeLabel ? ` · ${rangeLabel}` : ''}</small>`;
+            const countLabel = chapterCount > 0
+                ? `${chapterCount.toLocaleString('vi-VN')} chương dự kiến`
+                : 'toàn bộ chương';
+            const render = (phase, completed = false) => {
+                const progressLabel = completed ? '100%' : 'đang xử lý';
+                button.innerHTML = `<span style="display:inline-flex; align-items:center; gap:0.35rem;"><i class="fa-solid fa-arrows-rotate ${completed ? '' : 'spinner'}"></i><span>${phase}</span></span><small style="display:block; margin-top:0.16rem; font-size:0.68rem; color:#c7d2fe; font-variant-numeric:tabular-nums;">${progressLabel} · ${countLabel}${rangeLabel ? ` · ${rangeLabel}` : ''}</small>`;
             };
-            render(percent, 'Đang chuẩn bị');
+            render('Đang chuẩn bị');
             const timer = window.setInterval(() => {
                 const elapsedSeconds = (Date.now() - startedAt) / 1000;
-                // The endpoint returns one file only after the server finishes;
-                // show an honest estimated progress capped below completion.
-                percent = Math.min(92, Math.max(percent + 1, 8 + Math.round(84 * (1 - Math.exp(-elapsedSeconds / 35)))));
                 const phase = elapsedSeconds < 4 ? 'Đang đọc chương' : (elapsedSeconds < 12 ? 'Đang ghép nội dung' : 'Đang đóng gói EPUB');
-                render(percent, phase);
+                render(phase);
             }, 1000);
             return (completed = false) => {
                 window.clearInterval(timer);
                 button.classList.remove('epub-rebuild-progress');
-                if (completed) render(100, 'Hoàn tất');
+                if (completed) render('Hoàn tất', true);
             };
         }
         async function exportNovelEpub(novelId, forceRebuild = false, startCh = null, endCh = null) {
@@ -4169,6 +4167,8 @@
                     let chapterCount = 0;
                     if (inputStart && inputEnd && !isNaN(Number(inputStart)) && !isNaN(Number(inputEnd))) {
                         chapterCount = Math.abs(parseInt(inputEnd, 10) - parseInt(inputStart, 10)) + 1;
+                    } else if (inputStart || inputEnd) {
+                        chapterCount = 1;
                     } else if (currentNovelData && Array.isArray(currentNovelData.chapters)) {
                         chapterCount = currentNovelData.chapters.length;
                     }

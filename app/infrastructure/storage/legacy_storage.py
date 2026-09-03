@@ -688,6 +688,16 @@ class LocalStorageProvider(BaseStorageProvider):
     def is_active(self) -> bool:
         return True
 
+    def resolve_local_path(self, object_name: str) -> Optional[Path]:
+        """Trả về đường dẫn filesystem an toàn nếu object tồn tại trên ổ đĩa cục bộ."""
+        try:
+            path = self._safe_path(object_name)
+            if path.is_file():
+                return path
+            return None
+        except (ValueError, OSError):
+            return None
+
     def get_public_url(self, object_name: str) -> str:
         return f"/storage/{self._safe_key(object_name)}"
 
@@ -912,6 +922,8 @@ class StorageRepository:
     def active_provider(self) -> BaseStorageProvider:
         """Trả về Storage Provider đang hoạt động theo ưu tiên cấu hình."""
         target = settings.storage_provider.lower()
+        if target == "local":
+            return self.local_provider
         if target == "supabase" and self.supabase_provider.is_active:
             return self.supabase_provider
         if target == "r2" and self.r2_provider.is_active:
@@ -921,6 +933,12 @@ class StorageRepository:
         if self.r2_provider.is_active:
             return self.r2_provider
         return self.local_provider
+
+    def resolve_local_path(self, object_name: str) -> Optional[Path]:
+        """API công khai an toàn để lấy file path local (nếu provider là local và file tồn tại)."""
+        if self.active_provider == self.local_provider:
+            return self.local_provider.resolve_local_path(object_name)
+        return None
 
     @property
     def active_provider_name(self) -> str:

@@ -134,7 +134,7 @@ class Settings(BaseModel):
     )
 
     # Database & Structured Storage configuration
-    database_url: str = Field(default_factory=lambda: os.getenv("DATABASE_URL", "sqlite:///./storage/local_db.sqlite3"))
+    database_url: str = Field(default_factory=lambda: os.getenv("DATABASE_URL", "sqlite:///./data/local_db.sqlite3"))
     structured_storage_backend: str = Field(default_factory=lambda: os.getenv("STRUCTURED_STORAGE_BACKEND", "legacy").lower())
     structured_storage_read_source: str = Field(default_factory=lambda: os.getenv("STRUCTURED_STORAGE_READ_SOURCE", "legacy").lower())
     db_pool_size: int = Field(default_factory=lambda: int(os.getenv("DB_POOL_SIZE", "5")))

@@ -20,14 +20,23 @@ JSONType = sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), "post
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("chapters", schema=None) as batch_op:
-        batch_op.add_column(sa.Column("review_status", sa.String(), nullable=False, server_default="pending"))
-        batch_op.add_column(sa.Column("review_issues", JSONType, nullable=False, server_default=sa.text("'[]'")))
-        batch_op.add_column(sa.Column("reviewer_model", sa.String(), nullable=True))
-        batch_op.add_column(sa.Column("reviewed_at", sa.DateTime(timezone=True), nullable=True))
-        batch_op.add_column(sa.Column("review_error", sa.Text(), nullable=True))
-        batch_op.alter_column("review_status", server_default=None)
-        batch_op.alter_column("review_issues", server_default=None)
+    bind = op.get_bind()
+    if bind.dialect.name == "sqlite":
+        with op.batch_alter_table("chapters", schema=None) as batch_op:
+            batch_op.add_column(sa.Column("review_status", sa.String(), nullable=False, server_default="pending"))
+            batch_op.add_column(sa.Column("review_issues", JSONType, nullable=False, server_default=sa.text("'[]'")))
+            batch_op.add_column(sa.Column("reviewer_model", sa.String(), nullable=True))
+            batch_op.add_column(sa.Column("reviewed_at", sa.DateTime(timezone=True), nullable=True))
+            batch_op.add_column(sa.Column("review_error", sa.Text(), nullable=True))
+    else:
+        with op.batch_alter_table("chapters", schema=None) as batch_op:
+            batch_op.add_column(sa.Column("review_status", sa.String(), nullable=False, server_default="pending"))
+            batch_op.add_column(sa.Column("review_issues", JSONType, nullable=False, server_default=sa.text("'[]'")))
+            batch_op.add_column(sa.Column("reviewer_model", sa.String(), nullable=True))
+            batch_op.add_column(sa.Column("reviewed_at", sa.DateTime(timezone=True), nullable=True))
+            batch_op.add_column(sa.Column("review_error", sa.Text(), nullable=True))
+            batch_op.alter_column("review_status", server_default=None)
+            batch_op.alter_column("review_issues", server_default=None)
 
 
 def downgrade() -> None:

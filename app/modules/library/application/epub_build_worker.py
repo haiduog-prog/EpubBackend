@@ -6,16 +6,18 @@ Uses a dedicated raw database connection to hold the PostgreSQL Advisory Lock th
 runs periodic background heartbeats for active job leases, and executes builds in a separate thread.
 """
 
-import os
 import asyncio
 import logging
+import os
 import uuid
+from contextlib import nullcontext
 from typing import Optional, Dict
 
 from sqlalchemy import text
 
 from app.config import settings
-from app.db.session import engine, db_session
+import app.db.session as db_session_module
+from app.db.session import db_session
 from app.infrastructure.storage.facade import storage_repo
 from app.modules.library.application.facade import library_service
 from app.modules.library.application.epub_export_service import EpubBuildCancelledException
@@ -26,6 +28,11 @@ logger = logging.getLogger("EpubBackend.EpubBuildWorker")
 _worker_task: Optional[asyncio.Task] = None
 _worker_running: bool = False
 WORKER_ID: str = f"worker-{uuid.uuid4().hex[:8]}"
+
+
+def _get_current_engine():
+    """Return the engine currently configured by reset_db_engine()."""
+    return db_session_module.engine
 
 
 async def _run_job_heartbeat(job_id: str, stop_event: asyncio.Event, lease_state: Dict[str, bool]) -> None:
@@ -75,23 +82,30 @@ async def run_epub_build_consumer() -> None:
                 continue
 
             # Dedicated raw database connection checkout that holds the advisory lock continuously.
-            # AUTOCOMMIT ensures advisory lock statements are committed immediately and the lock
-            # is not accidentally released by a pool-level rollback when the connection is returned.
-            with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as lock_conn:
-                has_lock = False
-                try:
-                    res = lock_conn.execute(
-                        text("SELECT pg_try_advisory_lock(:lock_id)"),
-                        {"lock_id": LibraryRepository.EPUB_GLOBAL_BUILD_LOCK_ID},
-                    ).scalar()
-                    has_lock = bool(res)
-                except Exception as lock_err:
-                    logger.warning("Advisory lock check skipped/failed: %s", lock_err)
-                    has_lock = True
+            # Only used on PostgreSQL; SQLite skips the advisory lock and processes jobs directly.
+            current_engine = _get_current_engine()
+            is_postgres = current_engine.dialect.name == "postgresql"
+            lock_cm = (
+                current_engine.connect().execution_options(isolation_level="AUTOCOMMIT")
+                if is_postgres
+                else nullcontext()
+            )
+            with lock_cm as lock_conn:
+                if is_postgres and lock_conn is not None:
+                    has_lock = False
+                    try:
+                        res = lock_conn.execute(
+                            text("SELECT pg_try_advisory_lock(:lock_id)"),
+                            {"lock_id": LibraryRepository.EPUB_GLOBAL_BUILD_LOCK_ID},
+                        ).scalar()
+                        has_lock = bool(res)
+                    except Exception as lock_err:
+                        logger.warning("Advisory lock check skipped/failed: %s", lock_err)
+                        has_lock = True
 
-                if not has_lock:
-                    await asyncio.sleep(settings.epub_build_debounce_seconds or 3.0)
-                    continue
+                    if not has_lock:
+                        await asyncio.sleep(settings.epub_build_debounce_seconds or 3.0)
+                        continue
 
                 try:
                     claimed_job = None
@@ -270,13 +284,14 @@ async def run_epub_build_consumer() -> None:
                                     pass
 
                 finally:
-                    try:
-                        lock_conn.execute(
-                            text("SELECT pg_advisory_unlock(:lock_id)"),
-                            {"lock_id": LibraryRepository.EPUB_GLOBAL_BUILD_LOCK_ID},
-                        )
-                    except Exception:
-                        pass
+                    if is_postgres and lock_conn is not None:
+                        try:
+                            lock_conn.execute(
+                                text("SELECT pg_advisory_unlock(:lock_id)"),
+                                {"lock_id": LibraryRepository.EPUB_GLOBAL_BUILD_LOCK_ID},
+                            )
+                        except Exception:
+                            pass
 
         except asyncio.CancelledError:
             logger.info("EPUB Build Consumer task cancelled")

@@ -20,17 +20,25 @@ JSONType = sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), "post
  
  
 def upgrade() -> None:
-    # Add columns to novels
-    with op.batch_alter_table("novels", schema=None) as batch_op:
-        batch_op.add_column(sa.Column("current_epub_key", sa.String(), nullable=True))
-        batch_op.add_column(sa.Column("desired_revision", sa.Integer(), nullable=False, server_default="0"))
-        batch_op.add_column(sa.Column("built_revision", sa.Integer(), nullable=False, server_default="0"))
-        batch_op.add_column(sa.Column("is_structural_dirty", sa.Boolean(), nullable=False, server_default="false"))
-        batch_op.add_column(sa.Column("dirty_chapters", JSONType, nullable=False, server_default=sa.text("'[]'")))
-        batch_op.alter_column("desired_revision", server_default=None)
-        batch_op.alter_column("built_revision", server_default=None)
-        batch_op.alter_column("is_structural_dirty", server_default=None)
-        batch_op.alter_column("dirty_chapters", server_default=None)
+    bind = op.get_bind()
+    if bind.dialect.name == "sqlite":
+        with op.batch_alter_table("novels", schema=None) as batch_op:
+            batch_op.add_column(sa.Column("current_epub_key", sa.String(), nullable=True))
+            batch_op.add_column(sa.Column("desired_revision", sa.Integer(), nullable=False, server_default="0"))
+            batch_op.add_column(sa.Column("built_revision", sa.Integer(), nullable=False, server_default="0"))
+            batch_op.add_column(sa.Column("is_structural_dirty", sa.Boolean(), nullable=False, server_default="false"))
+            batch_op.add_column(sa.Column("dirty_chapters", JSONType, nullable=False, server_default=sa.text("'[]'")))
+    else:
+        with op.batch_alter_table("novels", schema=None) as batch_op:
+            batch_op.add_column(sa.Column("current_epub_key", sa.String(), nullable=True))
+            batch_op.add_column(sa.Column("desired_revision", sa.Integer(), nullable=False, server_default="0"))
+            batch_op.add_column(sa.Column("built_revision", sa.Integer(), nullable=False, server_default="0"))
+            batch_op.add_column(sa.Column("is_structural_dirty", sa.Boolean(), nullable=False, server_default="false"))
+            batch_op.add_column(sa.Column("dirty_chapters", JSONType, nullable=False, server_default=sa.text("'[]'")))
+            batch_op.alter_column("desired_revision", server_default=None)
+            batch_op.alter_column("built_revision", server_default=None)
+            batch_op.alter_column("is_structural_dirty", server_default=None)
+            batch_op.alter_column("dirty_chapters", server_default=None)
  
     # Create epub_build_jobs table
     op.create_table(

@@ -20,13 +20,21 @@ JSONType = sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), "post
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("novels", schema=None) as batch_op:
-        batch_op.add_column(sa.Column("layout_standardized", sa.Boolean(), nullable=False, server_default="false"))
-        batch_op.alter_column("layout_standardized", server_default=None)
+    bind = op.get_bind()
+    if bind.dialect.name == "sqlite":
+        with op.batch_alter_table("novels", schema=None) as batch_op:
+            batch_op.add_column(sa.Column("layout_standardized", sa.Boolean(), nullable=False, server_default="false"))
 
-    with op.batch_alter_table("epub_build_jobs", schema=None) as batch_op:
-        batch_op.add_column(sa.Column("claimed_dirty_chapters", JSONType, nullable=False, server_default=sa.text("'[]'")))
-        batch_op.alter_column("claimed_dirty_chapters", server_default=None)
+        with op.batch_alter_table("epub_build_jobs", schema=None) as batch_op:
+            batch_op.add_column(sa.Column("claimed_dirty_chapters", JSONType, nullable=False, server_default=sa.text("'[]'")))
+    else:
+        with op.batch_alter_table("novels", schema=None) as batch_op:
+            batch_op.add_column(sa.Column("layout_standardized", sa.Boolean(), nullable=False, server_default="false"))
+            batch_op.alter_column("layout_standardized", server_default=None)
+
+        with op.batch_alter_table("epub_build_jobs", schema=None) as batch_op:
+            batch_op.add_column(sa.Column("claimed_dirty_chapters", JSONType, nullable=False, server_default=sa.text("'[]'")))
+            batch_op.alter_column("claimed_dirty_chapters", server_default=None)
 
 
 def downgrade() -> None:

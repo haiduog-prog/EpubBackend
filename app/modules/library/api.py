@@ -507,6 +507,24 @@ def export_novel_epub_endpoint(
                 else storage_repo.get_public_url(storage_key)
             )
             return RedirectResponse(url=cdn_url, status_code=307)
+        elif (
+            not force_rebuild
+            and not has_specific_range
+            and storage_repo.active_provider_name == "local"
+        ):
+            local_path = storage_repo.resolve_local_path(storage_key)
+            if local_path and local_path.is_file():
+                title = novel.title if novel else novel_id
+                safe_ascii_name = f"{novel_id}_vi.epub"
+                encoded_name = quote(f"{title}.epub")
+                headers = {
+                    "Content-Disposition": f"attachment; filename=\"{safe_ascii_name}\"; filename*=UTF-8''{encoded_name}"
+                }
+                return FileResponse(
+                    path=str(local_path),
+                    media_type="application/epub+zip",
+                    headers=headers,
+                )
 
         # 2. Build on-demand via orchestrator under per-novel lock
         with library_service.rebuild_lock(novel_id):

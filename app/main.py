@@ -1,6 +1,7 @@
 import os
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 from fastapi import FastAPI
@@ -47,6 +48,25 @@ app.add_middleware(
 app.include_router(api_v1_router)
 app.include_router(auth_router)
 app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static")), name="static")
+
+
+LOCAL_APP_ENVS = {"development", "dev", "local", "test"}
+DEFAULT_STORAGE_DIR = Path(__file__).resolve().parent.parent / "storage"
+
+
+def _mount_local_storage(target_app: FastAPI, storage_dir: Path = DEFAULT_STORAGE_DIR) -> bool:
+    """Expose local blobs only in an explicitly local, non-production profile."""
+    if (
+        settings.storage_provider != "local"
+        or settings.app_env.lower() not in LOCAL_APP_ENVS
+    ):
+        return False
+    storage_dir.mkdir(parents=True, exist_ok=True)
+    target_app.mount("/storage", StaticFiles(directory=str(storage_dir)), name="storage")
+    return True
+
+
+_mount_local_storage(app)
 reader_assets_dir = os.path.join(os.path.dirname(__file__), "static", "reader-tts")
 if os.path.isdir(reader_assets_dir):
     app.mount("/reader-assets", StaticFiles(directory=reader_assets_dir), name="reader-assets")

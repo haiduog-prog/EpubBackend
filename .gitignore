@@ -13,6 +13,9 @@ ENV/
 # Temporary storage & uploaded files
 /storage/
 data/
+data/*.sqlite3
+data/*.sqlite3-wal
+data/*.sqlite3-shm
 serviceAccountKey.json
 *.epub
 *.txt

@@ -90,7 +90,7 @@ class EpubZipPatcher:
 
                 for doc in chapter_docs:
                     basename = os.path.basename(doc)
-                    if not re.match(r"^ch_\d{4}\.xhtml$", basename):
+                    if not re.match(r"^(?:ch|chapter)_?0*(\d+)\.(?:xhtml|html)$", basename, re.IGNORECASE):
                         logger.info("Non-standard chapter document found in %s: %s", epub_path, basename)
                         return False
                 return True
@@ -128,7 +128,7 @@ class EpubZipPatcher:
         with zipfile.ZipFile(base_epub_path, "r") as src_zip:
             for entry in src_zip.namelist():
                 basename = os.path.basename(entry)
-                match = re.match(r"^ch_(\d{4})\.xhtml$", basename)
+                match = re.match(r"^(?:ch|chapter)_?0*(\d+)\.(?:xhtml|html)$", basename, re.IGNORECASE)
                 if match:
                     ch_idx = int(match.group(1))
                     if ch_idx in chapter_payloads:

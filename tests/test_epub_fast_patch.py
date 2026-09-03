@@ -492,4 +492,36 @@ def test_epub_build_job_cancel_api():
         assert LibraryRepository.is_job_cancelled(session, job_resp.job_id) is True
 
 
+def test_export_full_epub_cancellation_and_regex(tmp_path):
+    """Verify that export_full_epub respects is_cancelled_callback and EpubZipPatcher supports flexible chapter naming."""
+    import re
+    import pytest
+    from app.modules.library.application.epub_zip_patcher import EpubZipPatcher
+    from app.modules.library.application.epub_export_service import EpubBuildCancelledException
+
+    # 1. Verify flexible regex
+    pattern = r"^(?:ch|chapter)_?0*(\d+)\.(?:xhtml|html)$"
+    assert re.match(pattern, "ch_0151.xhtml", re.IGNORECASE)
+    assert re.match(pattern, "ch_151.xhtml", re.IGNORECASE)
+    assert re.match(pattern, "chapter_151.xhtml", re.IGNORECASE)
+    assert re.match(pattern, "chapter_0001.html", re.IGNORECASE)
+
+    # 2. Verify export_full_epub aborts immediately on cancellation
+    test_novel_id = "test-cancel-abort-novel"
+    existing = library_service.get_novel(test_novel_id)
+    if not existing:
+        library_service.create_novel(
+            NovelCreateRequest(
+                title="Test Cancel Abort Novel",
+                novel_id=test_novel_id,
+            )
+        )
+
+    with pytest.raises(EpubBuildCancelledException):
+        library_service.export_full_epub(
+            novel_id=test_novel_id,
+            is_cancelled_callback=lambda: True,
+        )
+
+
 

@@ -162,12 +162,14 @@ async def run_epub_build_consumer() -> None:
 
                         # Execute build in thread executor
                         loop = asyncio.get_running_loop()
+                        target_chs_str = ",".join(map(str, sorted(dirty_chapters))) if dirty_chapters else None
                         result = await loop.run_in_executor(
                             None,
                             lambda: library_service.export_service.build_and_publish_epub(
                                 novel_id=novel_id,
                                 force_rebuild=bool(is_structural or strategy == "full_rebuild"),
                                 dirty_chapters=dirty_chapters,
+                                target_chapters=target_chs_str,
                                 job_id=job_id,
                                 progress_callback=_make_progress_reporter(job_id),
                                 is_cancelled_callback=_make_cancel_checker(job_id),

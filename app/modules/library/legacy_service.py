@@ -1004,6 +1004,8 @@ class LegacyLibraryService:
         end_chapter: Optional[int] = None,
         target_chapters: Optional[str] = None,
         force_rebuild: bool = False,
+        progress_callback: Optional[Any] = None,
+        is_cancelled_callback: Optional[Any] = None,
     ) -> str:
         """Build one novel at a time to avoid concurrent output/storage races."""
         with self._get_novel_lock(novel_id):
@@ -1014,6 +1016,8 @@ class LegacyLibraryService:
                 end_chapter=end_chapter,
                 target_chapters=target_chapters,
                 force_rebuild=force_rebuild,
+                progress_callback=progress_callback,
+                is_cancelled_callback=is_cancelled_callback,
             )
     def _export_full_epub_unlocked(
         self,
@@ -1023,6 +1027,8 @@ class LegacyLibraryService:
         end_chapter: Optional[int] = None,
         target_chapters: Optional[str] = None,
         force_rebuild: bool = False,
+        progress_callback: Optional[Any] = None,
+        is_cancelled_callback: Optional[Any] = None,
     ) -> str:
         meta = self.get_novel(novel_id)
         if not meta:
@@ -1205,8 +1211,36 @@ class LegacyLibraryService:
         # Tải song song nội dung các chương qua Connection Pool, nhưng không tự
         # động tải/giải nén full.epub cho từng chương bị thiếu blob.
         from concurrent.futures import ThreadPoolExecutor
+        from threading import Lock
+
+        if is_cancelled_callback and is_cancelled_callback():
+            from app.modules.library.application.epub_export_service import EpubBuildCancelledException
+            raise EpubBuildCancelledException(f"Tiến trình biên dịch cho '{novel_id}' đã bị hủy.")
+
+        total_export = len(chapters_to_export)
+        processed_count = 0
+        prog_lock = Lock()
 
         def _fetch_chapter_text(ch):
+            nonlocal processed_count
+            if is_cancelled_callback and is_cancelled_callback():
+                from app.modules.library.application.epub_export_service import EpubBuildCancelledException
+                raise EpubBuildCancelledException(f"Tiến trình biên dịch cho '{novel_id}' đã bị hủy.")
+
+            with prog_lock:
+                processed_count += 1
+                curr = processed_count
+
+            if progress_callback:
+                pct = int((curr / max(1, total_export)) * 75)
+                progress_callback(
+                    f"Đang tải nội dung Chương {ch.chapter_index}: {ch.chapter_title}...",
+                    ch.chapter_index,
+                    curr,
+                    total_export,
+                    pct,
+                )
+
             translated = self.get_chapter_content(
                 novel_id,
                 ch.chapter_index,
@@ -1223,9 +1257,14 @@ class LegacyLibraryService:
                 allow_epub_self_heal=False,
             )
             return ch.chapter_index, original
+
         export_workers = max(1, min(4, len(chapters_to_export)))
         with ThreadPoolExecutor(max_workers=export_workers) as executor:
             chapter_texts = dict(executor.map(_fetch_chapter_text, chapters_to_export)) if chapters_to_export else {}
+
+        if is_cancelled_callback and is_cancelled_callback():
+            from app.modules.library.application.epub_export_service import EpubBuildCancelledException
+            raise EpubBuildCancelledException(f"Tiến trình biên dịch cho '{novel_id}' đã bị hủy.")
 
         missing_chapters = [
             ch.chapter_index for ch in chapters_to_export

@@ -67,10 +67,11 @@ class EpubExportService:
             target_indexes.update(novel.dirty_chapters)
 
         # Determine strategy
+        is_scoped_range = bool(target_indexes or dirty_chapters)
         use_fast_patch = bool(
             settings.epub_fast_patch_enabled
             and not force_rebuild
-            and not novel.is_structural_dirty
+            and (not novel.is_structural_dirty or is_scoped_range)
         )
 
         base_key = novel.current_epub_key or f"novels/{novel_id}/full.epub"
@@ -168,13 +169,19 @@ class EpubExportService:
         # Fallback to FULL_REBUILD if FAST_PATCH was not applicable or failed
         if not final_output_path or not os.path.exists(final_output_path):
             logger.info("Executing FULL_REBUILD for novel %s", novel_id)
+            effective_target_chapters = target_chapters
+            if not effective_target_chapters and target_indexes:
+                effective_target_chapters = ",".join(map(str, sorted(target_indexes)))
+
             final_output_path = self._legacy.export_full_epub(
                 novel_id,
                 force_rebuild=True,
-                target_chapters=target_chapters,
+                target_chapters=effective_target_chapters,
+                progress_callback=progress_callback,
+                is_cancelled_callback=is_cancelled_callback,
             )
             strategy = "full_rebuild"
-            patched_count = len(novel.chapters)
+            patched_count = len(target_indexes) if target_indexes else len(novel.chapters)
 
         if not final_output_path or not os.path.exists(final_output_path):
             raise RuntimeError(f"Failed to generate EPUB for novel '{novel_id}'")

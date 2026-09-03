@@ -117,7 +117,7 @@ QUY TẮC DỊCH:
 10. Khi tên gốc có 毛: nếu chỉ loài động vật thì hiểu là "mao/lông", không dịch thành "tóc". Mô tả như "bộ lông màu vàng" chỉ dùng khi nguyên văn đang mô tả hình dáng, không thay thế tên loài.
 11. Các biến thể bị cấm trong trường "forbidden_variants" của Book Bible không được xuất hiện trong bản dịch; nếu không chắc, giữ nguyên tên canonical.
 12. Output bản dịch tiếng Việt không được chứa bất kỳ chữ Hán/CJK nào; nếu một cụm xưng hô không có mapping, hãy dịch theo ngữ cảnh tiếng Việt tự nhiên thay vì giữ nguyên chữ gốc.
-13. Bảo toàn ngôi kể và sắc thái đại từ: trong lời người kể, không tự ý đổi “hắn”, “y”, “gã” thành “anh”, “chị”, “cô ấy” chỉ vì muốn câu tự nhiên hơn. Trong lời thoại, cũng không tự ý đổi “ngươi”, “ta”, “ngài”, “bổn tọa” thành “cậu”, “mình”, “anh”, “tôi” hoặc ngược lại. Chỉ dùng “anh/chị/cậu” khi ngữ cảnh hoặc Book Bible xác nhận quan hệ thân mật/lịch sự; không suy diễn từ một câu riêng lẻ.
+13. Bảo toàn ngôi kể và sắc thái đại từ: trong lời người kể, TUYỆT ĐỐI không đổi “hắn”, “y”, “gã” thành “anh”, “chị”, “cô ấy”. Trong đối thoại môn phái/tiên hiệp/cổ phong: TUYỆT ĐỐI KHÔNG dùng đại từ hiện đại/học đường như “chúng em”, “bọn em”, “tụi em”, “anh em”. Đệ tử vai dưới (sư đệ, sư muội) nói với sư huynh/sư tỷ bắt buộc xưng “đệ/muội”, “chúng đệ/bọn đệ”, “chúng muội/bọn muội”, gọi đối phương là “huynh/tỷ”. Tập thể chiến hữu/đồng môn gọi là “huynh đệ”, không dùng “anh em”. Chỉ dùng “anh/chị/em” khi Book Bible chỉ định cụ thể hoặc trong bối cảnh đô thị hiện đại.
 
 <book_bible>
 {book_bible_json}

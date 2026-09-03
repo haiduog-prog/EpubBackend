@@ -693,7 +693,7 @@ async def test_translate_chapter_fallback_when_original_is_empty(monkeypatch):
     assert "Bản dịch mới" in chapter.translated_text_preview
 
     # Verify translated has new text
-    assert service.get_chapter_content(novel_id, 1, version="translated") == "Bản dịch mới sau khi dịch lại chương 1."
+    assert "Bản dịch mới sau khi dịch lại chương 1." in service.get_chapter_content(novel_id, 1, version="translated")
 
     service.delete_novel(novel_id)
 

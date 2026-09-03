@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import inspect
+import logging
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger("EpubBackend.SemanticReview")
 
 from app.config import settings
 from app.modules.shared.ports import LLMClient
@@ -84,12 +87,40 @@ class SemanticReviewService:
                 model=reviewer_model,
             )
         except Exception as exc:
-            return SemanticReviewResult(
-                translated_text=translated_text,
-                issues=[],
-                status="needs_review",
-                error=str(exc)[:500],
-            )
+            exc_str = str(exc)
+            if any(k in exc_str.lower() for k in ["quota", "rate limit", "429", "resource_exhausted"]):
+                # Thử fallback sang gemini-flash-latest nếu reviewer_model trước đó là model khác (như pro)
+                if reviewer_model != "gemini-flash-latest":
+                    try:
+                        report = await reviewer(
+                            source_text=source_text,
+                            translated_text=translated_text,
+                            book_bible=book_bible,
+                            model="gemini-flash-latest",
+                        )
+                    except Exception as fallback_exc:
+                        logger.warning("Semantic review fallback sang flash cũng hết quota: %s", fallback_exc)
+                        return SemanticReviewResult(
+                            translated_text=translated_text,
+                            issues=[],
+                            status="skipped",
+                            error=None,
+                        )
+                else:
+                    logger.warning("Semantic review gặp giới hạn quota, bỏ qua review tự động: %s", exc)
+                    return SemanticReviewResult(
+                        translated_text=translated_text,
+                        issues=[],
+                        status="skipped",
+                        error=None,
+                    )
+            else:
+                return SemanticReviewResult(
+                    translated_text=translated_text,
+                    issues=[],
+                    status="needs_review",
+                    error=exc_str[:500],
+                )
 
         patches = list(report.issues or [])
         if len(patches) > settings.gemini_review_max_issues:

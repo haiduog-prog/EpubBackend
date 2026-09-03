@@ -7,6 +7,7 @@ from app.schemas.book_bible import (
     BookBible,
     BookBibleDelta,
     CharacterEntry,
+    PendingBibleChange,
     PlaceEntry,
     TermEntry,
 )
@@ -65,7 +66,7 @@ class LegacyBookBibleService:
                     )
                 )
                 existing_ids.add(observation_id)
-        bible.schema_version = max(bible.schema_version, 2)
+        bible.schema_version = max(bible.schema_version, 3)
         return bible
 
     @staticmethod
@@ -75,6 +76,12 @@ class LegacyBookBibleService:
         chapter_index: Optional[int] = None,
     ) -> BookBible:
         BookBibleService.ensure_timeline(bible)
+        source_profile = getattr(delta, "source_profile", None) or getattr(bible, "source_profile", None)
+        is_post_edit = bool(
+            source_profile is not None
+            and getattr(source_profile, "mode", None) == "post_edit"
+        )
+
         char_map: Dict[str, CharacterEntry] = {
             BookBibleService._key(c.original_name): c for c in bible.characters
         }
@@ -98,17 +105,48 @@ class LegacyBookBibleService:
             vi_key = BookBibleService._key(new_char.vi_name)
             existing = char_map.get(name_key) or alias_map.get(name_key) or vi_map.get(vi_key)
             if existing:
-                if (
-                    _is_cjk(new_char.original_name)
-                    and not _is_cjk(existing.original_name)
-                ):
-                    if existing.original_name not in existing.aliases:
-                        existing.aliases.append(existing.original_name)
-                    existing.original_name = new_char.original_name
+                # Do not accept invented CJK without evidence in post_edit mode
+                if _is_cjk(new_char.original_name) and not _is_cjk(existing.original_name):
+                    if not is_post_edit:
+                        if existing.original_name not in existing.aliases:
+                            existing.aliases.append(existing.original_name)
+                        existing.original_name = new_char.original_name
+
                 if new_char.vi_name and not existing.vi_name:
                     existing.vi_name = new_char.vi_name
+                elif (
+                    new_char.vi_name
+                    and existing.vi_name
+                    and BookBibleService._key(new_char.vi_name)
+                    != BookBibleService._key(existing.vi_name)
+                ):
+                    if existing.locked:
+                        if new_char.vi_name not in existing.forbidden_variants:
+                            existing.forbidden_variants.append(new_char.vi_name)
+                        change_id = f"change-char-{BookBibleService._key(existing.original_name)}-{chapter_index or 0}"
+                        if not any(c.change_id == change_id for c in bible.pending_changes):
+                            bible.pending_changes.append(
+                                PendingBibleChange(
+                                    change_id=change_id,
+                                    change_type="canonical_correction",
+                                    target_id=existing.character_id or existing.original_name,
+                                    old_value=existing.vi_name,
+                                    proposed_value=new_char.vi_name,
+                                    evidence=f"Chương {chapter_index or 0}",
+                                    confidence=0.8,
+                                    chapter_index=chapter_index,
+                                    status="pending",
+                                )
+                            )
+                    else:
+                        # Character canonical vi_name is preserved, alternative name added to aliases
+                        if new_char.vi_name not in existing.aliases:
+                            existing.aliases.append(new_char.vi_name)
+
                 if new_char.role and not existing.role:
                     existing.role = new_char.role
+                if getattr(new_char, "narrative_term", "") and not getattr(existing, "narrative_term", ""):
+                    existing.narrative_term = new_char.narrative_term
                 if new_char.voice_notes:
                     if existing.voice_notes and new_char.voice_notes not in existing.voice_notes:
                         existing.voice_notes = f"{existing.voice_notes}; {new_char.voice_notes}"
@@ -123,13 +161,21 @@ class LegacyBookBibleService:
                         existing.aliases.append(alias)
                     if alias:
                         alias_map[BookBibleService._key(alias)] = existing
+                for variant in getattr(new_char, "forbidden_variants", []) or []:
+                    if variant and variant not in existing.forbidden_variants:
+                        existing.forbidden_variants.append(variant)
                 if new_char.vi_name:
                     vi_map[BookBibleService._key(new_char.vi_name)] = existing
                 for address_term in valid_address_terms:
                     if address_term not in existing.address_terms:
                         existing.address_terms.append(address_term)
             else:
+                if is_post_edit and _is_cjk(new_char.original_name):
+                    if not (getattr(new_char, "evidence", "") and _is_cjk(new_char.evidence)):
+                        new_char.original_name = new_char.vi_name or new_char.original_name
+                name_key = BookBibleService._key(new_char.original_name)
                 new_char_to_add = new_char.model_copy(deep=True)
+                new_char_to_add.original_name = new_char.original_name
                 new_char_to_add.address_terms = valid_address_terms
                 new_char_to_add.character_id = new_char_to_add.character_id or BookBibleService.character_id(
                     bible.novel_id, new_char.original_name
@@ -168,7 +214,8 @@ class LegacyBookBibleService:
             existing = place_map.get(name_key) or place_vi_map.get(vi_key)
             if existing:
                 if _is_cjk(new_place.original_name) and not _is_cjk(existing.original_name):
-                    existing.original_name = new_place.original_name
+                    if not is_post_edit:
+                        existing.original_name = new_place.original_name
                 if new_place.vi_name and not existing.vi_name:
                     existing.vi_name = new_place.vi_name
                 if new_place.notes:
@@ -205,8 +252,14 @@ class LegacyBookBibleService:
             vi_key = BookBibleService._key(new_term.vi_name)
             existing = term_map.get(name_key) or term_alias_map.get(name_key) or term_vi_map.get(vi_key)
             if existing:
+                # Do not accept invented CJK without evidence in post_edit mode
                 if _is_cjk(new_term.original_name) and not _is_cjk(existing.original_name):
-                    existing.original_name = new_term.original_name
+                    if is_post_edit:
+                        if getattr(new_term, "evidence", "") and _is_cjk(new_term.evidence):
+                            existing.original_name = new_term.original_name
+                    else:
+                        existing.original_name = new_term.original_name
+
                 if new_term.vi_name and not existing.vi_name:
                     existing.vi_name = new_term.vi_name
                 elif (
@@ -218,10 +271,27 @@ class LegacyBookBibleService:
                     if existing.locked:
                         if new_term.vi_name not in existing.forbidden_variants:
                             existing.forbidden_variants.append(new_term.vi_name)
+                        change_id = f"change-term-{BookBibleService._key(existing.original_name)}-{chapter_index or 0}"
+                        if not any(c.change_id == change_id for c in bible.pending_changes):
+                            bible.pending_changes.append(
+                                PendingBibleChange(
+                                    change_id=change_id,
+                                    change_type="canonical_correction",
+                                    target_id=existing.original_name,
+                                    old_value=existing.vi_name,
+                                    proposed_value=new_term.vi_name,
+                                    evidence=getattr(new_term, "evidence", "") or f"Chương {chapter_index or 0}",
+                                    confidence=getattr(new_term, "confidence", 0.8),
+                                    chapter_index=chapter_index,
+                                    status="pending",
+                                )
+                            )
                     else:
-                        if existing.vi_name not in existing.aliases:
-                            existing.aliases.append(existing.vi_name)
+                        old_name = existing.vi_name
+                        if old_name and old_name not in existing.aliases:
+                            existing.aliases.append(old_name)
                         existing.vi_name = new_term.vi_name
+
                 for alias in new_term.aliases:
                     if alias and alias not in existing.aliases:
                         existing.aliases.append(alias)
@@ -232,6 +302,16 @@ class LegacyBookBibleService:
                         existing.forbidden_variants.append(variant)
                 if new_term.category and not existing.category:
                     existing.category = new_term.category
+                if getattr(new_term, "family", "") and not getattr(existing, "family", ""):
+                    existing.family = new_term.family
+                if getattr(new_term, "rank_order", None) is not None and getattr(existing, "rank_order", None) is None:
+                    existing.rank_order = new_term.rank_order
+                if getattr(new_term, "evidence", ""):
+                    existing.evidence = (
+                        f"{existing.evidence}; {new_term.evidence}"
+                        if getattr(existing, "evidence", "")
+                        else new_term.evidence
+                    )
                 if new_term.notes:
                     if existing.notes and new_term.notes not in existing.notes:
                         existing.notes = f"{existing.notes}; {new_term.notes}"
@@ -240,6 +320,10 @@ class LegacyBookBibleService:
                 if new_term.vi_name:
                     term_vi_map[BookBibleService._key(new_term.vi_name)] = existing
             else:
+                if is_post_edit and _is_cjk(new_term.original_name):
+                    if not (getattr(new_term, "evidence", "") and _is_cjk(new_term.evidence)):
+                        new_term.original_name = new_term.vi_name or new_term.original_name
+                name_key = BookBibleService._key(new_term.original_name)
                 term_map[name_key] = new_term
                 bible.terms.append(new_term)
                 for alias in new_term.aliases:
@@ -255,6 +339,13 @@ class LegacyBookBibleService:
                 bible.style_guide.tone = delta.style_guide.tone
             if delta.style_guide.era_setting and not bible.style_guide.era_setting:
                 bible.style_guide.era_setting = delta.style_guide.era_setting
+            if delta.style_guide.pronoun_policy and not bible.style_guide.pronoun_policy:
+                bible.style_guide.pronoun_policy = delta.style_guide.pronoun_policy
+        if delta.source_profile and getattr(bible, "source_profile", None):
+            if delta.source_profile.mode:
+                bible.source_profile.mode = delta.source_profile.mode
+            if delta.source_profile.language:
+                bible.source_profile.language = delta.source_profile.language
         return BookBibleService.ensure_timeline(bible)
 
     @staticmethod
@@ -309,6 +400,8 @@ class LegacyBookBibleService:
             novel_id=bible.novel_id,
             schema_version=bible.schema_version,
             bible_revision=bible.bible_revision,
+            source_profile=getattr(bible, "source_profile", None) or getattr(bible, "source_profile", None),
+            scan_state=getattr(bible, "scan_state", {}) or {},
             characters=filtered_chars,
             places=filtered_places,
             terms=filtered_terms,
@@ -318,10 +411,6 @@ class LegacyBookBibleService:
 
     @staticmethod
     def detect_novel_id(text: str, bibles: Dict[str, BookBible]) -> Optional[str]:
-        """
-        Quét văn bản để tự động khớp với các bộ truyện (Book Bible) đã có trong Database.
-        Trả về novel_id của bộ truyện có số lượng nhân vật/địa danh xuất hiện nhiều nhất.
-        """
         text_key = BookBibleService._key(text)
         best_novel_id = None
         max_score = 0
@@ -349,6 +438,3 @@ class LegacyBookBibleService:
 
 # Internal compatibility alias while callers migrate to the bounded context.
 BookBibleService = LegacyBookBibleService
-
-
-

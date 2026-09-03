@@ -1,0 +1,136 @@
+{
+  "cases": [
+    {
+      "id": "ERR_HALLUCINATED_WITCH",
+      "name": "phi_hanh_thuat_to_witch",
+      "category": "semantic_corruption",
+      "expected_issue_codes": ["SEMANTIC_MISTRANSLATION", "TERM_CANONICAL_MISSING"],
+      "chapter_index": 121,
+      "source_text": "Đỗ Phong thi triển phi hành thuật, lướt nhanh trên không trung về phía dãy núi tuyết.",
+      "bad_translation": "Đỗ Phong thi triển phù thủy, lướt nhanh trên không trung về phía dãy núi tuyết.",
+      "clean_translation": "Đỗ Phong thi triển Phi Hành Thuật, lướt nhanh trên không trung về phía dãy núi tuyết.",
+      "locked_terms": [
+        {
+          "original_name": "phi hành thuật",
+          "vi_name": "Phi Hành Thuật",
+          "category": "skill",
+          "forbidden_variants": ["phù thủy", "thuật phù thủy"],
+          "locked": true
+        }
+      ]
+    },
+    {
+      "id": "ERR_CHARACTER_ENTITY_CORRUPTION",
+      "name": "moc_linh_to_moc_canh_nam",
+      "category": "character_corruption",
+      "expected_issue_codes": ["ENTITY_CORRUPTION", "FORBIDDEN_VARIANT"],
+      "chapter_index": 122,
+      "source_text": "Mộc Linh nhìn Đỗ Phong, khẽ mỉm cười nói: 'Đỗ huynh, đã lâu không gặp.'",
+      "bad_translation": "Mộc Cảnh Nam nhìn Đỗ Phong, khẽ mỉm cười nói: 'Đỗ huynh, đã lâu không gặp.'",
+      "clean_translation": "Mộc Linh nhìn Đỗ Phong, khẽ mỉm cười nói: 'Đỗ huynh, đã lâu không gặp.'",
+      "characters": [
+        {
+          "original_name": "Mộc Linh",
+          "vi_name": "Mộc Linh",
+          "role": "minh hữu",
+          "aliases": [],
+          "forbidden_variants": ["Mộc Cảnh Nam"]
+        }
+      ]
+    },
+    {
+      "id": "ERR_REALM_FAMILY_DRIFT",
+      "name": "khi_vo_to_tu_vo",
+      "category": "realm_drift",
+      "expected_issue_codes": ["REALM_CANONICAL_DRIFT", "FORBIDDEN_VARIANT"],
+      "chapter_index": 123,
+      "source_text": "Đối phương bất quá chỉ là Khí Võ Cảnh tầng chín, còn lâu mới đột phá tới Ngưng Võ Cảnh.",
+      "bad_translation": "Đối phương bất quá chỉ là Tụ Võ Cảnh tầng chín, còn lâu mới đột phá tới Ngưng Võ Cảnh.",
+      "clean_translation": "Đối phương bất quá chỉ là Khí Võ Cảnh tầng chín, còn lâu mới đột phá tới Ngưng Võ Cảnh.",
+      "locked_terms": [
+        {
+          "original_name": "Khí Võ Cảnh",
+          "vi_name": "Khí Võ Cảnh",
+          "category": "realm",
+          "family": "cultivation_realm",
+          "rank_order": 1,
+          "forbidden_variants": ["Tụ Võ Cảnh"],
+          "locked": true
+        },
+        {
+          "original_name": "Ngưng Võ Cảnh",
+          "vi_name": "Ngưng Võ Cảnh",
+          "category": "realm",
+          "family": "cultivation_realm",
+          "rank_order": 2,
+          "locked": true
+        }
+      ]
+    },
+    {
+      "id": "ERR_PRONOUN_MODERN_DRIFT",
+      "name": "huynh_muoi_to_anh_em",
+      "category": "pronoun_drift",
+      "expected_issue_codes": ["PRONOUN_MODERN_DRIFT"],
+      "chapter_index": 124,
+      "source_text": "Mộc Linh dịu dàng nói: 'Đỗ ca ca, huynh đi trước đi, muội sẽ theo sau.'",
+      "bad_translation": "Mộc Linh dịu dàng nói: 'Anh Đỗ ơi, anh đi trước đi, em sẽ theo sau.'",
+      "clean_translation": "Mộc Linh dịu dàng nói: 'Đỗ ca ca, huynh đi trước đi, muội sẽ theo sau.'",
+      "style_guide": {
+        "era_setting": "cổ phong tiên hiệp",
+        "pronoun_policy": "huynh_muoi"
+      }
+    },
+    {
+      "id": "ERR_FOREIGN_HYBRID_TOKEN",
+      "name": "cuu_transfer",
+      "category": "foreign_token",
+      "expected_issue_codes": ["UNALLOWED_FOREIGN_TOKEN"],
+      "chapter_index": 125,
+      "source_text": "Hắn vừa thi triển Cửu Chuyển Huyền Công, thân thể liền phát ra hào quang rực rỡ.",
+      "bad_translation": "Hắn vừa thi triển Cửu Transfer Huyền Công, thân thể liền phát ra hào quang rực rỡ.",
+      "clean_translation": "Hắn vừa thi triển Cửu Chuyển Huyền Công, thân thể liền phát ra hào quang rực rỡ."
+    },
+    {
+      "id": "ERR_NON_VIETNAMESE_UNICODE",
+      "name": "arabic_greek_unicode",
+      "category": "disallowed_unicode",
+      "expected_issue_codes": ["DISALLOWED_UNICODE_CHARS"],
+      "chapter_index": 126,
+      "source_text": "Tu vi của Đỗ Phong dâng trào, bao phủ cả bầu trời đêm.",
+      "bad_translation": "Tuوي vi của Đỗ Phong dâng trào, bao phủ cả bầuσ trời đêm.",
+      "clean_translation": "Tu vi của Đỗ Phong dâng trào, bao phủ cả bầu trời đêm."
+    },
+    {
+      "id": "ERR_REPEATED_WORDS",
+      "name": "stutter_repeated_words",
+      "category": "repetition",
+      "expected_issue_codes": ["REPEATED_WORD_ERROR"],
+      "chapter_index": 127,
+      "source_text": "Đỗ Phong lao nhanh ra ngoài động, phóng thẳng lên đỉnh núi.",
+      "bad_translation": "Đỗ Phong lao nhanh ra ra ngoài động, phóng thẳng lên lên đỉnh núi.",
+      "clean_translation": "Đỗ Phong lao nhanh ra ngoài động, phóng thẳng lên đỉnh núi."
+    },
+    {
+      "id": "ERR_MISSING_CHAPTER_HEADER",
+      "name": "missing_chapter_title",
+      "category": "structural_error",
+      "expected_issue_codes": ["MISSING_CHAPTER_HEADER"],
+      "chapter_index": 128,
+      "chapter_title": "Chương 128: Quyết chiến hàn đàm",
+      "source_text": "Chương 128: Quyết chiến hàn đàm\n\nNước đầm lạnh thấu xương, Đỗ Phong rút trường kiếm ra khỏi vỏ.",
+      "bad_translation": "Nước đầm lạnh thấu xương, Đỗ Phong rút trường kiếm ra khỏi vỏ.",
+      "clean_translation": "Chương 128: Quyết chiến hàn đàm\n\nNước đầm lạnh thấu xương, Đỗ Phong rút trường kiếm ra khỏi vỏ."
+    },
+    {
+      "id": "ERR_SOURCE_WATERMARK_LEAKAGE",
+      "name": "source_watermark_leakage",
+      "category": "watermark_leakage",
+      "expected_issue_codes": ["WATERMARK_ARTIFACT"],
+      "chapter_index": 129,
+      "source_text": "Chương 129: Băng sương tuyết lang\n\nNguồn: read.st\n\nBầy tuyết lang gầm rống trong gió rét.\n\n------oOo------",
+      "bad_translation": "Chương 129: Băng sương tuyết lang\n\nNguồn: read.st\n\nBầy tuyết lang gầm rống trong gió rét.\n\n------oOo------",
+      "clean_translation": "Chương 129: Băng sương tuyết lang\n\nBầy tuyết lang gầm rống trong gió rét."
+    }
+  ]
+}

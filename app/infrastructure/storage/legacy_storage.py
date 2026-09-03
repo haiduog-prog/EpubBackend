@@ -1428,8 +1428,15 @@ class StorageRepository:
                         observation.resolution = "confirmed"
                 if change.change_type == "canonical_correction":
                     for character in bible.characters:
-                        if character.character_id == change.target_id:
+                        if character.character_id == change.target_id or character.original_name == change.target_id:
+                            if character.vi_name and character.vi_name not in character.aliases:
+                                character.aliases.append(character.vi_name)
                             character.vi_name = change.proposed_value
+                    for term in bible.terms:
+                        if term.original_name == change.target_id or getattr(term, "term_id", None) == change.target_id:
+                            if term.vi_name and term.vi_name not in getattr(term, "aliases", []):
+                                term.aliases.append(term.vi_name)
+                            term.vi_name = change.proposed_value
             bible.bible_revision += 1
             self.save_bible(novel_id, bible)
             return bible

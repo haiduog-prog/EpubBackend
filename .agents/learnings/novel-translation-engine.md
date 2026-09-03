@@ -1,11 +1,35 @@
 # Novel Translation Engine
 
 > Tổng hợp kiến thức về hệ thống dịch truyện thuần Việt (v2) hỗ trợ EPUB/HTML/TXT với Structured Outputs, Prompt Caching và Decoupled LLM Providers.
-> Cập nhật lần cuối: 2026-08-28
+> Cập nhật lần cuối: 2026-09-04
 
 ---
 
 ## Architecture
+
+### Actionable Draft Review System with 1-Click Fix Contract
+- **Ngày**: 2026-09-04
+- **Chi tiết**: Màn hình duyệt draft cung cấp thông tin chi tiết và khả năng sửa nhanh trực tiếp:
+  - API `GET /novels/{novel_id}/chapters/{chapter_index}/draft` trả về `ChapterDraftResponse` bao gồm `review_reason` cụ thể và danh sách `issues: List[ChapterDraftIssue]`. Mỗi issue xác định loại lỗi, đoạn văn/dòng xảy ra, cụm từ gốc bị lỗi (`found`) và cụm từ sửa gợi ý (`expected`).
+  - Phía backend tự động fallback sang phiên bản `translated` nếu draft đã được duyệt/áp dụng trước đó để tránh lỗi 404 do race condition hay state cũ từ client.
+- **Files liên quan**: `app/modules/library/schemas.py`, `app/modules/library/legacy_service.py`, `app/modules/library/api.py`, `app/static/index.html`
+
+### Graceful Quota Handling & Decoupled Semantic Review
+- **Ngày**: 2026-09-04
+- **Chi tiết**: Bước Semantic Review (chạy ngầm sau dịch bằng model phụ) không được chặn đứng luồng xuất bản của chương khi gặp lỗi hạn ngạch API (429 / RESOURCE_EXHAUSTED). Model review mặc định đổi sang `gemini-flash-latest` (thay vì Pro vốn có quota free tier bằng 0). Khi gặp lỗi quota, hệ thống tự động fallback sang model Flash hoặc ghi log cảnh báo và đánh dấu `status="skipped"`, bảo toàn kết quả dịch chính.
+- **Files liên quan**: `app/modules/translation/application/semantic_review_service.py`, `app/config.py`
+
+### Unified Canonical Merge Contract for Terms and Characters
+- **Ngày**: 2026-09-03
+- **Chi tiết**: Phân định rõ contract merge delta:
+  - **Thuật ngữ (Terms)**: Chưa khóa (`locked=False`) cho phép LLM nâng cấp cách dịch (`vi_name` cập nhật tên mới, tên cũ lưu vào `aliases`). Đã khóa (`locked=True`) từ chối sửa, đưa biến thể vào `forbidden_variants` và tạo `PendingBibleChange`.
+  - **Nhân vật (Characters)**: Canonical `vi_name` luôn được bảo toàn tuyệt đối khi đã định hình; tên mới từ LLM lưu vào `aliases` (chưa khóa) hoặc `forbidden_variants` + `pending_changes` (đã khóa).
+- **Files liên quan**: `app/modules/book_bible/legacy_service.py`, `tests/test_book_bible_canonical_merge.py`, `tests/test_translation_regression_fixes.py`
+
+### Quality Gate Certification Boundary in Storage Reconciliation & Review
+- **Ngày**: 2026-09-03
+- **Chi tiết**: Reconcile script và standalone review không được tự động xuất bản hoặc đánh dấu `COMPLETED` chỉ dựa trên dung lượng file (>50 bytes). Bản dịch bắt buộc phải có bản gốc thật sự (tránh fallback tự so sánh với chính nó), không tồn đọng file draft, và phải vượt qua kiểm tra `QAService.fast_rule_check == 0`. Nếu có lỗi hoặc còn draft, trạng thái giữ nguyên là `NEEDS_REVIEW`.
+- **Files liên quan**: `scripts/reconcile_storage_chapters.py`, `app/modules/library/legacy_service.py`, `tests/test_quality_gate_draft_isolation.py`
 
 ### Fast Timeout & Global Circuit Breaker for LLM Fallbacks
 - **Ngày**: 2026-08-25
@@ -130,6 +154,27 @@
 - **Files liên quan**: `app/modules/library/api.py`, `app/modules/library/legacy_service.py`, `app/static/index.html`
 
 ## Bugs & Solutions
+
+### Pronoun Drift in Cultivation Dialogue ("chúng em / bọn em / anh em")
+- **Ngày**: 2026-09-04
+- **Vấn đề**: LLM thỉnh thoảng dịch lời xưng hô của các đệ tử môn phái xưng hô với sư huynh/sư tỷ thành "chúng em", "bọn em", "tụi em", "anh em", làm mất không khí tiên hiệp/cổ phong.
+- **Root cause**: Quy tắc 13 trong prompt dịch trước đây cho phép dùng "anh/em" cho quan hệ lịch sự nhưng thiếu quy tắc phủ định nghiêm ngặt (negative constraint) đối với quan hệ đồng môn, sư huynh đệ.
+- **Fix**: Cập nhật Rule 13 trong `PROMPT_2_TRANSLATE_CHUNK_SYSTEM` cấm triệt để "chúng em/bọn em/tụi em/anh em" trong ngữ cảnh môn phái cổ phong; bắt buộc dùng "đệ/muội", "chúng đệ/bọn đệ", "huynh đệ".
+- **Files liên quan**: `app/prompts/templates.py`, `app/modules/translation/application/qa_service.py`
+
+### Stale Draft 404 & loadNovelDetail ReferenceError in Review Modal
+- **Ngày**: 2026-09-04
+- **Vấn đề**: Khi mở modal duyệt draft trên một chương vừa được promote hoặc áp dụng từ CLI, hệ thống báo lỗi 404 "Bản draft cần duyệt không tồn tại" hoặc `loadNovelDetail is not defined`.
+- **Root cause**: Trình duyệt giữ state cũ nên nút "Duyệt draft" vẫn hiển thị trong khi file draft trên đĩa đã được xóa và chuyển thành bản dịch chính thức (`translated/ch_*.txt`). Phía client gọi nhầm hàm `loadNovelDetail` (tên đúng là `openNovelDetail`).
+- **Fix**: Backend tự động fallback nạp nội dung từ `translated` với trạng thái `completed`; Frontend sửa thành `openNovelDetail(novelId, true)` an toàn trong khối try/catch và hiển thị thông báo toast thân thiện.
+- **Files liên quan**: `app/modules/library/legacy_service.py`, `app/static/index.html`
+
+### Orphaned Test Storage Clutter Accumulation in storage/novels
+- **Ngày**: 2026-09-04
+- **Vấn đề**: Thư mục `storage/novels/` tích tụ 84 thư mục test rác (`bulk-del-test-*`, `case-mismatch-*`) hiển thị trên giao diện người dùng.
+- **Root cause**: Fixture `cleanup_test_storage_after_success` trong `tests/conftest.py` cố tình không dọn dẹp khi có testcase bị fail (để phục vụ debug). Ở các phiên test sau, snapshot ban đầu coi các folder này là dữ liệu có sẵn nên không xóa. Ngoài ra, `delete_novel` cũ chỉ xóa file cloud mà không xóa đệ quy thư mục local.
+- **Fix**: Cập nhật `delete_novel` luôn xóa sạch thư mục local của truyện; dọn dẹp triệt để 84 thư mục test rác trong storage và 14 bản ghi test trong sqlite DB.
+- **Files liên quan**: `app/modules/library/legacy_service.py`, `tests/conftest.py`
 
 ### Translation Review Status Is Intentional
 - **Ngày**: 2026-09-03
@@ -301,6 +346,41 @@ esponse_schema vào 	ypes.GenerateContentConfig, bổ sung regex dọn dẹp tra
 - **Fix**: Term chưa khóa được cập nhật canonical và lưu tên cũ làm alias; chỉ term đã khóa mới cấm đề xuất mới.
 - **Files liên quan**: `app/modules/book_bible/legacy_service.py`, `app/modules/book_bible/schemas.py`
 
+### DOM XSS via Inline JavaScript Handlers in Book Bible UI
+- **Ngày**: 2026-09-03
+- **Vấn đề**: Các nút thao tác khóa/mở khóa và duyệt thay đổi chèn chuỗi trực tiếp vào `onclick="func('${escapeHtml(val)}')"` gây lỗi cú pháp hoặc lỗ hổng DOM XSS khi tên/ID chứa dấu nháy đơn `'`.
+- **Root cause**: `escapeHtml` chỉ mã hóa HTML entities (`&`, `<`, `>`, `"`), không an toàn trong JavaScript string literal context.
+- **Fix**: Sử dụng HTML5 data attributes: `data-name="${encodeURIComponent(name)}"` và gọi qua helper function `decodeURIComponent(btn.dataset.name)`.
+- **Files liên quan**: `app/static/index.html`
+
+### Field Erasure in Book Bible Upsert & Style Guide APIs
+- **Ngày**: 2026-09-03
+- **Vấn đề**: Gọi PUT cập nhật Term, Character hoặc Style Guide làm mất các trường dữ liệu phụ (`aliases`, `address_terms`, `narrative_term`, `custom_rules`, `preserve_structure`). UI còn bị gán nhầm `era_setting = tone`.
+- **Root cause**: Endpoint thay thế toàn bộ object bằng payload mới thay vì merge field; schema thiếu `forbidden_regex` và `encoding`.
+- **Fix**: Thêm `forbidden_regex` vào `StyleGuide`, `encoding` vào `SourceProfile`. Thực hiện field-by-field merge (`model_dump(exclude_unset=True)`). Tách riêng input `bible-era-setting` trên UI.
+- **Files liên quan**: `app/modules/book_bible/api.py`, `app/modules/book_bible/schemas.py`, `app/static/index.html`, `tests/test_book_bible_api.py`
+
+### Unverified CJK Entity Hallucination in Post-Edit Mode
+- **Ngày**: 2026-09-03
+- **Vấn đề**: Ở chế độ hậu biên tập (post_edit từ nguồn convert thô tiếng Việt), LLM tự bịa chữ Hán CJK vào `original_name` của nhân vật/thuật ngữ mới.
+- **Root cause**: `is_post_edit` chỉ đọc từ Bible hiện tại mà bỏ qua `delta.source_profile`; nhánh thêm entity mới không kiểm tra evidence chữ Hán.
+- **Fix**: Đọc `is_post_edit` từ cả delta và bible; nếu phát hiện entity mới có `original_name` CJK mà không có bằng chứng CJK trong `evidence`, tự động gán `original_name = vi_name`.
+- **Files liên quan**: `app/modules/book_bible/legacy_service.py`
+
+### Ancient Pronoun Policy False Positives on Vietnamese Names and Compounds
+- **Ngày**: 2026-09-03
+- **Vấn đề**: Bộ lọc Quality Gate bắt xưng hô hiện đại `\b(anh|em)\b` báo lỗi sai trên tên riêng nhân vật (`Lý Anh`, `Quy Anh`), từ ghép tiếng Việt (`anh danh`, `anh hùng`, `anh dũng`), và từ chỉ quan hệ huyết thống (`anh ruột`, `em gái`).
+- **Root cause**: Regex kiểm tra từ đơn giản chỉ dùng word boundary mà không loại trừ các ngữ cảnh danh từ ghép và tiền tố họ tiếng Việt.
+- **Fix**: Dùng `re.finditer` duyệt từng từ `anh/em`, bỏ qua nếu sau nó là các từ ghép (`ruột|họ|danh|hùng|dũng|tuấn|minh|kiệt|linh|đào|gái|trai`) hoặc trước nó là các họ phổ biến (`Lý|Trần|Nguyễn|Lê|Phạm...`).
+- **Files liên quan**: `app/modules/translation/application/qa_service.py`, `tests/test_translation_quality_regressions.py`
+
+### Cross-Character Conflict in Seeded Forbidden Variants
+- **Ngày**: 2026-09-03
+- **Vấn đề**: Cả hai nhân vật hợp lệ cùng xuất hiện trong một cảnh (ví dụ: `Mộc Linh` và `Mộc Cảnh Nam` trong chương 127) đều bị QA đánh lỗi "biến thể không hợp lệ của nhau".
+- **Root cause**: Seed data cấu hình chéo `forbidden_variants` của `Mộc Linh` là `["Mộc Cảnh Nam"]` và ngược lại. Ngoài ra term forbidden check kiểm tra toàn cục kể cả khi term không xuất hiện trong chương gốc.
+- **Fix**: Xóa forbidden_variants chéo giữa các nhân vật độc lập có thật; chỉ kích hoạt kiểm tra `term.forbidden_variants` khi term xuất hiện trong nguyên tác chương.
+- **Files liên quan**: `scripts/backfill_book_bible.py`, `app/modules/translation/application/qa_service.py`
+
 ### Nullable Reader Timestamp
 - **Ngày**: 2026-08-27
 - **Vấn đề**: `updated_at=None` gây `ValidationError` trong Reader.
@@ -308,6 +388,17 @@ esponse_schema vào 	ypes.GenerateContentConfig, bổ sung regex dọn dẹp tra
 - **Files liên quan**: `app/modules/reader/schemas.py`
 
 ## How-To
+
+### Vá và Chuẩn Hóa Tự Động Các Chương Dịch Cũ Bị Lỗi
+- **Ngày**: 2026-09-03
+- **Bước thực hiện**:
+  1. Chạy lệnh xem trước đối soát:
+     `python scripts/repair_translated_chapters.py --novel-id [novel_id] --start [A] --end [B] --dry-run`
+  2. Kiểm tra bảng báo cáo QA: tỷ lệ chương sạch, các lỗi watermark/tiêu đề/thuật ngữ được tự động sửa.
+  3. Áp dụng thay đổi chính thức và đồng bộ Database:
+     `python scripts/repair_translated_chapters.py --novel-id [novel_id] --start [A] --end [B] --apply`
+  4. Script sẽ ghi đè file dịch chuẩn, dọn dẹp các file draft tồn đọng và cập nhật trạng thái `COMPLETED` trong database mà không tốn token LLM.
+- **Files liên quan**: `scripts/repair_translated_chapters.py`
 
 ### Xem Thống Kê Entity Khi Duyệt Chương
 - **Ngày**: 2026-09-03
@@ -446,6 +537,16 @@ esponse_schema vào 	ypes.GenerateContentConfig, bổ sung regex dọn dẹp tra
 - **Files liên quan**: `scripts/repair_cjk_address_terms.py`, `app/infrastructure/storage/legacy_storage.py`, `app/infrastructure/cache/direct_translation.py`
 
 ## Patterns
+
+### One-Click Draft Fix Application Pattern
+- **Ngày**: 2026-09-04
+- **Chi tiết**: Trong modal duyệt draft, các vấn đề QA (từ xưng hô sai, thiếu tiền tố tiêu đề, watermark còn sót, thuật ngữ sai) được hiển thị dạng thẻ tương tác có nút "⚡ Áp dụng" cho từng lỗi và "⚡ Áp dụng tất cả gợi ý". Khi click, script JavaScript tìm và thay thế chuỗi trực tiếp trong `textarea` của bản dịch mới, đồng thời tự động phát sự kiện `newTextarea.dispatchEvent(new Event('input'))` để cập nhật lại bộ đếm từ và đồng bộ trực tiếp diff view.
+- **Files liên quan**: `app/static/index.html`
+
+### Two-Pass Chapter Recovery Pattern (Deterministic Repair before LLM Intervention)
+- **Ngày**: 2026-09-03
+- **Chi tiết**: Khi đối soát dải chương cũ bị lỗi chất lượng (watermark, mất tiêu đề, trôi thuật ngữ, xưng hô), không vội vàng gọi LLM dịch lại toàn bộ. Áp dụng Pass 1: chạy pipeline vá tất định bằng regex (`clean_raw_text`, `reattach_chapter_title`, Book Bible term replacement). Chỉ những chương nào sau Pass 1 vẫn không đạt Quality Gate mới đưa vào Pass 2 (Targeted Semantic Patching / LLM Review) để sửa cục bộ. Giúp cứu 80-100% số chương với chi phí 0 token.
+- **Files liên quan**: `scripts/repair_translated_chapters.py`, `app/parsers/text_sanitizer.py`, `app/modules/translation/application/qa_service.py`
 
 ### Read-only Chapter Statistics Endpoint
 - **Ngày**: 2026-09-03

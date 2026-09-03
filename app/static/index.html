@@ -786,6 +786,50 @@
             font-size: 0.72rem;
         }
         .chapter-extraction-error { color: #fbbf24; }
+        .chapter-draft-banner {
+            background: linear-gradient(135deg, rgba(30, 27, 20, 0.95), rgba(15, 23, 42, 0.88));
+            border: 1px solid rgba(245, 158, 11, 0.35);
+            border-left: 4px solid var(--warning);
+            border-radius: 12px;
+            padding: 0.85rem 1rem;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.25);
+            margin-bottom: 0.65rem;
+        }
+        .chapter-draft-banner-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+        }
+        .chapter-draft-issues-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            margin-top: 0.65rem;
+        }
+        .chapter-draft-issue-card {
+            background: rgba(2, 6, 23, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+            padding: 0.65rem 0.85rem;
+            transition: border-color 0.2s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .chapter-draft-issue-card:hover {
+            border-color: rgba(245, 158, 11, 0.4);
+            transform: translateY(-1px);
+        }
+        .chapter-draft-loc {
+            font-size: 0.78rem;
+            color: var(--text-sub);
+            font-family: monospace;
+            background: rgba(15, 23, 42, 0.7);
+            padding: 0.3rem 0.6rem;
+            border-radius: 6px;
+            margin-top: 0.3rem;
+            border-left: 3px solid #64748b;
+            word-break: break-word;
+        }
         .retranslate-mobile-tabs {
             display: none;
             gap: 0.5rem;
@@ -1519,6 +1563,9 @@
                                 <i class="fa-solid fa-arrows-rotate"></i> Biên Dịch Lại
                             </button>
                         </div>
+                        <button class="btn btn-secondary" id="btn-open-book-bible" onclick="openBookBibleEditor(currentNovelId)" style="padding:0.4rem 0.8rem; font-size:0.8rem; border-color:rgba(168,85,247,0.4); background:rgba(168,85,247,0.2); color:#d8b4fe;" title="Quản lý thuật ngữ, nhân vật, và sao lưu Book Bible">
+                            <i class="fa-solid fa-book-bookmark"></i> Book Bible
+                        </button>
                         <button class="btn btn-danger" id="btn-delete-novel-detail" onclick="deleteCurrentOpenNovel()" style="padding:0.4rem 0.8rem; font-size:0.8rem;" title="Xóa toàn bộ bộ truyện này khỏi Database và Storage">
                             <i class="fa-solid fa-trash"></i> Xóa Truyện
                         </button>
@@ -1658,6 +1705,143 @@
             </div>
         </div>
 
+        <!-- MODAL: BOOK BIBLE EDITOR & BACKUP -->
+        <div id="modal-book-bible-editor" class="modal">
+            <div class="modal-content" style="max-width:1150px; width:95vw; max-height:92vh; padding:1.5rem; gap:1rem;">
+                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--card-border); padding-bottom:0.85rem;">
+                    <div style="display:flex; align-items:center; gap:0.75rem;">
+                        <div style="width:38px; height:38px; border-radius:10px; background:rgba(168,85,247,0.2); border:1px solid rgba(168,85,247,0.4); display:flex; align-items:center; justify-content:center;">
+                            <i class="fa-solid fa-book-bookmark" style="color:#d8b4fe; font-size:1.2rem;"></i>
+                        </div>
+                        <div>
+                            <h3 style="font-size:1.15rem; font-weight:700; color:#fff; margin:0;">Book Bible & Canonical Storage</h3>
+                            <span id="bible-editor-subtitle" style="font-size:0.78rem; color:var(--text-sub);">Revision: 0 | Schema: v3</span>
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:0.5rem; align-items:center;">
+                        <button class="btn btn-secondary" onclick="exportBookBibleJson(currentBibleEditorNovelId)" style="padding:0.4rem 0.8rem; font-size:0.8rem; background:rgba(16,185,129,0.15); border-color:rgba(16,185,129,0.4); color:#6ee7b7;">
+                            <i class="fa-solid fa-download"></i> 📥 Tải JSON
+                        </button>
+                        <input type="file" id="input-import-bible-file" accept=".json" style="display:none;" onchange="handleImportBibleFile(event)">
+                        <button class="btn btn-secondary" onclick="document.getElementById('input-import-bible-file').click()" style="padding:0.4rem 0.8rem; font-size:0.8rem; background:rgba(59,130,246,0.15); border-color:rgba(59,130,246,0.4); color:#93c5fd;">
+                            <i class="fa-solid fa-upload"></i> 📤 Nhập JSON
+                        </button>
+                        <button class="btn btn-secondary" onclick="loadBookBibleEditor(currentBibleEditorNovelId, true)" style="padding:0.4rem 0.8rem; font-size:0.8rem;">
+                            <i class="fa-solid fa-arrows-rotate"></i> Làm Mới
+                        </button>
+                        <button onclick="closeModal('modal-book-bible-editor')" style="background:none; border:none; color:var(--text-sub); font-size:1.4rem; cursor:pointer; margin-left:0.5rem;"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                </div>
+
+                <!-- Tabs -->
+                <div style="display:flex; gap:0.5rem; border-bottom:1px solid var(--card-border); padding-bottom:0.5rem;">
+                    <button class="btn btn-secondary bible-tab-btn active" id="btn-tab-bible-terms" onclick="switchBibleTab('tab-bible-terms')" style="padding:0.35rem 0.8rem; font-size:0.82rem;">
+                        <i class="fa-solid fa-tags"></i> Thuật Ngữ (<span id="bible-terms-count">0</span>)
+                    </button>
+                    <button class="btn btn-secondary bible-tab-btn" id="btn-tab-bible-characters" onclick="switchBibleTab('tab-bible-characters')" style="padding:0.35rem 0.8rem; font-size:0.82rem;">
+                        <i class="fa-solid fa-users"></i> Nhân Vật (<span id="bible-characters-count">0</span>)
+                    </button>
+                    <button class="btn btn-secondary bible-tab-btn" id="btn-tab-bible-style" onclick="switchBibleTab('tab-bible-style')" style="padding:0.35rem 0.8rem; font-size:0.82rem;">
+                        <i class="fa-solid fa-feather-pointed"></i> Văn Phong & Chế Độ
+                    </button>
+                    <button class="btn btn-secondary bible-tab-btn" id="btn-tab-bible-pending" onclick="switchBibleTab('tab-bible-pending')" style="padding:0.35rem 0.8rem; font-size:0.82rem;">
+                        <i class="fa-solid fa-clock-rotate-left"></i> Chờ Duyệt (<span id="bible-pending-count">0</span>)
+                    </button>
+                </div>
+
+                <!-- Tab: Terms -->
+                <div id="tab-bible-terms" class="bible-tab-content" style="display:flex; flex-direction:column; gap:0.75rem; flex:1; overflow-y:auto;">
+                    <div style="display:flex; gap:0.5rem; align-items:center;">
+                        <input type="text" id="filter-bible-terms" placeholder="Tìm kiếm thuật ngữ (gốc hoặc dịch)..." oninput="filterBibleTermsList()" style="flex:1; background:rgba(15,23,42,0.8); border:1px solid var(--card-border); padding:0.4rem 0.7rem; border-radius:8px; color:#fff; font-size:0.82rem; outline:none;">
+                        <select id="filter-bible-category" onchange="filterBibleTermsList()" style="background:rgba(15,23,42,0.8); border:1px solid var(--card-border); padding:0.4rem 0.7rem; border-radius:8px; color:#fff; font-size:0.82rem; outline:none;">
+                            <option value="">Tất cả danh mục</option>
+                            <option value="realm">Cảnh giới (Realm)</option>
+                            <option value="skill">Chiêu thức / Công pháp</option>
+                            <option value="item">Pháp bảo / Đan dược</option>
+                            <option value="creature">Chiến thú / Yêu thú</option>
+                            <option value="faction">Thế lực / Tông môn</option>
+                        </select>
+                    </div>
+                    <div style="overflow-x:auto; max-height:450px; overflow-y:auto; border:1px solid var(--card-border); border-radius:8px;">
+                        <table style="width:100%; border-collapse:collapse; font-size:0.82rem; text-align:left;">
+                            <thead style="background:rgba(15,23,42,0.9); position:sticky; top:0; z-index:2;">
+                                <tr>
+                                    <th style="padding:0.55rem; border-bottom:1px solid var(--card-border);">Gốc</th>
+                                    <th style="padding:0.55rem; border-bottom:1px solid var(--card-border);">Bản Dịch Canonical</th>
+                                    <th style="padding:0.55rem; border-bottom:1px solid var(--card-border);">Danh Mục / Family</th>
+                                    <th style="padding:0.55rem; border-bottom:1px solid var(--card-border);">Biến Thể Cấm</th>
+                                    <th style="padding:0.55rem; border-bottom:1px solid var(--card-border); text-align:center;">Khóa</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbody-bible-terms"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Tab: Characters -->
+                <div id="tab-bible-characters" class="bible-tab-content" style="display:none; flex-direction:column; gap:0.75rem; flex:1; overflow-y:auto;">
+                    <div style="overflow-x:auto; max-height:450px; overflow-y:auto; border:1px solid var(--card-border); border-radius:8px;">
+                        <table style="width:100%; border-collapse:collapse; font-size:0.82rem; text-align:left;">
+                            <thead style="background:rgba(15,23,42,0.9); position:sticky; top:0; z-index:2;">
+                                <tr>
+                                    <th style="padding:0.55rem; border-bottom:1px solid var(--card-border);">Tên Gốc</th>
+                                    <th style="padding:0.55rem; border-bottom:1px solid var(--card-border);">Tên Dịch</th>
+                                    <th style="padding:0.55rem; border-bottom:1px solid var(--card-border);">Đại Từ Kể (Narrative)</th>
+                                    <th style="padding:0.55rem; border-bottom:1px solid var(--card-border);">Biệt Danh (Aliases)</th>
+                                    <th style="padding:0.55rem; border-bottom:1px solid var(--card-border); text-align:center;">Khóa</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbody-bible-characters"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Tab: Style Guide & Mode -->
+                <div id="tab-bible-style" class="bible-tab-content" style="display:none; flex-direction:column; gap:1rem; flex:1; overflow-y:auto;">
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; background:rgba(30,41,59,0.4); padding:1rem; border-radius:8px; border:1px solid var(--card-border);">
+                        <div>
+                            <label style="font-size:0.8rem; color:var(--text-sub); display:block; margin-bottom:0.3rem;">Chế Độ Dịch (Source Mode):</label>
+                            <select id="bible-source-mode" style="width:100%; background:rgba(15,23,42,0.8); border:1px solid var(--card-border); padding:0.45rem; border-radius:6px; color:#fff; font-size:0.85rem; outline:none;">
+                                <option value="translate">Dịch Từ Tiếng Trung (Translate Chinese -&gt; Vietnamese)</option>
+                                <option value="post_edit">Hậu Biên Tập / Chuốt Lại Convert (Post-editing Machine -&gt; Pure VN)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="font-size:0.8rem; color:var(--text-sub); display:block; margin-bottom:0.3rem;">Chính Sách Xưng Hô (Pronoun Policy):</label>
+                            <select id="bible-pronoun-policy" style="width:100%; background:rgba(15,23,42,0.8); border:1px solid var(--card-border); padding:0.45rem; border-radius:6px; color:#fff; font-size:0.85rem; outline:none;">
+                                <option value="ancient">Cổ phong Tiên hiệp / Kiếm hiệp (huynh/muội, đệ, bá, y, hắn, nàng)</option>
+                                <option value="modern">Đô thị / Hiện đại (anh/em, tôi, cậu)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="font-size:0.8rem; color:var(--text-sub); display:block; margin-bottom:0.3rem;">Thể Loại (Genre):</label>
+                            <input type="text" id="bible-genre" placeholder="VD: Huyền Huyễn, Tiên Hiệp" style="width:100%; background:rgba(15,23,42,0.8); border:1px solid var(--card-border); padding:0.45rem; border-radius:6px; color:#fff; font-size:0.85rem; outline:none;">
+                        </div>
+                        <div>
+                            <label style="font-size:0.8rem; color:var(--text-sub); display:block; margin-bottom:0.3rem;">Bối Cảnh / Thời Đại (Era Setting):</label>
+                            <input type="text" id="bible-era-setting" placeholder="VD: Cổ phong, Tu chân, Đô thị" style="width:100%; background:rgba(15,23,42,0.8); border:1px solid var(--card-border); padding:0.45rem; border-radius:6px; color:#fff; font-size:0.85rem; outline:none;">
+                        </div>
+                        <div>
+                            <label style="font-size:0.8rem; color:var(--text-sub); display:block; margin-bottom:0.3rem;">Giọng Văn (Tone):</label>
+                            <input type="text" id="bible-tone" placeholder="VD: Hào hùng, kịch tính, tu tiên cổ điển" style="width:100%; background:rgba(15,23,42,0.8); border:1px solid var(--card-border); padding:0.45rem; border-radius:6px; color:#fff; font-size:0.85rem; outline:none;">
+                        </div>
+                    </div>
+                    <div style="display:flex; justify-content:flex-end;">
+                        <button class="btn" onclick="saveBibleStyleGuide(currentBibleEditorNovelId)" style="padding:0.5rem 1.2rem; font-size:0.85rem;">
+                            <i class="fa-solid fa-floppy-disk"></i> Lưu Cấu Hình Văn Phong
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Tab: Pending Changes -->
+                <div id="tab-bible-pending" class="bible-tab-content" style="display:none; flex-direction:column; gap:0.75rem; flex:1; overflow-y:auto;">
+                    <div id="container-bible-pending-changes" style="display:flex; flex-direction:column; gap:0.5rem;">
+                        <p style="color:var(--text-sub); font-size:0.82rem; text-align:center; padding:1.5rem;">Không có thay đổi nào đang chờ duyệt.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- MODAL: CHARACTER SNAPSHOT BY CHAPTER -->
         <div id="modal-character-snapshot" class="modal">
             <div class="modal-content" style="max-width:800px; max-height:85vh;">
@@ -1743,6 +1927,22 @@
 
                 <!-- STATE 2: DIFF & COMPARISON VIEW (Hidden initially) -->
                 <div id="retranslate-diff-view" class="retranslate-diff-container" style="display:none;">
+                    <!-- Chapter Draft Review Reason & Fix Suggestions Banner -->
+                    <section id="chapter-draft-review-banner" class="chapter-draft-banner" style="display:none;" aria-live="polite">
+                        <div class="chapter-draft-banner-header">
+                            <div style="display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap;">
+                                <span class="tag" style="background:rgba(245,158,11,0.2); border:1px solid rgba(245,158,11,0.45); color:#fbbf24; font-weight:700; font-size:0.78rem; padding:0.2rem 0.55rem;">
+                                    <i class="fa-solid fa-triangle-exclamation"></i> LÝ DO CẦN DUYỆT
+                                </span>
+                                <span id="chapter-draft-reason-text" style="font-size:0.85rem; color:#f8fafc; font-weight:600;"></span>
+                            </div>
+                            <button id="btn-apply-all-draft-fixes" type="button" class="btn btn-primary" onclick="applyAllDraftSuggestions()" style="display:none; padding:0.3rem 0.8rem; font-size:0.78rem; background:linear-gradient(135deg, #10b981 0%, #059669 100%); border:none; box-shadow:0 0 12px rgba(16,185,129,0.3); cursor:pointer;">
+                                <i class="fa-solid fa-wand-magic-sparkles"></i> ⚡ Sửa Tất Cả Gợi Ý Vào Bản Dịch
+                            </button>
+                        </div>
+                        <div id="chapter-draft-issues-container" class="chapter-draft-issues-grid"></div>
+                    </section>
+
                     <!-- Stats bar -->
                     <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem; background:rgba(15,23,42,0.8); border:1px solid var(--card-border); padding:0.6rem 1rem; border-radius:10px;">
                         <div style="display:flex; gap:1.2rem; align-items:center; font-size:0.85rem; flex-wrap:wrap;">
@@ -3588,6 +3788,8 @@
             if (retryBtn) retryBtn.style.display = '';
             const applyBtn = document.getElementById('btn-retranslate-apply');
             if (applyBtn) applyBtn.innerHTML = '<i class="fa-solid fa-check"></i> ✓ Áp Dụng Bản Dịch Mới';
+            const draftBanner = document.getElementById('chapter-draft-review-banner');
+            if (draftBanner) draftBanner.style.display = 'none';
             currentRetranslateData = null;
         }
         async function openChapterDraftReview(novelId, chapterIndex) {
@@ -3628,16 +3830,25 @@
                     fetchWithCache(apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/chapters/${chapterIndex}/extraction-stats`), {}, 300000, true).catch(() => null)
                 ]);
                 if (!currentRetranslateData || currentRetranslateData.mode !== 'review') return;
+                const isAlreadyCompleted = draft.version === 'translated' || draft.review_status === 'completed';
                 currentRetranslateData.originalText = original.content || '';
-                currentRetranslateData.prevText = '(Chưa có bản dịch đã duyệt)';
+                currentRetranslateData.prevText = isAlreadyCompleted ? draft.content || '' : '(Chưa có bản dịch đã duyệt)';
                 currentRetranslateData.newText = draft.content || '';
+                currentRetranslateData.reviewReason = draft.review_reason || '';
+                currentRetranslateData.draftIssues = Array.isArray(draft.issues) ? draft.issues : [];
                 currentRetranslateData.extractionStats = extractionStats;
                 stopRetranslateTimer();
                 renderRetranslateDiffView();
+
+                if (isAlreadyCompleted) {
+                    showToast(`Chương ${chapterIndex} đã được duyệt và xuất bản chính thức vào kho truyện.`, 'info');
+                    try { if (typeof openNovelDetail === 'function') openNovelDetail(novelId, true); } catch (e) {}
+                }
             } catch (err) {
                 stopRetranslateTimer();
-                alert('Không thể tải draft cần duyệt: ' + err.message);
+                alert('Không thể tải bản dịch cần duyệt: ' + err.message);
                 cancelAndCloseRetranslateModal();
+                try { if (typeof openNovelDetail === 'function') openNovelDetail(novelId, true); } catch (e) {}
             }
         }
         async function triggerTranslateChapter(novelId, chapterIndex) {
@@ -3722,6 +3933,146 @@
                 alert("Lỗi khi dịch: " + err.message);
                 cancelAndCloseRetranslateModal();
             }
+        }
+
+
+        function renderChapterDraftIssues() {
+            const banner = document.getElementById('chapter-draft-review-banner');
+            if (!banner) return;
+            const isReview = currentRetranslateData && currentRetranslateData.mode === 'review';
+            const reasonText = currentRetranslateData ? (currentRetranslateData.reviewReason || '') : '';
+            const issues = currentRetranslateData && Array.isArray(currentRetranslateData.draftIssues) ? currentRetranslateData.draftIssues : [];
+
+            if (!isReview || (!reasonText && issues.length === 0)) {
+                banner.style.display = 'none';
+                return;
+            }
+
+            banner.style.display = 'block';
+            const reasonEl = document.getElementById('chapter-draft-reason-text');
+            if (reasonEl) {
+                reasonEl.innerText = reasonText || 'Bản nháp cần kiểm duyệt lại trước khi xuất bản.';
+            }
+
+            const applyAllBtn = document.getElementById('btn-apply-all-draft-fixes');
+            const container = document.getElementById('chapter-draft-issues-container');
+
+            const actionableIssues = issues.filter(i => (i.found || i.replacement));
+            if (applyAllBtn) {
+                applyAllBtn.style.display = actionableIssues.length > 0 ? 'inline-flex' : 'none';
+            }
+
+            if (!container) return;
+            if (issues.length === 0) {
+                container.innerHTML = '<div style="font-size:0.8rem; color:#94a3b8; font-style:italic;">Không phát hiện lỗi thuật ngữ tự động. Hãy đối soát bản dịch và bấm Duyệt.</div>';
+                return;
+            }
+
+            container.innerHTML = issues.map((item, idx) => {
+                const canFix = Boolean(item.found || item.replacement);
+                const repText = item.replacement ? item.replacement : '(xóa bỏ)';
+                const locHtml = item.location ? `<div class="chapter-draft-loc">${escapeHtml(item.location)}</div>` : '';
+                const fixBtn = canFix
+                    ? `<button type="button" class="btn btn-secondary btn-sm btn-fix-draft-item" data-idx="${idx}" style="padding:0.25rem 0.65rem; font-size:0.75rem; color:#10b981; border-color:rgba(16,185,129,0.35); cursor:pointer; white-space:nowrap; border-radius:6px;"><i class="fa-solid fa-bolt"></i> Áp dụng sửa</button>`
+                    : '';
+
+                return `<div class="chapter-draft-issue-card">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:0.6rem; flex-wrap:wrap;">
+                        <div style="flex:1; min-width:240px;">
+                            <div style="font-weight:600; font-size:0.83rem; color:#f8fafc; margin-bottom:0.2rem;">
+                                <i class="fa-solid fa-circle-exclamation" style="color:${item.severity === 'error' ? '#ef4444' : '#f59e0b'};"></i> ${escapeHtml(item.issue)}
+                            </div>
+                            ${locHtml}
+                            ${canFix ? `<div style="font-size:0.78rem; color:#94a3b8; margin-top:0.35rem; display:flex; align-items:center; gap:0.4rem; flex-wrap:wrap;">
+                                <span>Gợi ý:</span>
+                                <code style="color:#ef4444; background:rgba(239,68,68,0.12); padding:0.12rem 0.4rem; border-radius:4px; font-weight:600;">${escapeHtml(item.found || '(Đoạn này)')}</code>
+                                <i class="fa-solid fa-arrow-right" style="font-size:0.68rem; color:#64748b;"></i>
+                                <code style="color:#10b981; background:rgba(16,185,129,0.12); padding:0.12rem 0.4rem; border-radius:4px; font-weight:600;">${escapeHtml(repText)}</code>
+                            </div>` : ''}
+                        </div>
+                        ${fixBtn}
+                    </div>
+                </div>`;
+            }).join('');
+
+            container.querySelectorAll('.btn-fix-draft-item').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const idx = parseInt(btn.dataset.idx, 10);
+                    applySingleDraftFix(idx, btn);
+                });
+            });
+        }
+
+        function applySingleDraftFix(idx, btnEl) {
+            if (!currentRetranslateData || !Array.isArray(currentRetranslateData.draftIssues)) return;
+            const issue = currentRetranslateData.draftIssues[idx];
+            if (!issue) return;
+
+            const textarea = document.getElementById('diff-new-text');
+            if (!textarea) return;
+
+            const text = textarea.value;
+            if (issue.found) {
+                if (!text.includes(issue.found)) {
+                    showToast(`Không tìm thấy "${issue.found}" trong bản dịch hiện tại.`, 'info');
+                    return;
+                }
+                const escaped = issue.found.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                textarea.value = text.replace(new RegExp(escaped, 'g'), issue.replacement || '');
+                showToast(`✓ Đã thay "${issue.found}" thành "${issue.replacement || '(xóa)'}"!`, 'success');
+            } else if (issue.replacement && issue.replacement.startsWith('Chương ')) {
+                if (!/^\s*(?:chương|hồi|tiết)\s+\d+/i.test(text)) {
+                    textarea.value = issue.replacement + text;
+                    showToast(`✓ Đã gắn lại tiêu đề chương!`, 'success');
+                }
+            }
+
+            textarea.dispatchEvent(new Event('input'));
+            const targetBtn = btnEl || document.querySelector(`.btn-fix-draft-item[data-idx="${idx}"]`);
+            if (targetBtn) {
+                targetBtn.disabled = true;
+                targetBtn.innerHTML = '<i class="fa-solid fa-check"></i> Đã sửa';
+                targetBtn.style.color = '#94a3b8';
+                targetBtn.style.borderColor = 'transparent';
+                targetBtn.style.background = 'rgba(255,255,255,0.05)';
+            }
+        }
+
+        function applyAllDraftSuggestions() {
+            if (!currentRetranslateData || !Array.isArray(currentRetranslateData.draftIssues)) return;
+            const textarea = document.getElementById('diff-new-text');
+            if (!textarea) return;
+
+            let text = textarea.value;
+            let count = 0;
+
+            currentRetranslateData.draftIssues.forEach(issue => {
+                if (issue.found && issue.found !== issue.replacement) {
+                    const escaped = issue.found.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const rx = new RegExp(escaped, 'g');
+                    if (rx.test(text)) {
+                        text = text.replace(rx, issue.replacement || '');
+                        count++;
+                    }
+                } else if (!issue.found && issue.replacement && issue.replacement.startsWith('Chương ')) {
+                    if (!/^\s*(?:chương|hồi|tiết)\s+\d+/i.test(text)) {
+                        text = issue.replacement + text;
+                        count++;
+                    }
+                }
+            });
+
+            textarea.value = text;
+            textarea.dispatchEvent(new Event('input'));
+            showToast(`✓ Đã tự động áp dụng ${count} sửa đổi vào bản dịch!`, 'success');
+
+            document.querySelectorAll('.btn-fix-draft-item').forEach(btn => {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fa-solid fa-check"></i> Đã sửa';
+                btn.style.color = '#94a3b8';
+                btn.style.borderColor = 'transparent';
+                btn.style.background = 'rgba(255,255,255,0.05)';
+            });
         }
 
         function renderChapterExtractionStats(stats) {
@@ -3812,6 +4163,7 @@
             document.getElementById('diff-new-text').value = currentRetranslateData.newText || '';
             document.getElementById('diff-orig-text').value = currentRetranslateData.originalText || '';
             renderChapterExtractionStats(currentRetranslateData.extractionStats);
+            renderChapterDraftIssues();
 
             // Switch to Diff view
             document.getElementById('retranslate-loading-view').style.display = 'none';
@@ -5808,6 +6160,319 @@
             dismissFloatingBuildBar();
             await downloadCurrentEpubBuild();
         }
+
+        // ====================================================================
+        // BOOK BIBLE EDITOR & BACKUP HANDLERS
+        // ====================================================================
+        let currentBibleEditorNovelId = null;
+        let currentBibleData = null;
+
+        window.openBookBibleEditor = async function(novelId) {
+            currentBibleEditorNovelId = novelId;
+            openModal('modal-book-bible-editor');
+            await loadBookBibleEditor(novelId, false);
+        };
+
+        window.loadBookBibleEditor = async function(novelId, forceRefresh = false) {
+            try {
+                const res = await fetch(apiUrl(`/api/v1/book-bible/${encodeURIComponent(novelId)}`));
+                if (!res.ok) {
+                    throw new Error('Chưa thể tải dữ liệu Book Bible');
+                }
+                currentBibleData = await res.json();
+                renderBookBibleEditor(currentBibleData);
+            } catch (err) {
+                console.error('Error loading book bible:', err);
+                showToast(err.message || 'Lỗi tải Book Bible', 'error');
+            }
+        };
+
+        window.switchBibleTab = function(tabId) {
+            document.querySelectorAll('.bible-tab-content').forEach(el => el.style.display = 'none');
+            document.querySelectorAll('.bible-tab-btn').forEach(el => {
+                el.classList.remove('active');
+                el.style.background = 'transparent';
+            });
+            const targetTab = document.getElementById(tabId);
+            if (targetTab) targetTab.style.display = 'flex';
+            const btn = document.getElementById(`btn-${tabId}`);
+            if (btn) {
+                btn.classList.add('active');
+                btn.style.background = 'rgba(99,102,241,0.25)';
+            }
+        };
+
+        window.renderBookBibleEditor = function(bible) {
+            if (!bible) return;
+            document.getElementById('bible-editor-subtitle').textContent = `Revision: ${bible.bible_revision || 0} | Schema: v${bible.schema_version || 3}`;
+            document.getElementById('bible-terms-count').textContent = (bible.terms || []).length;
+            document.getElementById('bible-characters-count').textContent = (bible.characters || []).length;
+            document.getElementById('bible-pending-count').textContent = (bible.pending_changes || []).length;
+
+            renderBibleTermsTable(bible.terms || []);
+
+            const charTbody = document.getElementById('tbody-bible-characters');
+            if (charTbody) {
+                charTbody.innerHTML = (bible.characters || []).map(c => `
+                    <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                        <td style="padding:0.5rem; font-weight:600; color:#cbd5e1;">${escapeHtml(c.original_name)}</td>
+                        <td style="padding:0.5rem; color:#818cf8; font-weight:600;">${escapeHtml(c.vi_name)}</td>
+                        <td style="padding:0.5rem; color:#94a3b8;">${escapeHtml(c.narrative_term || '-')}</td>
+                        <td style="padding:0.5rem; color:#64748b; font-size:0.75rem;">${escapeHtml((c.aliases || []).join(', ') || '-')}</td>
+                        <td style="padding:0.5rem; text-align:center;">
+                            <button class="btn btn-secondary" onclick="toggleCharacterLockFromBtn(this)" data-name="${encodeURIComponent(c.original_name)}" data-locked="${c.locked ? 'true' : 'false'}" style="padding:0.2rem 0.5rem; font-size:0.72rem; ${c.locked ? 'background:rgba(239,68,68,0.2); color:#fca5a5;' : 'background:rgba(16,185,129,0.2); color:#6ee7b7;'}">
+                                <i class="fa-solid ${c.locked ? 'fa-lock' : 'fa-lock-open'}"></i> ${c.locked ? 'Đã Khóa' : 'Mở'}
+                            </button>
+                        </td>
+                    </tr>
+                `).join('');
+            }
+
+            const sg = bible.style_guide || {};
+            const sp = bible.source_profile || {};
+            if (document.getElementById('bible-source-mode')) document.getElementById('bible-source-mode').value = sp.mode || sg.source_mode || 'translate';
+            if (document.getElementById('bible-pronoun-policy')) document.getElementById('bible-pronoun-policy').value = sg.pronoun_policy || 'ancient';
+            if (document.getElementById('bible-genre')) document.getElementById('bible-genre').value = sg.genre || '';
+            if (document.getElementById('bible-era-setting')) document.getElementById('bible-era-setting').value = sg.era_setting || '';
+            if (document.getElementById('bible-tone')) document.getElementById('bible-tone').value = sg.tone || '';
+
+            const pendingContainer = document.getElementById('container-bible-pending-changes');
+            if (pendingContainer) {
+                const pending = bible.pending_changes || [];
+                if (pending.length === 0) {
+                    pendingContainer.innerHTML = '<p style="color:var(--text-sub); font-size:0.82rem; text-align:center; padding:1.5rem;">Không có thay đổi nào đang chờ duyệt.</p>';
+                } else {
+                    pendingContainer.innerHTML = pending.map(p => `
+                        <div style="background:rgba(15,23,42,0.6); padding:0.75rem 1rem; border-radius:8px; border:1px solid rgba(245,158,11,0.3); display:flex; justify-content:space-between; align-items:center;">
+                            <div>
+                                <span class="tag" style="background:rgba(245,158,11,0.2); color:#fcd34d; font-size:0.75rem;">${escapeHtml(p.change_type)}</span>
+                                <span style="font-weight:600; color:#fff; margin-left:0.5rem;">${escapeHtml(p.target_id)}</span>:
+                                <span style="color:#ef4444; text-decoration:line-through; font-size:0.8rem;">${escapeHtml(p.old_value)}</span> ➔
+                                <span style="color:#10b981; font-weight:600; font-size:0.8rem;">${escapeHtml(p.proposed_value)}</span>
+                                <div style="font-size:0.75rem; color:var(--text-sub); margin-top:0.2rem;">Chứng cứ: ${escapeHtml(p.evidence || '-')} (Chương ${p.chapter_index || 0})</div>
+                            </div>
+                            <div style="display:flex; gap:0.4rem;">
+                                <button class="btn" onclick="approveBibleChangeFromBtn(this)" data-change-id="${encodeURIComponent(p.change_id)}" style="padding:0.3rem 0.6rem; font-size:0.75rem; background:#10b981;"><i class="fa-solid fa-check"></i> Duyệt</button>
+                                <button class="btn btn-danger" onclick="rejectBibleChangeFromBtn(this)" data-change-id="${encodeURIComponent(p.change_id)}" style="padding:0.3rem 0.6rem; font-size:0.75rem;"><i class="fa-solid fa-xmark"></i> Từ Chối</button>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+            }
+        };
+
+        window.renderBibleTermsTable = function(terms) {
+            const tbody = document.getElementById('tbody-bible-terms');
+            if (!tbody) return;
+            tbody.innerHTML = terms.map(t => `
+                <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                    <td style="padding:0.5rem; font-weight:600; color:#cbd5e1;">${escapeHtml(t.original_name)}</td>
+                    <td style="padding:0.5rem; color:#818cf8; font-weight:600;">${escapeHtml(t.vi_name)}</td>
+                    <td style="padding:0.5rem; color:#94a3b8;"><span class="tag" style="font-size:0.72rem;">${escapeHtml(t.category || t.family || 'term')}</span></td>
+                    <td style="padding:0.5rem; color:#ef4444; font-size:0.75rem;">${escapeHtml((t.forbidden_variants || []).join(', ') || '-')}</td>
+                    <td style="padding:0.5rem; text-align:center;">
+                        <button class="btn btn-secondary" onclick="toggleTermLockFromBtn(this)" data-name="${encodeURIComponent(t.original_name)}" data-locked="${t.locked ? 'true' : 'false'}" style="padding:0.2rem 0.5rem; font-size:0.72rem; ${t.locked ? 'background:rgba(239,68,68,0.2); color:#fca5a5;' : 'background:rgba(16,185,129,0.2); color:#6ee7b7;'}">
+                            <i class="fa-solid ${t.locked ? 'fa-lock' : 'fa-lock-open'}"></i> ${t.locked ? 'Đã Khóa' : 'Mở'}
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        };
+
+        window.filterBibleTermsList = function() {
+            if (!currentBibleData || !currentBibleData.terms) return;
+            const query = (document.getElementById('filter-bible-terms').value || '').toLowerCase().trim();
+            const cat = document.getElementById('filter-bible-category').value;
+            const filtered = currentBibleData.terms.filter(t => {
+                const matchQuery = !query || t.original_name.toLowerCase().includes(query) || (t.vi_name && t.vi_name.toLowerCase().includes(query));
+                const matchCat = !cat || t.category === cat || t.family === cat;
+                return matchQuery && matchCat;
+            });
+            renderBibleTermsTable(filtered);
+        };
+
+        window.toggleTermLockFromBtn = function(btn) {
+            const name = decodeURIComponent(btn.dataset.name || '');
+            const locked = btn.dataset.locked === 'true';
+            toggleTermLock(name, locked);
+        };
+
+        window.toggleCharacterLockFromBtn = function(btn) {
+            const name = decodeURIComponent(btn.dataset.name || '');
+            const locked = btn.dataset.locked === 'true';
+            toggleCharacterLock(name, locked);
+        };
+
+        window.approveBibleChangeFromBtn = function(btn) {
+            const changeId = decodeURIComponent(btn.dataset.changeId || '');
+            approveBibleChange(changeId);
+        };
+
+        window.rejectBibleChangeFromBtn = function(btn) {
+            const changeId = decodeURIComponent(btn.dataset.changeId || '');
+            rejectBibleChange(changeId);
+        };
+
+        window.toggleTermLock = async function(originalName, currentLocked) {
+            if (!currentBibleEditorNovelId || !currentBibleData) return;
+            const term = (currentBibleData.terms || []).find(t => t.original_name === originalName);
+            if (!term) return;
+            term.locked = !currentLocked;
+            try {
+                const res = await fetch(apiUrl(`/api/v1/book-bible/${encodeURIComponent(currentBibleEditorNovelId)}/terms`), {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(term)
+                });
+                if (res.ok) {
+                    showToast(`${term.locked ? 'Đã khóa' : 'Đã mở khóa'} thuật ngữ: ${term.vi_name}`, 'success');
+                    await loadBookBibleEditor(currentBibleEditorNovelId, true);
+                } else {
+                    showToast('Lỗi cập nhật trạng thái khóa', 'error');
+                }
+            } catch (err) {
+                showToast(err.message, 'error');
+            }
+        };
+
+        window.toggleCharacterLock = async function(originalName, currentLocked) {
+            if (!currentBibleEditorNovelId || !currentBibleData) return;
+            const char = (currentBibleData.characters || []).find(c => c.original_name === originalName);
+            if (!char) return;
+            char.locked = !currentLocked;
+            try {
+                const res = await fetch(apiUrl(`/api/v1/book-bible/${encodeURIComponent(currentBibleEditorNovelId)}/characters`), {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(char)
+                });
+                if (res.ok) {
+                    showToast(`${char.locked ? 'Đã khóa' : 'Đã mở khóa'} nhân vật: ${char.vi_name}`, 'success');
+                    await loadBookBibleEditor(currentBibleEditorNovelId, true);
+                }
+            } catch (err) {
+                showToast(err.message, 'error');
+            }
+        };
+
+        window.exportBookBibleJson = async function(novelId) {
+            if (!novelId) return;
+            try {
+                showToast('Đang tạo file sao lưu Book Bible...', 'info');
+                const res = await fetch(apiUrl(`/api/v1/book-bible/${encodeURIComponent(novelId)}/export/json`));
+                if (!res.ok) throw new Error('Không thể xuất file JSON Book Bible');
+                const blob = await res.blob();
+                const blobUrl = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = blobUrl;
+                a.download = `book_bible_${novelId}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(blobUrl);
+                showToast('Tải file Book Bible JSON thành công!', 'success');
+            } catch (err) {
+                showToast(err.message, 'error');
+            }
+        };
+
+        window.handleImportBibleFile = async function(event) {
+            const file = event.target.files && event.target.files[0];
+            if (!file || !currentBibleEditorNovelId) return;
+            try {
+                const text = await file.text();
+                const payload = JSON.parse(text);
+                const res = await fetch(apiUrl(`/api/v1/book-bible/${encodeURIComponent(currentBibleEditorNovelId)}/import/json`), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (res.ok) {
+                    showToast('Đã nhập dữ liệu Book Bible thành công!', 'success');
+                    await loadBookBibleEditor(currentBibleEditorNovelId, true);
+                } else {
+                    const errData = await res.json().catch(() => ({}));
+                    showToast(errData.detail || 'Lỗi nhập Book Bible JSON', 'error');
+                }
+            } catch (err) {
+                showToast(`File JSON không hợp lệ: ${err.message}`, 'error');
+            } finally {
+                event.target.value = '';
+            }
+        };
+
+        window.saveBibleStyleGuide = async function(novelId) {
+            if (!novelId) return;
+            const sourceMode = document.getElementById('bible-source-mode').value;
+            const pronounPolicy = document.getElementById('bible-pronoun-policy').value;
+            const genre = document.getElementById('bible-genre').value;
+            const eraSetting = document.getElementById('bible-era-setting').value;
+            const tone = document.getElementById('bible-tone').value;
+
+            const body = {
+                style_guide: {
+                    genre: genre,
+                    tone: tone,
+                    era_setting: eraSetting,
+                    pronoun_policy: pronounPolicy,
+                    source_mode: sourceMode
+                },
+                source_profile: {
+                    language: sourceMode === 'post_edit' ? 'vi_machine' : 'zh',
+                    mode: sourceMode
+                }
+            };
+
+            try {
+                const res = await fetch(apiUrl(`/api/v1/book-bible/${encodeURIComponent(novelId)}/style-guide`), {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                if (res.ok) {
+                    showToast('Đã lưu cấu hình văn phong và chế độ dịch!', 'success');
+                    await loadBookBibleEditor(novelId, true);
+                } else {
+                    showToast('Lỗi lưu văn phong', 'error');
+                }
+            } catch (err) {
+                showToast(err.message, 'error');
+            }
+        };
+
+        window.approveBibleChange = async function(changeId) {
+            if (!currentBibleEditorNovelId) return;
+            try {
+                const res = await fetch(apiUrl(`/api/v1/book-bible/${encodeURIComponent(currentBibleEditorNovelId)}/pending/${encodeURIComponent(changeId)}/approve`), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ reviewed_by: 'admin' })
+                });
+                if (res.ok) {
+                    showToast('Đã duyệt thay đổi!', 'success');
+                    await loadBookBibleEditor(currentBibleEditorNovelId, true);
+                }
+            } catch (err) {
+                showToast(err.message, 'error');
+            }
+        };
+
+        window.rejectBibleChange = async function(changeId) {
+            if (!currentBibleEditorNovelId) return;
+            try {
+                const res = await fetch(apiUrl(`/api/v1/book-bible/${encodeURIComponent(currentBibleEditorNovelId)}/pending/${encodeURIComponent(changeId)}/reject`), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ reviewed_by: 'admin' })
+                });
+                if (res.ok) {
+                    showToast('Đã từ chối thay đổi!', 'info');
+                    await loadBookBibleEditor(currentBibleEditorNovelId, true);
+                }
+            } catch (err) {
+                showToast(err.message, 'error');
+            }
+        };
 
         // Start background polling when window loads (checks once, stops if no active jobs)
         window.addEventListener('DOMContentLoaded', () => {

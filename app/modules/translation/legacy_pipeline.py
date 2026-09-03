@@ -1,4 +1,4 @@
-﻿import inspect
+import inspect
 import logging
 import os
 import time
@@ -7,6 +7,12 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from app.modules.shared.ports import LLMClient
 from app.parsers.epub_parser import EPUBParser
 from app.parsers.txt_chunker import TXTChunker
+from app.parsers.text_sanitizer import (
+    clean_raw_text,
+    extract_chapter_title_prefix,
+    reattach_chapter_title,
+    split_chapter_sections,
+)
 from app.schemas.book_bible import BookBible, BookBibleDelta
 from app.llm.errors import StructuredOutputError
 from app.schemas.translation import HTMLInputItem, HTMLTranslationItem, QAIssue, QAReport
@@ -137,8 +143,14 @@ class LegacyTranslationPipelineService:
         bible = bible or BookBible()
         request_id = chapter_id or "direct-text"
         started = time.perf_counter()
+
+        # Proactively sanitize converter watermarks & separate chapter title
+        cleaned_text = clean_raw_text(text)
+        title_prefix, body_text = extract_chapter_title_prefix(cleaned_text)
+        work_text = body_text if body_text else cleaned_text
+
         bible = await self.extract_initial_book_bible(
-            text,
+            work_text,
             bible,
             chapter_index=chapter_index,
             chapter_id=request_id,
@@ -146,7 +158,7 @@ class LegacyTranslationPipelineService:
         )
         resolver_started = time.perf_counter()
         effective_bible = AddressRuleResolver.apply(bible, chapter_index)
-        filtered_bible = BookBibleService.filter_bible_for_text(effective_bible, text)
+        filtered_bible = BookBibleService.filter_bible_for_text(effective_bible, work_text)
         logger.info(
             "[TIMING] stage=book_bible_resolve.end chapter=%s elapsed_ms=%.1f "
             "visible_chars=%d visible_observations=%d",
@@ -157,11 +169,13 @@ class LegacyTranslationPipelineService:
         )
         translate_started = time.perf_counter()
         translated_text = await self._translate_prose_checked(
-            chunk_text=text,
+            chunk_text=work_text,
             book_bible=filtered_bible,
             previous_context="",
             model=model,
         )
+        if title_prefix:
+            translated_text = reattach_chapter_title(title_prefix, translated_text, chapter_index=chapter_index)
         logger.info(
             "[TIMING] stage=translate_direct.end chapter=%s elapsed_ms=%.1f total_elapsed_ms=%.1f",
             request_id,
@@ -203,13 +217,39 @@ class LegacyTranslationPipelineService:
         self._reset_quality_state()
         with open(input_path, "r", encoding="utf-8", errors="ignore") as file:
             full_text = file.read()
-        chunks = TXTChunker().chunk_text(full_text)
-        if not chunks:
+        cleaned_text = clean_raw_text(full_text)
+        sections = split_chapter_sections(cleaned_text)
+        has_titles = any(title for title, _ in sections)
+        work_units = []
+        titled_chapter = 0
+        for section_index, (title, body) in enumerate(sections):
+            section_chunks = TXTChunker().chunk_text(body)
+            if not section_chunks:
+                continue
+            if has_titles and title:
+                section_chapter_index = chapter_index_offset + titled_chapter
+                titled_chapter += 1
+            else:
+                section_chapter_index = chapter_index_offset
+            for chunk in section_chunks:
+                unit_index = len(work_units)
+                work_units.append(
+                    (
+                        chunk,
+                        title if title and chunk.chunk_index == 0 else None,
+                        section_chapter_index if has_titles else chapter_index_offset + unit_index,
+                        f"{chapter_id_prefix}-{section_index}-{chunk.chunk_index}"
+                        if has_titles
+                        else f"{chapter_id_prefix}-{unit_index}",
+                    )
+                )
+
+        if not work_units:
             raise ValueError("File TXT rong hoac khong doc duoc van ban.")
 
         logger.info(
             "[TIMING] stage=txt_pipeline.start chunks=%d input_chars=%d",
-            len(chunks),
+            len(work_units),
             len(full_text),
         )
         bible = bible or BookBible()
@@ -217,11 +257,10 @@ class LegacyTranslationPipelineService:
             progress_callback(5.0, "Dang trich xuat Book Bible theo tung chunk...")
 
         translated_parts: List[str] = []
-        total_chunks = len(chunks)
+        total_chunks = len(work_units)
 
         async def translate_chunk(index: int) -> None:
-            chunk = chunks[index]
-            current_index = chapter_index_offset + index
+            chunk, title, current_index, unit_id = work_units[index]
             if progress_callback:
                 pct = 10.0 + (index / total_chunks) * 85.0
                 progress_callback(pct, f"Dang dich chunk {index + 1}/{total_chunks}...")
@@ -238,6 +277,10 @@ class LegacyTranslationPipelineService:
                 previous_context=chunk.previous_context,
                 model=model,
             )
+            if title:
+                translated = reattach_chapter_title(
+                    title, translated, chapter_index=current_index
+                )
             translated_parts.append(translated)
             logger.info(
                 "[TIMING] stage=translate_txt_chunk.end chunk=%d chapter=%d "
@@ -250,7 +293,7 @@ class LegacyTranslationPipelineService:
                 len(filtered_bible.characters),
             )
 
-        for index, chunk in enumerate(chunks):
+        for index, (chunk, title, current_index, unit_id) in enumerate(work_units):
             known_index = BookBibleService.get_known_names_index(bible)
             extract_started = time.perf_counter()
             delta = await self._extract_delta_fail_open(chunk.text, known_index)
@@ -267,9 +310,9 @@ class LegacyTranslationPipelineService:
             bible, pending_ids = self.policy.apply_delta(
                 bible,
                 delta,
-                chapter_index=chapter_index_offset + index,
-                chapter_id=f"{chapter_id_prefix}-{index}",
-                chunk_id=f"{chapter_id_prefix}-{index}",
+                chapter_index=current_index,
+                chapter_id=unit_id,
+                chunk_id=unit_id,
             )
             logger.info(
                 "[TIMING] stage=book_bible_merge.end chunk=%d elapsed_ms=%.1f "
@@ -287,8 +330,9 @@ class LegacyTranslationPipelineService:
 
         output_started = time.perf_counter()
         os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+        final_translated = "\n\n".join(translated_parts)
         with open(output_path, "w", encoding="utf-8") as file:
-            file.write("\n\n".join(translated_parts))
+            file.write(final_translated)
         logger.info(
             "[TIMING] stage=txt_output.end elapsed_ms=%.1f output=%s",
             _elapsed_ms(output_started),

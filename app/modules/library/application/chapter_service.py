@@ -17,6 +17,9 @@ class ChapterService:
     def content(self, novel_id: str, chapter_index: int, version: str = "translated") -> Optional[str]:
         return self._legacy.get_chapter_content(novel_id, chapter_index, version)
 
+    def draft_details(self, novel_id: str, chapter_index: int):
+        return self._legacy.get_chapter_draft_details(novel_id, chapter_index)
+
     def extraction_stats(self, novel_id: str, chapter_index: int) -> ChapterExtractionStats:
         return self._legacy.get_chapter_extraction_stats(novel_id, chapter_index)
 

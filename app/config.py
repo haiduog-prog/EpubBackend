@@ -64,7 +64,7 @@ class Settings(BaseModel):
         default_factory=lambda: os.getenv("GEMINI_REVIEW_ENABLED", "true").lower() in {"1", "true", "yes", "on"}
     )
     gemini_review_model: str = Field(
-        default_factory=lambda: os.getenv("GEMINI_REVIEW_MODEL", "gemini-pro-latest")
+        default_factory=lambda: os.getenv("GEMINI_REVIEW_MODEL", "gemini-flash-latest")
     )
     gemini_review_min_confidence: float = Field(
         default_factory=lambda: float(os.getenv("GEMINI_REVIEW_MIN_CONFIDENCE", "0.90"))
@@ -151,6 +151,11 @@ class Settings(BaseModel):
     )
     epub_storage_retention_copies: int = Field(
         default_factory=lambda: int(os.getenv("EPUB_STORAGE_RETENTION_COPIES", "2"))
+    )
+
+    # Translation Quality Gate Configuration
+    semantic_review_mode: str = Field(
+        default_factory=lambda: os.getenv("SEMANTIC_REVIEW_MODE", "on_warning").lower()
     )
 
 

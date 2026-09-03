@@ -31,7 +31,7 @@ set "STRUCTURED_STORAGE_READ_SOURCE=postgres"
 set "PYTHON_EXE=python"
 if exist ".venv\Scripts\python.exe" (
     set "PYTHON_EXE=.venv\Scripts\python.exe"
-    echo       -^> Su dung Python tu .venv (!PYTHON_EXE!)
+    echo       -^> Su dung Python tu .venv [!PYTHON_EXE!]
 ) else (
     echo       -^> Su dung Python tu PATH system
 )

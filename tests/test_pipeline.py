@@ -51,3 +51,26 @@ async def test_pipeline_does_not_publish_txt_when_cjk_remains_after_quality_gate
             await pipeline.translate_txt_file(input_txt, output_txt)
 
         assert not os.path.exists(output_txt)
+
+
+@pytest.mark.asyncio
+async def test_pipeline_txt_preserves_each_chapter_header():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        input_txt = os.path.join(tmpdir, "input.txt")
+        output_txt = os.path.join(tmpdir, "output.txt")
+        with open(input_txt, "w", encoding="utf-8") as f:
+            f.write(
+                "Chương 1: Mở đầu\n\nNội dung chương một.\n\n"
+                "Chương 2: Tiếp diễn\n\nNội dung chương hai."
+            )
+
+        client = AnthropicProvider(api_key="dummy_key")
+        client.extract_book_bible_delta = AsyncMock(return_value=BookBibleDelta())
+        client.translate_prose_chunk = AsyncMock(return_value="Nội dung đã dịch.")
+
+        await TranslationPipelineService(client).translate_txt_file(input_txt, output_txt)
+
+        with open(output_txt, "r", encoding="utf-8") as f:
+            content = f.read()
+        assert content.count("Chương 1: Mở đầu") == 1
+        assert content.count("Chương 2: Tiếp diễn") == 1

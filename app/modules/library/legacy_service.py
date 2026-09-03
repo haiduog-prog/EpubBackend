@@ -20,12 +20,15 @@ from app.config import settings
 from app.infrastructure.storage.facade import storage_repo
 from app.db.session import db_session
 from app.parsers.epub_parser import extract_cover_from_epub, read_epub_safe
+from app.parsers.text_sanitizer import clean_raw_text, extract_chapter_title_prefix, reattach_chapter_title
 from app.modules.library.persistence.repository import LibraryRepository
 from app.modules.book_bible.persistence.repository import BookBibleRepository
 from app.llm.factory import create_llm_client
 from app.schemas.book_bible import BookBible
 from app.schemas.library import (
     ChapterCreateRequest,
+    ChapterDraftIssue,
+    ChapterDraftResponse,
     ChapterExtractionItem,
     ChapterExtractionStats,
     ChapterItem,
@@ -343,19 +346,26 @@ class LegacyLibraryService:
                 logger.warning("Failed to delete novel %s from database in dual mode: %s", novel_id, exc)
                 return False
 
-        if storage_repo.is_blob_active or storage_repo.is_r2_active:
-            try:
-                prefix = f"novels/{novel_id}/"
-                files_to_delete = storage_repo.list_files(prefix)
-                if files_to_delete:
-                    storage_repo.delete_files(files_to_delete)
-            except Exception as exc:
-                logger.warning("Error deleting novel files from storage: %s", exc)
+        try:
+            prefix = f"novels/{novel_id}/"
+            files_to_delete = storage_repo.list_files(prefix)
+            if files_to_delete:
+                storage_repo.delete_files(files_to_delete)
+        except Exception as exc:
+            logger.warning("Error deleting novel files from storage: %s", exc)
 
         # Xóa luôn Book Bible liên quan đến bộ truyện
         storage_repo.delete_bible(novel_id)
 
-        storage_repo.local_provider.delete_file(self._novel_meta_key(novel_id))
+        try:
+            storage_repo.local_provider.delete_file(self._novel_meta_key(novel_id))
+            from pathlib import Path
+            local_novel_dir = Path(settings.storage_local_root) / "novels" / novel_id
+            if local_novel_dir.is_dir():
+                import shutil
+                shutil.rmtree(local_novel_dir, ignore_errors=True)
+        except Exception as exc:
+            logger.warning("Failed to clean up local novel directory %s: %s", novel_id, exc)
 
         self._cache.pop(novel_id, None)
         self._summaries_cache = None
@@ -532,6 +542,16 @@ class LegacyLibraryService:
             from app.modules.library.application.epub_export_service import EpubBuildCancelledException
             raise EpubBuildCancelledException(f"Tiến trình lấy nội dung chương cho '{novel_id}' đã bị hủy.")
 
+        if version.lower() == "draft":
+            key = f"novels/{novel_id}/drafts/ch_{chapter_index:04d}.txt"
+            data_bytes = storage_repo.get_bytes(key)
+            if data_bytes is not None:
+                try:
+                    return data_bytes.decode("utf-8")
+                except Exception:
+                    return data_bytes.decode("latin1", errors="ignore")
+            return None
+
         is_trans = (version.lower() == "translated")
         key = self._chapter_key(novel_id, chapter_index, is_translated=is_trans)
 
@@ -586,6 +606,163 @@ class LegacyLibraryService:
             return data_bytes.decode("utf-8")
         except Exception:
             return data_bytes.decode("latin1", errors="ignore")
+
+    def get_chapter_draft_details(
+        self,
+        novel_id: str,
+        chapter_index: int,
+    ) -> ChapterDraftResponse:
+        """Return draft content along with specific review reasons and actionable fix suggestions."""
+        content = self.get_chapter_draft_content(novel_id, chapter_index)
+        is_published = False
+        if content is None:
+            content = self.get_chapter_content(novel_id, chapter_index, version="translated")
+            if content is None:
+                raise ValueError("Bản draft hoặc bản dịch cần duyệt không tồn tại.")
+            is_published = True
+
+        meta = self.get_novel(novel_id)
+        chapter = next((c for c in meta.chapters if c.chapter_index == chapter_index), None) if meta else None
+
+        review_status = "completed" if is_published else "needs_review"
+        stored_reason = "Bản dịch này đã được duyệt và xuất bản chính thức." if is_published else None
+        if chapter:
+            review_status = getattr(chapter, "review_status", None) or getattr(chapter, "status", "needs_review")
+            if hasattr(review_status, "value"):
+                review_status = review_status.value
+            preview = getattr(chapter, "translated_text_preview", "") or ""
+            if "NEEDS_REVIEW:" in preview:
+                stored_reason = preview.split("NEEDS_REVIEW:")[1].split(";")[0].strip()
+            elif getattr(chapter, "review_error", None):
+                stored_reason = chapter.review_error
+
+        # Chạy kiểm tra QA động (fast_rule_check) trên bản draft
+        orig_content = self.get_chapter_content(novel_id, chapter_index, version="original") or ""
+        bible = storage_repo.get_bible(novel_id) or BookBible(novel_id=novel_id)
+        if meta and any(g.lower() in {"tiên hiệp", "huyền huyễn", "cổ phong", "kiếm hiệp", "tu chân"} for g in getattr(meta, "genre", [])):
+            if not getattr(bible.style_guide, "pronoun_policy", None):
+                bible.style_guide.pronoun_policy = "ancient"
+        qa_service = QAService(None)
+        qa_issues = qa_service.fast_rule_check(orig_content, content, bible) if orig_content else []
+
+        issues: List[ChapterDraftIssue] = []
+        for q in qa_issues:
+            found = q.found or ""
+            replacement = q.expected or ""
+            found_lower = found.lower()
+            # Gợi ý sửa cụ thể cho xưng hô
+            if "chúng em" in found_lower:
+                replacement = "chúng đệ"
+            elif "bọn em" in found_lower or "tụi em" in found_lower:
+                replacement = "bọn đệ"
+            elif found_lower in {"anh ấy", "anh ta"}:
+                replacement = "hắn"
+            elif found_lower in {"cô ấy", "cô ta"}:
+                replacement = "nàng"
+            elif found_lower == "anh":
+                replacement = "huynh"
+            elif found_lower == "em":
+                replacement = "muội"
+            elif found_lower == "đông đảo anh em":
+                replacement = "đông đảo huynh đệ"
+            elif "ra ra" in found_lower:
+                replacement = "ra"
+            elif "lên lên" in found_lower:
+                replacement = "lên"
+            elif "lại lại" in found_lower:
+                replacement = "lại"
+            elif found_lower == "haizz":
+                replacement = "Than ôi"
+            elif "read.st" in found_lower:
+                replacement = ""
+
+            issues.append(
+                ChapterDraftIssue(
+                    issue=q.issue,
+                    found=found,
+                    replacement=replacement,
+                    location=q.location or "",
+                    severity="error" if getattr(q, "severity", None) == "error" else "warning",
+                )
+            )
+
+        # Hợp nhất các issue lưu trong chapter model nếu có
+        if chapter and getattr(chapter, "review_issues", None):
+            for stored_issue in chapter.review_issues:
+                if isinstance(stored_issue, dict):
+                    old_text = stored_issue.get("old_text") or ""
+                    rep = stored_issue.get("replacement") or ""
+                    reason = stored_issue.get("reason") or "Phát hiện điểm nghi vấn"
+                    if old_text and not any(i.found == old_text for i in issues):
+                        issues.append(
+                            ChapterDraftIssue(
+                                issue=reason,
+                                found=old_text,
+                                replacement=rep,
+                                location="",
+                                severity="warning",
+                            )
+                        )
+
+        # Kiểm tra nếu bị nuốt tiêu đề chương
+        has_title = bool(re.match(r"^\s*(?:chương|hồi|tiết|bài)\s+\d+", content, re.I))
+        if not has_title and orig_content:
+            title_prefix, _ = extract_chapter_title_prefix(orig_content)
+            if title_prefix:
+                issues.insert(
+                    0,
+                    ChapterDraftIssue(
+                        issue="Bản dịch bị thiếu dòng tiêu đề chương ở đầu bài",
+                        found="",
+                        replacement=f"{title_prefix}\n\n",
+                        location="Đầu chương",
+                        severity="error",
+                    ),
+                )
+
+        if stored_reason and not issues:
+            m_found = re.search(r"['\"]([^'\"]+)['\"]", stored_reason)
+            found_word = m_found.group(1) if m_found else ""
+            rep = ""
+            if found_word:
+                found_lower = found_word.lower()
+                if "chúng em" in found_lower:
+                    rep = "chúng đệ"
+                elif "bọn em" in found_lower or "tụi em" in found_lower:
+                    rep = "bọn đệ"
+                elif found_lower in {"anh ấy", "anh ta"}:
+                    rep = "hắn"
+                elif found_lower in {"cô ấy", "cô ta"}:
+                    rep = "nàng"
+                elif found_lower == "anh":
+                    rep = "huynh"
+                elif found_lower == "em":
+                    rep = "muội"
+            issues.append(
+                ChapterDraftIssue(
+                    issue=stored_reason,
+                    found=found_word,
+                    replacement=rep,
+                    location="",
+                    severity="warning",
+                )
+            )
+
+        review_reason = (
+            issues[0].issue
+            if issues
+            else (stored_reason or "Bản nháp cần đối soát ngữ cảnh trước khi xuất bản chính thức.")
+        )
+
+        return ChapterDraftResponse(
+            novel_id=novel_id,
+            chapter_index=chapter_index,
+            version="translated" if is_published else "draft",
+            content=content,
+            review_status=str(review_status),
+            review_reason=review_reason,
+            issues=issues,
+        )
 
     def get_chapter_extraction_stats(
         self,
@@ -762,18 +939,26 @@ class LegacyLibraryService:
             elif not scan_result.complete:
                 logger.warning("Book Bible scan chương %d chưa hoàn tất: %s", chapter_index, scan_result.errors)
 
-            # Dịch nội dung chương
+            # Làm sạch watermark và trích xuất tiêu đề chương
+            cleaned_orig = clean_raw_text(orig_content)
+            title_prefix, body_orig = extract_chapter_title_prefix(cleaned_orig)
+            work_orig = body_orig if body_orig else cleaned_orig
+
+            # Dịch nội dung chương (dùng work_orig để dịch phần thân, sau đó gắn lại tiêu đề chuẩn)
             effective_bible = AddressRuleResolver.apply(bible, chapter_index=chapter_index)
-            filtered_bible = BookBibleService.filter_bible_for_text(effective_bible, orig_content)
+            filtered_bible = BookBibleService.filter_bible_for_text(effective_bible, work_orig)
             quality_result = await qa_service.translate_with_quality(
-                original_text=orig_content,
+                original_text=work_orig,
                 book_bible=filtered_bible,
                 previous_context="",
                 model=model,
             )
             translated_text = quality_result.translated_text
+            if title_prefix:
+                translated_text = reattach_chapter_title(title_prefix, translated_text, chapter_index=chapter_index)
 
-            terminology_issues = list(quality_result.report.issues)
+            # Kiểm tra QA trên văn bản hoàn chỉnh cuối cùng
+            terminology_issues = qa_service.fast_rule_check(cleaned_orig, translated_text, filtered_bible)
             for issue in TerminologyConsistencyService.check_translation(
                 orig_content, translated_text, effective_bible
             ):
@@ -787,7 +972,18 @@ class LegacyLibraryService:
             semantic_status = "skipped"
             semantic_error: Optional[str] = None
             reviewer_model: Optional[str] = None
+
+            review_mode = getattr(settings, "semantic_review_mode", "on_warning").lower()
+            should_run_semantic = False
             if (provider or "gemini").strip().lower() == "gemini":
+                if review_mode == "always":
+                    should_run_semantic = True
+                elif review_mode == "on_warning":
+                    should_run_semantic = bool(terminology_issues or quality_result.correction_attempted)
+                elif review_mode == "manual_only":
+                    should_run_semantic = False
+
+            if should_run_semantic:
                 reviewer_model = SemanticReviewService.resolve_reviewer_model(
                     model or getattr(llm_client, "default_model", None)
                 )
@@ -938,6 +1134,72 @@ class LegacyLibraryService:
         self._cache[novel_id] = meta
         self.mark_dirty(novel_id, dirty_indexes=[chapter_index], is_structural=False)
         return chapter
+
+    async def review_chapter_standalone(
+        self,
+        novel_id: str,
+        chapter_index: int,
+        provider: Optional[str] = None,
+        api_key: Optional[str] = None,
+        model: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        meta = self.get_novel(novel_id)
+        if not meta:
+            raise ValueError(f"Không tìm thấy bộ truyện '{novel_id}'")
+        chapter = next((c for c in meta.chapters if c.chapter_index == chapter_index), None)
+        if not chapter:
+            raise ValueError(f"Không tìm thấy chương {chapter_index} của truyện '{novel_id}'")
+
+        trans_content = self.get_chapter_content(novel_id, chapter_index, version="draft") or self.get_chapter_content(novel_id, chapter_index, version="translated")
+        if not trans_content or not trans_content.strip():
+            raise ValueError(f"Chương {chapter_index} chưa có bản dịch (hoặc bản nháp) để review.")
+
+        orig_content = self.get_chapter_content(novel_id, chapter_index, version="original", allow_epub_self_heal=False)
+        if not orig_content or not orig_content.strip() or orig_content.strip() == trans_content.strip():
+            raise ValueError(f"Không thể review chương {chapter_index} do thiếu nội dung bản gốc (original).")
+
+        bible = storage_repo.get_bible(novel_id) or BookBible(novel_id=novel_id)
+        effective_bible = AddressRuleResolver.apply(bible, chapter_index=chapter_index)
+        filtered_bible = BookBibleService.filter_bible_for_text(effective_bible, orig_content)
+
+        llm_client = create_llm_client(provider=provider, api_key=api_key, model=model)
+        qa_service = QAService(llm_client)
+
+        rule_issues = qa_service.fast_rule_check(orig_content, trans_content, filtered_bible)
+
+        reviewer_model = SemanticReviewService.resolve_reviewer_model(model or getattr(llm_client, "default_model", None))
+        review_result = await SemanticReviewService(llm_client).review_chapter(
+            source_text=orig_content,
+            translated_text=trans_content,
+            book_bible=filtered_bible,
+            model=reviewer_model,
+        )
+
+        all_issues = list(review_result.issues)
+        all_issues.extend(
+            {
+                "old_text": i.found,
+                "replacement": i.expected,
+                "reason": i.issue,
+                "confidence": 1.0,
+            }
+            for i in rule_issues
+        )
+
+        chapter.review_status = "passed" if not all_issues else "needs_review"
+        chapter.review_issues = all_issues
+        chapter.reviewer_model = reviewer_model
+        chapter.reviewed_at = datetime.now(timezone.utc).isoformat()
+        self._save_metadata(meta)
+
+        return {
+            "novel_id": novel_id,
+            "chapter_index": chapter_index,
+            "review_status": chapter.review_status,
+            "issues": all_issues,
+            "passed": len(all_issues) == 0,
+            "reviewer_model": reviewer_model,
+        }
 
 
     async def scan_characters_and_timeline(

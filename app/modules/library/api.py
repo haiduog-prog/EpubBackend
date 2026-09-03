@@ -14,6 +14,7 @@ from app.schemas.library import (
     BulkDeleteNovelsResponse,
     ChapterApplyTranslationRequest,
     ChapterCreateRequest,
+    ChapterDraftResponse,
     ChapterExtractionStats,
     ChapterItem,
     ChapterTranslatePreviewResponse,
@@ -282,17 +283,20 @@ def get_chapter_content_endpoint(
     return {"novel_id": novel_id, "chapter_index": chapter_index, "version": version, "content": content}
 
 
-@router.get("/novels/{novel_id}/chapters/{chapter_index}/draft")
+@router.get(
+    "/novels/{novel_id}/chapters/{chapter_index}/draft",
+    response_model=ChapterDraftResponse,
+)
 def get_chapter_draft_endpoint(
     novel_id: str,
     chapter_index: int,
     _: None = Depends(require_write_access),
 ):
-    """Return the unpublished semantic-review draft for an authenticated reviewer."""
-    content = library_service.get_chapter_draft_content(novel_id, chapter_index)
-    if content is None:
-        raise HTTPException(status_code=404, detail="Bản draft cần duyệt không tồn tại.")
-    return {"novel_id": novel_id, "chapter_index": chapter_index, "version": "draft", "content": content}
+    """Return the unpublished semantic-review draft along with review reason and actionable suggestions."""
+    try:
+        return library_service.get_chapter_draft_details(novel_id, chapter_index)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
 
 
 @router.get(
@@ -371,6 +375,33 @@ def apply_chapter_translation_endpoint(
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Lỗi khi áp dụng bản dịch chương: {exc}")
+
+
+@router.post("/novels/{novel_id}/chapters/{chapter_index}/review")
+async def review_chapter_endpoint(
+    novel_id: str,
+    chapter_index: int,
+    req: ChapterTranslateRequest = ChapterTranslateRequest(),
+    x_api_key: Optional[str] = Header(default=None),
+    x_provider: Optional[str] = Header(default=None),
+    x_model: Optional[str] = Header(default=None),
+    _: None = Depends(require_write_access),
+):
+    key = req.api_key or x_api_key
+    prov = req.provider or x_provider or "gemini"
+    mod = req.model or x_model
+    try:
+        return await library_service.review_chapter_standalone(
+            novel_id=novel_id,
+            chapter_index=chapter_index,
+            provider=prov,
+            api_key=key,
+            model=mod,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Lỗi khi review chương: {exc}")
 
 
 

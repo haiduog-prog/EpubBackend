@@ -165,6 +165,24 @@ class ChapterApplyTranslationRequest(BaseModel):
     content: str = Field(..., description="Nội dung bản dịch mới cần áp dụng")
 
 
+class ChapterDraftIssue(BaseModel):
+    issue: str
+    found: str
+    replacement: str
+    location: str = ""
+    severity: str = "warning"
+
+
+class ChapterDraftResponse(BaseModel):
+    novel_id: str
+    chapter_index: int
+    version: str = "draft"
+    content: str
+    review_status: str = "needs_review"
+    review_reason: Optional[str] = None
+    issues: List[ChapterDraftIssue] = Field(default_factory=list)
+
+
 
 class ImportJobStatus(BaseModel):
     job_id: str

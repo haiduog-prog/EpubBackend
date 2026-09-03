@@ -1,4 +1,4 @@
-﻿from datetime import datetime, timezone
+from datetime import datetime, timezone
 from typing import Any, List, Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -21,6 +21,9 @@ class CharacterEntry(BaseModel):
     voice_notes: str = ""
     address_terms: List[AddressTerm] = Field(default_factory=list)
     aliases: List[str] = Field(default_factory=list)
+    forbidden_variants: List[str] = Field(default_factory=list)
+    narrative_term: str = ""
+    locked: bool = False
     first_seen_chapter: Optional[int] = None
 
 
@@ -88,6 +91,10 @@ class TermEntry(BaseModel):
     original_name: str
     vi_name: str
     category: str = ""
+    family: str = ""
+    rank_order: Optional[int] = None
+    evidence: str = ""
+    confidence: float = 1.0
     notes: str = ""
     aliases: List[str] = Field(default_factory=list)
     forbidden_variants: List[str] = Field(default_factory=list)
@@ -101,6 +108,20 @@ class StyleGuide(BaseModel):
     genre: str = ""
     tone: str = ""
     era_setting: str = ""
+    source_mode: Literal["translate", "post_edit"] = "translate"
+    source_language: str = "zh"
+    pronoun_policy: str = "ancient"
+    dialogue_style: str = "classical"
+    narrative_point_of_view: str = "third_person"
+    preserve_structure: bool = True
+    custom_rules: List[str] = Field(default_factory=list)
+    forbidden_regex: List[str] = Field(default_factory=list)
+
+
+class SourceProfile(BaseModel):
+    language: str = "zh"
+    mode: Literal["translate", "post_edit"] = "translate"
+    encoding: str = "utf-8"
 
 
 class BookBibleDelta(BaseModel):
@@ -111,18 +132,18 @@ class BookBibleDelta(BaseModel):
     address_observations: List[AddressObservationCandidate] = Field(default_factory=list)
     character_events: List[dict[str, Any]] = Field(default_factory=list)
     style_guide: Optional[StyleGuide] = None
+    source_profile: Optional[SourceProfile] = None
 
 
 class BookBible(BaseModel):
     novel_id: str = "default"
-    schema_version: int = 2
+    schema_version: int = 3
     bible_revision: int = 0
+    source_profile: SourceProfile = Field(default_factory=SourceProfile)
+    scan_state: dict[str, Any] = Field(default_factory=dict)
     characters: List[CharacterEntry] = Field(default_factory=list)
     places: List[PlaceEntry] = Field(default_factory=list)
     terms: List[TermEntry] = Field(default_factory=list)
     style_guide: StyleGuide = Field(default_factory=StyleGuide)
     address_observations: List[AddressObservation] = Field(default_factory=list)
     pending_changes: List[PendingBibleChange] = Field(default_factory=list)
-
-
-

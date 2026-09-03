@@ -837,7 +837,10 @@
             <input type="password" id="backend-write-token" placeholder="Backend write token (không lưu)" autocomplete="off">
         </div>
 
-        <button id="logout-button" class="btn" type="button" style="margin-left:auto;">Đăng xuất</button>
+        <a href="/studio" target="_blank" class="btn" style="text-decoration:none; background:linear-gradient(135deg, #0ea5e9, #10b981); margin-left:auto; display:inline-flex; align-items:center; gap:0.5rem; box-shadow:0 0 16px rgba(16,185,129,0.3);" title="Mở EpubBackend Studio (Quản lý Database & Storage)">
+            <i class="fa-solid fa-cubes"></i> Studio (DB & Storage)
+        </a>
+        <button id="logout-button" class="btn btn-secondary" type="button">Đăng xuất</button>
         <span class="badge"><i class="fa-solid fa-microchip"></i> Auto Quota Fallback</span>
     </header>
 
@@ -4405,6 +4408,139 @@
             }
         }
 
+        async function pollEpubBuild(novelId, targetJobId, opts = {}) {
+            let isDone = false;
+            let attempts = 0;
+            let lastReportedStep = "";
+            const requestHeaders = { 'Content-Type': 'application/json' };
+            if (window.EpubAuth && typeof window.EpubAuth.getAccessToken === 'function') {
+                try {
+                    const tok = await window.EpubAuth.getAccessToken();
+                    if (tok) requestHeaders.Authorization = `Bearer ${tok}`;
+                } catch (_) {}
+            }
+
+            while (!isDone && attempts < 120 && !epubBuildIsCancelled) {
+                await new Promise(r => setTimeout(r, 1200));
+                attempts++;
+                if (epubBuildIsCancelled) break;
+
+                try {
+                    const stRes = await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/epub-builds/${encodeURIComponent(targetJobId)}`), { headers: requestHeaders });
+                    if (stRes.ok) {
+                        const stData = await stRes.json();
+
+                        // Strategy badge update
+                        if (stData.strategy) {
+                            const badgeEl = document.getElementById('epub-build-strategy-badge');
+                            if (badgeEl) {
+                                if (stData.strategy === 'fast_patch') {
+                                    badgeEl.innerHTML = '⚡ FAST_PATCH';
+                                    badgeEl.style.background = 'rgba(16,185,129,0.15)';
+                                    badgeEl.style.borderColor = 'rgba(16,185,129,0.4)';
+                                    badgeEl.style.color = '#34d399';
+                                } else {
+                                    badgeEl.innerHTML = '🔄 FULL_REBUILD';
+                                    badgeEl.style.background = 'rgba(99,102,241,0.2)';
+                                    badgeEl.style.borderColor = 'rgba(99,102,241,0.4)';
+                                    badgeEl.style.color = '#a5b4fc';
+                                }
+                            }
+                        }
+
+                        // Realtime step and chapter reporting
+                        if (stData.current_step && stData.current_step !== lastReportedStep) {
+                            lastReportedStep = stData.current_step;
+                            document.getElementById('epub-build-status-line').innerHTML = `<i class="fa-solid fa-spinner spinner" style="color:#38bdf8;"></i> ${escapeHtml(stData.current_step)}`;
+                            appendEpubBuildLog(stData.current_step);
+                        }
+
+                        // Progress percentage
+                        const pct = Math.max(0, Math.min(100, stData.progress_percentage || (stData.status === 'completed' ? 100 : 5)));
+                        document.getElementById('epub-build-progress-bar-fill').style.width = `${pct}%`;
+
+                        // Progress stats: processed / total
+                        if (stData.total_chapters > 0) {
+                            document.getElementById('epub-build-stats').textContent = `${stData.processed_chapters} / ${stData.total_chapters} chương (${pct}%)`;
+                        } else {
+                            document.getElementById('epub-build-stats').textContent = `${pct}%`;
+                        }
+
+                        if (stData.status === 'completed') {
+                            isDone = true;
+                            if (epubBuildTimerInterval) {
+                                clearInterval(epubBuildTimerInterval);
+                                epubBuildTimerInterval = null;
+                            }
+                            document.getElementById('epub-build-progress-bar-fill').style.width = '100%';
+                            document.getElementById('epub-build-progress-bar-fill').style.background = '#10b981';
+                            document.getElementById('epub-build-status-line').innerHTML = '<i class="fa-solid fa-circle-check" style="color:#10b981;"></i> Hoàn tất đóng gói file EPUB!';
+                            document.getElementById('epub-build-stats').textContent = '100%';
+                            appendEpubBuildLog('Hoàn tất đóng gói EPUB thành công!', 'success');
+
+                            // Show action buttons
+                            document.getElementById('btn-epub-build-cancel').style.display = 'none';
+                            document.getElementById('btn-epub-build-download').style.display = 'inline-flex';
+                            document.getElementById('btn-epub-build-close').style.display = 'inline-flex';
+
+                            // Auto trigger download if enabled
+                            if (opts.autoDownload !== false) {
+                                appendEpubBuildLog('Đang tự động tải file EPUB về trình duyệt...', 'info');
+                                await downloadCurrentEpubBuild();
+                            }
+                            break;
+                        } else if (stData.status === 'cancelled') {
+                            isDone = true;
+                            if (epubBuildTimerInterval) {
+                                clearInterval(epubBuildTimerInterval);
+                                epubBuildTimerInterval = null;
+                            }
+                            document.getElementById('epub-build-status-line').innerHTML = '<i class="fa-solid fa-ban" style="color:#ef4444;"></i> Đã hủy biên dịch.';
+                            document.getElementById('epub-build-progress-bar-fill').style.background = '#ef4444';
+                            appendEpubBuildLog('Tiến trình biên dịch đã dừng theo yêu cầu của bạn.', 'warn');
+                            document.getElementById('btn-epub-build-cancel').style.display = 'none';
+                            document.getElementById('btn-epub-build-close').style.display = 'inline-flex';
+                            break;
+                        } else if (stData.status === 'failed') {
+                            throw new Error(stData.error_message || "Quá trình build EPUB thất bại.");
+                        }
+                    } else if (stRes.status === 404) {
+                        throw new Error(`Tác vụ #${targetJobId.slice(0, 8)} không tồn tại hoặc đã bị xóa.`);
+                    }
+                } catch (pErr) {
+                    if (pErr.message && (pErr.message.includes("thất bại") || pErr.message.includes("không tồn tại"))) throw pErr;
+                }
+            }
+
+            if (!isDone && !epubBuildIsCancelled) {
+                appendEpubBuildLog('Tiến trình biên dịch đang kéo dài ở chế độ nền. Bạn có thể đóng cửa sổ này và kiểm tra lại sau.', 'warn');
+                document.getElementById('btn-epub-build-cancel').style.display = 'none';
+                document.getElementById('btn-epub-build-close').style.display = 'inline-flex';
+            }
+        }
+
+        function openExistingEpubBuildJob(novelId, jobId, novelTitle, strategy) {
+            openEpubBuildModal({
+                novelId: novelId,
+                novelTitle: novelTitle || novelId,
+                rangeText: 'Tác vụ đang chạy ngầm',
+                strategy: strategy || 'fast_patch',
+            });
+            currentEpubBuildJobId = jobId;
+            appendEpubBuildLog(`Kết nối trực tiếp tới tác vụ #${jobId.slice(0, 8)}...`);
+
+            pollEpubBuild(novelId, jobId, { autoDownload: false }).catch((err) => {
+                appendEpubBuildLog(`Lỗi: ${err.message}`, 'error');
+                const statusLine = document.getElementById('epub-build-status-line');
+                if (statusLine) statusLine.innerHTML = `<i class="fa-solid fa-triangle-exclamation" style="color:#ef4444;"></i> Lỗi: ${escapeHtml(err.message)}`;
+                const cancelBtn = document.getElementById('btn-epub-build-cancel');
+                if (cancelBtn) cancelBtn.style.display = 'none';
+                const closeBtn = document.getElementById('btn-epub-build-close');
+                if (closeBtn) closeBtn.style.display = 'inline-flex';
+                showToast("❌ " + err.message, "error");
+            });
+        }
+
         async function exportNovelEpub(novelId, forceRebuild = false, startCh = null, endCh = null) {
             const btnId = forceRebuild ? 'btn-rebuild-epub' : 'btn-export-epub';
             const btn = document.getElementById(btnId);
@@ -4508,86 +4644,8 @@
                 }
                 appendEpubBuildLog(`Job #${targetJobId.slice(0, 8)} đã được xếp hàng với chiến lược: ${jobData.strategy || 'fast_patch'}.`);
 
-                // 2. Poll job status & update realtime chapter progress
-                let isDone = false;
-                let attempts = 0;
-                let lastReportedStep = "";
-
-                while (!isDone && attempts < 120 && !epubBuildIsCancelled) {
-                    await new Promise(r => setTimeout(r, 1200));
-                    attempts++;
-                    if (epubBuildIsCancelled) break;
-
-                    try {
-                        const stRes = await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/epub-builds/${encodeURIComponent(targetJobId)}`), { headers: requestHeaders });
-                        if (stRes.ok) {
-                            const stData = await stRes.json();
-
-                            // Realtime step and chapter reporting
-                            if (stData.current_step && stData.current_step !== lastReportedStep) {
-                                lastReportedStep = stData.current_step;
-                                document.getElementById('epub-build-status-line').innerHTML = `<i class="fa-solid fa-spinner spinner" style="color:#38bdf8;"></i> ${escapeHtml(stData.current_step)}`;
-                                appendEpubBuildLog(stData.current_step);
-                            }
-
-                            // Progress percentage
-                            const pct = Math.max(0, Math.min(100, stData.progress_percentage || (stData.status === 'completed' ? 100 : 5)));
-                            document.getElementById('epub-build-progress-bar-fill').style.width = `${pct}%`;
-
-                            // Progress stats: processed / total
-                            if (stData.total_chapters > 0) {
-                                document.getElementById('epub-build-stats').textContent = `${stData.processed_chapters} / ${stData.total_chapters} chương (${pct}%)`;
-                            } else {
-                                document.getElementById('epub-build-stats').textContent = `${pct}%`;
-                            }
-
-                            if (stData.status === 'completed') {
-                                isDone = true;
-                                if (epubBuildTimerInterval) {
-                                    clearInterval(epubBuildTimerInterval);
-                                    epubBuildTimerInterval = null;
-                                }
-                                document.getElementById('epub-build-progress-bar-fill').style.width = '100%';
-                                document.getElementById('epub-build-progress-bar-fill').style.background = '#10b981';
-                                document.getElementById('epub-build-status-line').innerHTML = '<i class="fa-solid fa-circle-check" style="color:#10b981;"></i> Hoàn tất đóng gói file EPUB!';
-                                document.getElementById('epub-build-stats').textContent = '100%';
-                                appendEpubBuildLog('Hoàn tất đóng gói EPUB thành công!', 'success');
-
-                                // Show action buttons
-                                document.getElementById('btn-epub-build-cancel').style.display = 'none';
-                                document.getElementById('btn-epub-build-download').style.display = 'inline-flex';
-                                document.getElementById('btn-epub-build-close').style.display = 'inline-flex';
-
-                                // Auto trigger download
-                                appendEpubBuildLog('Đang tự động tải file EPUB về trình duyệt...', 'info');
-                                await downloadCurrentEpubBuild();
-                                break;
-                            } else if (stData.status === 'cancelled') {
-                                isDone = true;
-                                if (epubBuildTimerInterval) {
-                                    clearInterval(epubBuildTimerInterval);
-                                    epubBuildTimerInterval = null;
-                                }
-                                document.getElementById('epub-build-status-line').innerHTML = '<i class="fa-solid fa-ban" style="color:#ef4444;"></i> Đã hủy biên dịch.';
-                                document.getElementById('epub-build-progress-bar-fill').style.background = '#ef4444';
-                                appendEpubBuildLog('Tiến trình biên dịch đã dừng theo yêu cầu của bạn.', 'warn');
-                                document.getElementById('btn-epub-build-cancel').style.display = 'none';
-                                document.getElementById('btn-epub-build-close').style.display = 'inline-flex';
-                                break;
-                            } else if (stData.status === 'failed') {
-                                throw new Error(stData.error_message || "Quá trình build EPUB thất bại.");
-                            }
-                        }
-                    } catch (pErr) {
-                        if (pErr.message && pErr.message.includes("thất bại")) throw pErr;
-                    }
-                }
-
-                if (!isDone && !epubBuildIsCancelled) {
-                    appendEpubBuildLog('Tiến trình biên dịch đang kéo dài ở chế độ nền. Bạn có thể đóng cửa sổ này và kiểm tra lại sau.', 'warn');
-                    document.getElementById('btn-epub-build-cancel').style.display = 'none';
-                    document.getElementById('btn-epub-build-close').style.display = 'inline-flex';
-                }
+                // 2. Poll job status & update realtime chapter progress using shared poller
+                await pollEpubBuild(novelId, targetJobId, { autoDownload: true });
 
             } catch (err) {
                 appendEpubBuildLog(`Lỗi: ${err.message}`, 'error');
@@ -5390,7 +5448,339 @@
                 loadCharacterSnapshot()
             ]);
         }
+
+        // ====================================================================
+        // FLOATING BACKGROUND EPUB BUILD PROGRESS BAR & POLLER
+        // ====================================================================
+        let activeFloatingBuildJob = null;
+        let isPollingActiveFloatingJobs = false;
+
+        async function pollActiveFloatingBuildJobs() {
+            if (isPollingActiveFloatingJobs) return;
+            isPollingActiveFloatingJobs = true;
+            const mainModal = document.getElementById('modal-epub-build-progress');
+            const isMainModalOpen = mainModal && mainModal.classList.contains('active');
+
+            try {
+                const res = await fetch(apiUrl('/api/v1/library/epub-builds/active-jobs'));
+                if (!res.ok) return;
+                const jobs = await res.json();
+                const bar = document.getElementById('floating-build-bar');
+                if (!bar) return;
+
+                if (jobs && jobs.length > 0) {
+                    const job = jobs[0];
+                    activeFloatingBuildJob = job;
+
+                    if (isMainModalOpen) {
+                        bar.style.display = 'none';
+                        return;
+                    }
+
+                    bar.style.display = 'block';
+                    const pct = Math.max(0, Math.min(100, job.progress_percentage || 0));
+
+                    document.getElementById('fbb-novel-title').textContent = job.novel_id;
+                    document.getElementById('fbb-pct').textContent = `${pct}%`;
+                    document.getElementById('fbb-fill').style.width = `${pct}%`;
+                    document.getElementById('fbb-strategy').textContent = (job.strategy || 'EPUB').toUpperCase();
+
+                    const stepText = job.current_step || (job.status === 'queued' ? 'Đang xếp hàng chờ...' : 'Đang xử lý...');
+                    const chCount = job.total_chapters > 0 ? ` [${job.processed_chapters}/${job.total_chapters}]` : '';
+                    document.getElementById('fbb-step').textContent = `${stepText}${chCount}`;
+
+                    document.getElementById('fbb-btn-detail').style.display = 'inline-flex';
+                    document.getElementById('fbb-btn-cancel').style.display = 'inline-flex';
+                    document.getElementById('fbb-btn-download').style.display = 'none';
+                    document.getElementById('fbb-btn-dismiss').style.display = 'none';
+                    document.getElementById('fbb-spinner').style.display = 'inline-block';
+                } else {
+                    if (activeFloatingBuildJob && (activeFloatingBuildJob.status === 'processing' || activeFloatingBuildJob.status === 'queued')) {
+                        const prevJob = activeFloatingBuildJob;
+                        try {
+                            const jobCheckRes = await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(prevJob.novel_id)}/epub-builds/${encodeURIComponent(prevJob.job_id)}`));
+                            if (jobCheckRes.ok) {
+                                const finalJob = await jobCheckRes.json();
+                                if (finalJob.status === 'completed') {
+                                    document.getElementById('fbb-pct').textContent = '100%';
+                                    document.getElementById('fbb-fill').style.width = '100%';
+                                    document.getElementById('fbb-fill').style.background = '#10b981';
+                                    document.getElementById('fbb-step').innerHTML = '<span style="color:#34d399; font-weight:600;">✓ Hoàn tất đóng gói EPUB thành công!</span>';
+                                    document.getElementById('fbb-spinner').style.display = 'none';
+                                    document.getElementById('fbb-btn-detail').style.display = 'none';
+                                    document.getElementById('fbb-btn-cancel').style.display = 'none';
+                                    document.getElementById('fbb-btn-download').style.display = 'inline-flex';
+                                    document.getElementById('fbb-btn-dismiss').style.display = 'inline-flex';
+                                    activeFloatingBuildJob = { ...prevJob, status: 'completed' };
+                                } else if (finalJob.status === 'cancelled') {
+                                    document.getElementById('fbb-fill').style.background = '#94a3b8';
+                                    document.getElementById('fbb-step').innerHTML = '<span style="color:#94a3b8; font-weight:600;">🛑 Đã hủy biên dịch.</span>';
+                                    document.getElementById('fbb-spinner').style.display = 'none';
+                                    document.getElementById('fbb-btn-detail').style.display = 'none';
+                                    document.getElementById('fbb-btn-cancel').style.display = 'none';
+                                    document.getElementById('fbb-btn-dismiss').style.display = 'inline-flex';
+                                    activeFloatingBuildJob = null;
+                                } else if (finalJob.status === 'failed') {
+                                    document.getElementById('fbb-fill').style.background = '#ef4444';
+                                    const errMsg = escapeHtml(finalJob.error_message || 'Biên dịch thất bại');
+                                    document.getElementById('fbb-step').innerHTML = `<span style="color:#f87171; font-weight:600;">❌ ${errMsg}</span>`;
+                                    document.getElementById('fbb-spinner').style.display = 'none';
+                                    document.getElementById('fbb-btn-detail').style.display = 'none';
+                                    document.getElementById('fbb-btn-cancel').style.display = 'none';
+                                    document.getElementById('fbb-btn-dismiss').style.display = 'inline-flex';
+                                    activeFloatingBuildJob = null;
+                                } else {
+                                    bar.style.display = 'none';
+                                    activeFloatingBuildJob = null;
+                                }
+                            } else {
+                                bar.style.display = 'none';
+                                activeFloatingBuildJob = null;
+                            }
+                        } catch (_) {
+                            bar.style.display = 'none';
+                            activeFloatingBuildJob = null;
+                        }
+                    } else if (!activeFloatingBuildJob || activeFloatingBuildJob.status !== 'completed') {
+                        bar.style.display = 'none';
+                        activeFloatingBuildJob = null;
+                    }
+                }
+            } catch (_) {
+            } finally {
+                isPollingActiveFloatingJobs = false;
+            }
+        }
+
+        function dismissFloatingBuildBar() {
+            const bar = document.getElementById('floating-build-bar');
+            if (bar) bar.style.display = 'none';
+            activeFloatingBuildJob = null;
+        }
+
+        function openActiveBuildDetailFromBar() {
+            if (!activeFloatingBuildJob) return;
+            const job = activeFloatingBuildJob;
+            dismissFloatingBuildBar();
+            openExistingEpubBuildJob(job.novel_id, job.job_id, job.novel_id, job.strategy);
+        }
+
+        async function cancelActiveBuildFromBar() {
+            if (!activeFloatingBuildJob) return;
+            if (!confirm(`Bạn có chắc chắn muốn dừng tác vụ biên dịch này?`)) return;
+            try {
+                await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(activeFloatingBuildJob.novel_id)}/epub-builds/${encodeURIComponent(activeFloatingBuildJob.job_id)}/cancel`), {
+                    method: 'POST'
+                });
+                showToast('Đã yêu cầu hủy biên dịch.', 'info');
+                pollActiveFloatingBuildJobs();
+            } catch (e) {
+                showToast('Lỗi: ' + e.message, 'error');
+            }
+        }
+
+        async function downloadActiveBuildFromBar() {
+            if (!activeFloatingBuildJob) return;
+            const targetNovelId = activeFloatingBuildJob.novel_id;
+            currentEpubBuildNovelId = targetNovelId;
+            dismissFloatingBuildBar();
+            await downloadCurrentEpubBuild();
+        }
+
+        // Start background polling when window loads
+        window.addEventListener('DOMContentLoaded', () => {
+            pollActiveFloatingBuildJobs();
+            setInterval(pollActiveFloatingBuildJobs, 2500);
+        });
     </script>
+
+    <!-- ====================================================================
+         FLOATING BUILD PROGRESS WIDGET
+         ==================================================================== -->
+    <style>
+        .floating-build-bar {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            z-index: 9000;
+            animation: fbbSlideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        @keyframes fbbSlideIn {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .fbb-card {
+            background: rgba(15, 23, 42, 0.92);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(56, 189, 248, 0.35);
+            box-shadow: 0 16px 36px rgba(0, 0, 0, 0.5), 0 0 20px rgba(56, 189, 248, 0.18);
+            border-radius: 14px;
+            padding: 14px 18px;
+            width: 360px;
+            max-width: calc(100vw - 32px);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .fbb-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .fbb-title-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            overflow: hidden;
+        }
+        .fbb-spinner {
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-top-color: #38bdf8;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            flex-shrink: 0;
+        }
+        .fbb-novel-title {
+            font-weight: 700;
+            font-size: 0.9rem;
+            color: #f8fafc;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 170px;
+        }
+        .fbb-strategy-badge {
+            background: rgba(99, 102, 241, 0.2);
+            border: 1px solid rgba(99, 102, 241, 0.4);
+            color: #a5b4fc;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.68rem;
+            font-weight: 600;
+        }
+        .fbb-pct-value {
+            font-family: monospace;
+            font-size: 1.05rem;
+            font-weight: 800;
+            color: #34d399;
+        }
+        .fbb-track {
+            width: 100%;
+            height: 7px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 999px;
+            overflow: hidden;
+        }
+        .fbb-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #38bdf8, #34d399);
+            transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            border-radius: 999px;
+        }
+        .fbb-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+        }
+        .fbb-step-text {
+            font-size: 0.76rem;
+            color: #94a3b8;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 180px;
+            font-family: monospace;
+        }
+        .fbb-actions {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+        .fbb-btn {
+            border: none;
+            border-radius: 6px;
+            padding: 4px 10px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            transition: all 0.2s;
+        }
+        .fbb-btn-primary {
+            background: rgba(14, 165, 233, 0.25);
+            border: 1px solid rgba(14, 165, 233, 0.5);
+            color: #38bdf8;
+        }
+        .fbb-btn-primary:hover {
+            background: rgba(14, 165, 233, 0.4);
+            transform: translateY(-1px);
+        }
+        .fbb-btn-danger {
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid rgba(239, 68, 68, 0.4);
+            color: #f87171;
+        }
+        .fbb-btn-danger:hover {
+            background: rgba(239, 68, 68, 0.35);
+        }
+        .fbb-btn-success {
+            background: rgba(16, 185, 129, 0.25);
+            border: 1px solid rgba(16, 185, 129, 0.5);
+            color: #34d399;
+        }
+        .fbb-btn-success:hover {
+            background: rgba(16, 185, 129, 0.4);
+            transform: translateY(-1px);
+        }
+        .fbb-btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: #cbd5e1;
+            padding: 4px 8px;
+        }
+    </style>
+
+    <div id="floating-build-bar" class="floating-build-bar" style="display: none;">
+        <div class="fbb-card">
+            <div class="fbb-header">
+                <div class="fbb-title-group">
+                    <span id="fbb-spinner" class="fbb-spinner"></span>
+                    <span id="fbb-novel-title" class="fbb-novel-title">...</span>
+                    <span id="fbb-strategy" class="fbb-strategy-badge">FULL_REBUILD</span>
+                </div>
+                <div class="fbb-pct-group">
+                    <span id="fbb-pct" class="fbb-pct-value">0%</span>
+                </div>
+            </div>
+
+            <div class="fbb-track">
+                <div id="fbb-fill" class="fbb-fill" style="width: 0%;"></div>
+            </div>
+
+            <div class="fbb-footer">
+                <div id="fbb-step" class="fbb-step-text">Đang tải nội dung chương...</div>
+                <div class="fbb-actions">
+                    <button id="fbb-btn-detail" class="fbb-btn fbb-btn-primary" onclick="openActiveBuildDetailFromBar()">
+                        <i class="fa-solid fa-up-right-and-down-left-from-center"></i> Chi tiết
+                    </button>
+                    <button id="fbb-btn-cancel" class="fbb-btn fbb-btn-danger" onclick="cancelActiveBuildFromBar()">
+                        <i class="fa-solid fa-stop"></i> Hủy
+                    </button>
+                    <button id="fbb-btn-download" class="fbb-btn fbb-btn-success" style="display: none;" onclick="downloadActiveBuildFromBar()">
+                        <i class="fa-solid fa-download"></i> Tải EPUB
+                    </button>
+                    <button id="fbb-btn-dismiss" class="fbb-btn fbb-btn-secondary" style="display: none;" onclick="dismissFloatingBuildBar()">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
 

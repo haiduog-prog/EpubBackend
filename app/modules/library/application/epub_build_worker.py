@@ -233,6 +233,24 @@ async def run_epub_build_consumer() -> None:
                                     comp_session.commit()
 
                                 if comp_success:
+                                    # Keep the legacy alias for older readers, but only
+                                    # promote it after the immutable revision and DB
+                                    # state are both committed successfully. This avoids
+                                    # exposing a cancelled/failed build through full.epub.
+                                    try:
+                                        if local_cleanup_path and os.path.exists(local_cleanup_path):
+                                            storage_repo.upload_file_stream(
+                                                local_cleanup_path,
+                                                f"novels/{novel_id}/full.epub",
+                                                content_type="application/epub+zip",
+                                            )
+                                    except Exception as sync_err:
+                                        logger.warning(
+                                            "Không thể đồng bộ file full.epub cho '%s': %s",
+                                            novel_id,
+                                            sync_err,
+                                        )
+
                                     # Best-effort retention cleanup outside transaction
                                     library_service.export_service.cleanup_old_revisions_best_effort(
                                         novel_id,

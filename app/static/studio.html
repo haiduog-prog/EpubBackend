@@ -1,0 +1,2246 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EpubBackend Studio — Local Database & Storage Hub</title>
+  
+  <!-- Typography: Google Fonts (Plus Jakarta Sans & JetBrains Mono) with graceful fallbacks -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ==========================================================================
+       CSS DESIGN TOKENS (Obsidian Deep Theme — Luxury Cyber Console Tier)
+       ========================================================================== */
+    :root {
+      --bg-canvas: #06080d;
+      --bg-surface: #0c1017;
+      --bg-panel: rgba(16, 22, 33, 0.75);
+      --bg-panel-hover: rgba(24, 32, 48, 0.9);
+      --bg-card: rgba(18, 25, 38, 0.6);
+      --bg-header: rgba(10, 14, 22, 0.85);
+      --bg-input: #080b11;
+      
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-medium: rgba(255, 255, 255, 0.14);
+      --border-focus: #38bdf8;
+      
+      --text-main: #f8fafc;
+      --text-secondary: #cbd5e1;
+      --text-muted: #94a3b8;
+      --text-faint: #475569;
+      
+      --accent-cyan: #38bdf8;
+      --accent-cyan-glow: rgba(56, 189, 248, 0.25);
+      --accent-emerald: #10b981;
+      --accent-emerald-glow: rgba(16, 185, 129, 0.25);
+      --accent-amber: #f59e0b;
+      --accent-amber-glow: rgba(245, 158, 11, 0.25);
+      --accent-rose: #f43f5e;
+      --accent-purple: #a855f7;
+      --accent-indigo: #6366f1;
+
+      --font-ui: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      --font-code: 'JetBrains Mono', monospace;
+      
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 14px;
+      --radius-xl: 20px;
+      
+      --shadow-subtle: 0 4px 20px rgba(0, 0, 0, 0.4);
+      --shadow-glow: 0 0 24px var(--accent-cyan-glow);
+      --transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* ==========================================================================
+       RESET & BASE STYLES
+       ========================================================================== */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    html, body {
+      width: 100%;
+      height: 100%;
+      background-color: var(--bg-canvas);
+      color: var(--text-main);
+      font-family: var(--font-ui);
+      font-size: 14px;
+      line-height: 1.5;
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Ambient background gradient mesh */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: 
+        radial-gradient(circle at 15% 10%, rgba(56, 189, 248, 0.05) 0%, transparent 40%),
+        radial-gradient(circle at 85% 20%, rgba(168, 85, 247, 0.04) 0%, transparent 45%),
+        radial-gradient(circle at 50% 85%, rgba(16, 185, 129, 0.04) 0%, transparent 50%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Custom Scrollbars */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.2);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.25);
+    }
+
+    /* ==========================================================================
+       APP SHELL & HEADER
+       ========================================================================== */
+    #app-container {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    header.studio-header {
+      height: 60px;
+      min-height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      background: var(--bg-header);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border-subtle);
+      z-index: 100;
+    }
+
+    .brand-section {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .brand-logo {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 34px;
+      height: 34px;
+      background: linear-gradient(135deg, #0ea5e9, #10b981);
+      border-radius: var(--radius-sm);
+      box-shadow: 0 0 16px rgba(16, 185, 129, 0.35);
+    }
+    .brand-logo svg {
+      width: 20px;
+      height: 20px;
+      fill: #fff;
+    }
+    .brand-title {
+      font-size: 16px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .brand-title span {
+      background: linear-gradient(90deg, #f8fafc, #94a3b8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .badge-local-live {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 2px 8px;
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: #34d399;
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: 999px;
+      letter-spacing: 0.02em;
+    }
+    .badge-local-live .pulse-dot {
+      width: 6px;
+      height: 6px;
+      background: #10b981;
+      border-radius: 50%;
+      box-shadow: 0 0 8px #10b981;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(1.2); }
+    }
+
+    /* Navigation Tabs */
+    .studio-tabs {
+      display: flex;
+      align-items: center;
+      background: var(--bg-input);
+      padding: 4px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-subtle);
+    }
+    .tab-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-family: var(--font-ui);
+      font-size: 13px;
+      font-weight: 600;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: var(--transition);
+    }
+    .tab-btn:hover {
+      color: var(--text-main);
+      background: rgba(255, 255, 255, 0.04);
+    }
+    .tab-btn.active {
+      color: #38bdf8;
+      background: rgba(56, 189, 248, 0.12);
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      box-shadow: 0 0 12px rgba(56, 189, 248, 0.15);
+    }
+
+    /* Header Utilities */
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .hud-metrics {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 12px;
+      color: var(--text-muted);
+      padding-right: 12px;
+      border-right: 1px solid var(--border-subtle);
+    }
+    .hud-metric-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .hud-metric-item b {
+      color: var(--text-main);
+      font-family: var(--font-code);
+    }
+    .action-icon-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      color: var(--text-secondary);
+      font-size: 12px;
+      font-weight: 500;
+      text-decoration: none;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+    .action-icon-btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+      border-color: var(--border-medium);
+    }
+
+    /* ==========================================================================
+       VIEW CONTAINER & PANELS
+       ========================================================================== */
+    .studio-view {
+      display: none;
+      flex: 1;
+      height: calc(100vh - 60px);
+      overflow: hidden;
+    }
+    .studio-view.active {
+      display: flex;
+    }
+
+    /* ==========================================================================
+       1. TABLE EDITOR VIEW
+       ========================================================================== */
+    .table-editor-layout {
+      display: flex;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Table Sidebar */
+    .table-sidebar {
+      width: 280px;
+      min-width: 280px;
+      background: var(--bg-surface);
+      border-right: 1px solid var(--border-subtle);
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+    .table-sidebar-header {
+      padding: 16px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .table-search-input {
+      width: 100%;
+      padding: 8px 12px;
+      background: var(--bg-input);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      color: var(--text-main);
+      font-size: 13px;
+      outline: none;
+      transition: var(--transition);
+    }
+    .table-search-input:focus {
+      border-color: var(--border-focus);
+      box-shadow: 0 0 10px var(--accent-cyan-glow);
+    }
+    .table-list-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+    .table-list-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      border-radius: var(--radius-sm);
+      color: var(--text-secondary);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: var(--transition);
+      margin-bottom: 2px;
+      user-select: none;
+    }
+    .table-list-item:hover {
+      background: rgba(255, 255, 255, 0.04);
+      color: #fff;
+    }
+    .table-list-item.active {
+      background: rgba(56, 189, 248, 0.12);
+      color: #38bdf8;
+      font-weight: 600;
+      border-left: 3px solid #38bdf8;
+    }
+    .table-item-name {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .table-item-name svg {
+      flex-shrink: 0;
+      opacity: 0.7;
+    }
+    .table-row-count-badge {
+      font-size: 11px;
+      font-family: var(--font-code);
+      padding: 2px 6px;
+      background: rgba(255, 255, 255, 0.06);
+      border-radius: 999px;
+      color: var(--text-muted);
+    }
+
+    /* Table Main Data Panel */
+    .table-data-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      background: var(--bg-canvas);
+      overflow: hidden;
+    }
+
+    /* Table Toolbar */
+    .table-toolbar {
+      padding: 12px 20px;
+      background: var(--bg-panel);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .toolbar-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .current-table-title {
+      font-size: 16px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--font-code);
+      color: #38bdf8;
+    }
+    .toolbar-search-box {
+      display: flex;
+      align-items: center;
+      position: relative;
+    }
+    .toolbar-search-input {
+      padding: 6px 12px 6px 32px;
+      background: var(--bg-input);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      color: var(--text-main);
+      font-size: 13px;
+      width: 220px;
+      outline: none;
+      transition: var(--transition);
+    }
+    .toolbar-search-input:focus {
+      width: 280px;
+      border-color: var(--border-focus);
+    }
+    .toolbar-search-icon {
+      position: absolute;
+      left: 10px;
+      color: var(--text-faint);
+      pointer-events: none;
+    }
+
+    .toolbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      color: var(--text-secondary);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+    }
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      background: linear-gradient(135deg, #0284c7, #0284c7);
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      border-radius: var(--radius-sm);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: 0 0 12px rgba(56, 189, 248, 0.2);
+      transition: var(--transition);
+    }
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #0ea5e9, #0284c7);
+      box-shadow: 0 0 16px rgba(56, 189, 248, 0.35);
+    }
+
+    /* Filter Builder Bar */
+    .filter-bar {
+      padding: 8px 20px;
+      background: rgba(10, 14, 22, 0.6);
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+    }
+    .filter-select, .filter-input {
+      padding: 4px 8px;
+      background: var(--bg-input);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      color: var(--text-main);
+      font-size: 12px;
+      outline: none;
+    }
+
+    /* Data Table Grid */
+    .table-grid-wrapper {
+      flex: 1;
+      overflow: auto;
+      position: relative;
+    }
+    table.data-grid {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      font-size: 13px;
+    }
+    table.data-grid thead {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: #0f1523;
+    }
+    table.data-grid th {
+      padding: 10px 14px;
+      text-align: left;
+      font-weight: 600;
+      font-size: 12px;
+      color: var(--text-secondary);
+      border-bottom: 1px solid var(--border-medium);
+      border-right: 1px solid rgba(255, 255, 255, 0.05);
+      white-space: nowrap;
+      user-select: none;
+    }
+    table.data-grid th:hover {
+      background: rgba(255, 255, 255, 0.03);
+    }
+    .col-header-inner {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .col-type-tag {
+      font-size: 9px;
+      font-family: var(--font-code);
+      padding: 1px 4px;
+      background: rgba(255, 255, 255, 0.07);
+      border-radius: 3px;
+      color: var(--text-muted);
+      font-weight: normal;
+    }
+    .col-type-tag.pk {
+      background: rgba(245, 158, 11, 0.15);
+      color: #f59e0b;
+      border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+
+    table.data-grid tbody tr {
+      transition: background 0.15s ease;
+    }
+    table.data-grid tbody tr:nth-child(even) {
+      background: rgba(255, 255, 255, 0.015);
+    }
+    table.data-grid tbody tr:hover {
+      background: rgba(56, 189, 248, 0.06);
+    }
+    table.data-grid td {
+      padding: 8px 14px;
+      border-bottom: 1px solid var(--border-subtle);
+      border-right: 1px solid rgba(255, 255, 255, 0.03);
+      max-width: 280px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--text-secondary);
+    }
+    .cell-mono {
+      font-family: var(--font-code);
+      font-size: 12px;
+    }
+    .cell-null {
+      color: var(--text-faint);
+      font-style: italic;
+      font-size: 11px;
+    }
+    .cell-json-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      background: rgba(168, 85, 247, 0.12);
+      border: 1px solid rgba(168, 85, 247, 0.25);
+      border-radius: var(--radius-sm);
+      color: #c084fc;
+      font-size: 11px;
+      font-family: var(--font-code);
+      cursor: pointer;
+      transition: var(--transition);
+    }
+    .cell-json-badge:hover {
+      background: rgba(168, 85, 247, 0.25);
+      color: #fff;
+    }
+    .status-pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .status-pill.completed, .status-pill.approved {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+    .status-pill.queued, .status-pill.pending, .status-pill.not_translated {
+      background: rgba(245, 158, 11, 0.15);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+    .status-pill.failed, .status-pill.rejected, .status-pill.error {
+      background: rgba(244, 63, 94, 0.15);
+      color: #fb7185;
+      border: 1px solid rgba(244, 63, 94, 0.3);
+    }
+
+    /* Table Footer & Pagination */
+    .table-footer {
+      padding: 10px 20px;
+      background: var(--bg-surface);
+      border-top: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .pagination-controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .page-btn {
+      padding: 4px 10px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      color: var(--text-main);
+      cursor: pointer;
+      transition: var(--transition);
+    }
+    .page-btn:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+    .page-btn:not(:disabled):hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    /* ==========================================================================
+       2. STORAGE EXPLORER VIEW
+       ========================================================================== */
+    .storage-view-layout {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      height: 100%;
+      background: var(--bg-canvas);
+      padding: 24px;
+      overflow-y: auto;
+    }
+    .storage-header-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .breadcrumbs-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 14px;
+      font-family: var(--font-code);
+      background: var(--bg-surface);
+      padding: 6px 14px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-subtle);
+    }
+    .breadcrumb-item {
+      color: #38bdf8;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .breadcrumb-item:hover {
+      text-decoration: underline;
+    }
+    .breadcrumb-separator {
+      color: var(--text-faint);
+    }
+
+    .storage-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 16px;
+    }
+    .storage-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      transition: var(--transition);
+      cursor: pointer;
+      position: relative;
+    }
+    .storage-card:hover {
+      background: var(--bg-panel-hover);
+      border-color: var(--border-medium);
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-subtle);
+    }
+    .storage-card-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 12px;
+    }
+    .storage-card.is-dir .storage-card-icon {
+      background: rgba(56, 189, 248, 0.12);
+      color: #38bdf8;
+    }
+    .storage-card.is-file .storage-card-icon {
+      background: rgba(16, 185, 129, 0.12);
+      color: #10b981;
+    }
+    .storage-card.is-epub .storage-card-icon {
+      background: rgba(168, 85, 247, 0.15);
+      color: #c084fc;
+    }
+    .storage-card-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-main);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      margin-bottom: 6px;
+    }
+    .storage-card-meta {
+      font-size: 11px;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+      margin-top: auto;
+    }
+    .storage-card-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border-subtle);
+      flex-wrap: wrap;
+    }
+    .storage-path-display {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 5px 12px;
+      font-family: var(--font-code);
+      font-size: 12px;
+      color: var(--text-secondary);
+      max-width: 580px;
+      overflow: hidden;
+    }
+    .storage-path-text {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      user-select: all;
+      color: #38bdf8;
+    }
+    .btn-copy-path {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      padding: 2px;
+      transition: var(--transition);
+      flex-shrink: 0;
+    }
+    .btn-copy-path:hover {
+      color: #fff;
+    }
+    .card-path-tag {
+      font-family: var(--font-code);
+      font-size: 10px;
+      color: var(--text-faint);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      margin-bottom: 6px;
+      padding: 2px 6px;
+      background: rgba(0, 0, 0, 0.35);
+      border-radius: 4px;
+      border: 1px solid rgba(255, 255, 255, 0.04);
+      user-select: all;
+    }
+    .card-path-tag:hover {
+      color: #94a3b8;
+      border-color: rgba(56, 189, 248, 0.2);
+    }
+    #toast-notification {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: #0f1523;
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.7);
+      color: #f8fafc;
+      padding: 10px 18px;
+      border-radius: var(--radius-md);
+      font-size: 13px;
+      display: none;
+      align-items: center;
+      gap: 10px;
+      z-index: 9999;
+      animation: toastSlide 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    @keyframes toastSlide {
+      from { transform: translateY(16px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    /* ==========================================================================
+       3. SQL CONSOLE VIEW
+       ========================================================================== */
+    .sql-view-layout {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      height: 100%;
+      background: var(--bg-canvas);
+      padding: 20px;
+      gap: 16px;
+      overflow: hidden;
+    }
+    .sql-editor-container {
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      height: 220px;
+      min-height: 180px;
+    }
+    .sql-editor-toolbar {
+      padding: 8px 14px;
+      background: rgba(255, 255, 255, 0.02);
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .sql-snippets {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .snippet-chip {
+      padding: 2px 8px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      color: var(--text-secondary);
+      font-size: 11px;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+    .snippet-chip:hover {
+      background: rgba(56, 189, 248, 0.15);
+      color: #38bdf8;
+      border-color: rgba(56, 189, 248, 0.3);
+    }
+    .sql-textarea {
+      flex: 1;
+      background: transparent;
+      border: none;
+      padding: 14px;
+      color: #e2e8f0;
+      font-family: var(--font-code);
+      font-size: 13px;
+      line-height: 1.6;
+      resize: none;
+      outline: none;
+    }
+
+    .sql-results-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+    }
+    .sql-results-header {
+      padding: 10px 16px;
+      background: rgba(255, 255, 255, 0.02);
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    /* ==========================================================================
+       MODAL & DRAWER (JSON Inspector & Row Detail)
+       ========================================================================== */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(8px);
+      z-index: 1000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .modal-backdrop.open {
+      display: flex;
+    }
+    .modal-box {
+      width: 100%;
+      max-width: 680px;
+      max-height: 85vh;
+      background: #0f1523;
+      border: 1px solid var(--border-medium);
+      border-radius: var(--radius-lg);
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      animation: modalSlide 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    @keyframes modalSlide {
+      from { transform: translateY(16px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    .modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .modal-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #38bdf8;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .modal-close {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 18px;
+      line-height: 1;
+      padding: 4px;
+    }
+    .modal-close:hover {
+      color: #fff;
+    }
+    .modal-body {
+      padding: 20px;
+      overflow-y: auto;
+      flex: 1;
+    }
+    .json-code-block {
+      background: #080b11;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 14px;
+      font-family: var(--font-code);
+      font-size: 12px;
+      color: #cbd5e1;
+      white-space: pre-wrap;
+      word-break: break-word;
+      overflow-x: auto;
+    }
+
+    /* Loading Spinner */
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 2px solid rgba(255, 255, 255, 0.2);
+      border-top-color: #38bdf8;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+
+  <div id="app-container">
+    <!-- ====================================================================
+         STUDIO HEADER
+         ==================================================================== -->
+    <header class="studio-header">
+      <div class="brand-section">
+        <div class="brand-logo">
+          <!-- Database Cube Icon -->
+          <svg viewBox="0 0 24 24">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="brand-title">
+          <span>EpubBackend Studio</span>
+          <div class="badge-local-live">
+            <span class="pulse-dot"></span>
+            Local SQLite
+          </div>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <nav class="studio-tabs">
+        <button class="tab-btn active" onclick="switchView('tables')">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+          Table Studio
+        </button>
+        <button class="tab-btn" onclick="switchView('storage')">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          Storage Explorer
+        </button>
+        <button class="tab-btn" onclick="switchView('sql')">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+          SQL Console
+        </button>
+      </nav>
+
+      <!-- Background Job Progress Pill -->
+      <div id="header-active-job-badge" style="display: none; align-items: center; gap: 8px; background: rgba(14, 165, 233, 0.12); border: 1px solid rgba(14, 165, 233, 0.4); padding: 5px 14px; border-radius: 9999px; font-size: 12px; color: #38bdf8; cursor: pointer; transition: all 0.2s; box-shadow: 0 0 12px rgba(14, 165, 233, 0.2);" onclick="showActiveJobModal()" title="Nhấn để xem chi tiết tiến trình ngầm">
+        <span class="spinner" style="width: 12px; height: 12px; border-width: 2px;"></span>
+        <span id="haj-text" style="font-weight: 600; font-family: var(--font-code);">Đang biên dịch...</span>
+        <div style="width: 70px; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden;">
+          <div id="haj-fill" style="width: 0%; height: 100%; background: linear-gradient(90deg, #38bdf8, #34d399); transition: width 0.3s;"></div>
+        </div>
+      </div>
+
+      <!-- Utilities & HUD -->
+      <div class="header-actions">
+        <div class="hud-metrics">
+          <div class="hud-metric-item">
+            DB: <b id="hud-db-size">...</b>
+          </div>
+          <div class="hud-metric-item">
+            Tables: <b id="hud-tables-count">...</b>
+          </div>
+          <div class="hud-metric-item">
+            Files: <b id="hud-storage-count">...</b>
+          </div>
+        </div>
+        <a href="/" target="_blank" class="action-icon-btn" title="Mở Web App Translation">
+          🏠 Web App
+        </a>
+        <a href="/reader" target="_blank" class="action-icon-btn" title="Mở Web Reader TTS">
+          📖 Reader
+        </a>
+        <a href="/docs" target="_blank" class="action-icon-btn" title="Swagger API Documentation">
+          📚 Swagger
+        </a>
+      </div>
+    </header>
+
+    <!-- ====================================================================
+         1. TABLE STUDIO VIEW
+         ==================================================================== -->
+    <div id="view-tables" class="studio-view active">
+      <div class="table-editor-layout">
+        <!-- Sidebar -->
+        <aside class="table-sidebar">
+          <div class="table-sidebar-header">
+            <input type="text" id="sidebar-table-search" class="table-search-input" placeholder="Lọc danh sách bảng... (Ctrl+K)" oninput="filterTablesList()" />
+          </div>
+          <div id="table-list-container" class="table-list-scroll">
+            <div style="padding: 20px; text-align: center; color: var(--text-muted);">
+              <div class="spinner" style="margin: 0 auto 10px;"></div>
+              Đang tải danh sách bảng...
+            </div>
+          </div>
+        </aside>
+
+        <!-- Main Data View -->
+        <main class="table-data-panel">
+          <!-- Toolbar -->
+          <div class="table-toolbar">
+            <div class="toolbar-left">
+              <div class="current-table-title" id="active-table-name">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                <span id="current-table-label">...</span>
+              </div>
+              <div class="toolbar-search-box">
+                <svg class="toolbar-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input type="text" id="grid-search-input" class="toolbar-search-input" placeholder="Tìm kiếm trong bảng..." onkeydown="handleSearchKey(event)" />
+              </div>
+            </div>
+
+            <div class="toolbar-actions">
+              <button class="btn-secondary" onclick="toggleFilterBar()">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                Bộ lọc
+              </button>
+              <button class="btn-secondary" onclick="reloadCurrentTable()">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                Làm mới
+              </button>
+              <button class="btn-secondary" onclick="exportCurrentTableCSV()">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                Xuất CSV
+              </button>
+            </div>
+          </div>
+
+          <!-- Dynamic Filter Bar (Hidden by default) -->
+          <div id="filter-bar" class="filter-bar" style="display: none;">
+            <span>Lọc cột:</span>
+            <select id="filter-col-select" class="filter-select"></select>
+            <select id="filter-op-select" class="filter-select">
+              <option value="eq">Bằng (=)</option>
+              <option value="contains">Chứa (LIKE %...%)</option>
+              <option value="gt">Lớn hơn (&gt;)</option>
+              <option value="lt">Nhỏ hơn (&lt;)</option>
+              <option value="is_null">Rỗng (IS NULL)</option>
+              <option value="not_null">Không rỗng (IS NOT NULL)</option>
+            </select>
+            <input type="text" id="filter-val-input" class="filter-input" placeholder="Giá trị lọc..." onkeydown="if(event.key==='Enter') applyFilter()" />
+            <button class="btn-primary" style="padding: 4px 10px;" onclick="applyFilter()">Áp dụng</button>
+            <button class="btn-secondary" style="padding: 4px 10px;" onclick="clearFilter()">Xóa lọc</button>
+          </div>
+
+          <!-- Grid Table Area -->
+          <div class="table-grid-wrapper" id="grid-wrapper">
+            <table class="data-grid" id="main-data-grid">
+              <thead id="grid-thead"></thead>
+              <tbody id="grid-tbody"></tbody>
+            </table>
+          </div>
+
+          <!-- Table Footer -->
+          <div class="table-footer">
+            <div id="grid-stats-text">Đang tải dữ liệu...</div>
+            <div class="pagination-controls">
+              <label>Số dòng:
+                <select id="page-size-select" class="filter-select" onchange="changePageSize(this.value)">
+                  <option value="25">25</option>
+                  <option value="50" selected>50</option>
+                  <option value="100">100</option>
+                  <option value="200">200</option>
+                </select>
+              </label>
+              <button class="page-btn" id="btn-prev-page" onclick="prevPage()" disabled>&lt; Trước</button>
+              <span id="page-display-text" style="font-family: var(--font-code);">Trang 1</span>
+              <button class="page-btn" id="btn-next-page" onclick="nextPage()" disabled>Sau &gt;</button>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <!-- ====================================================================
+         2. STORAGE EXPLORER VIEW
+         ==================================================================== -->
+    <div id="view-storage" class="studio-view">
+      <div class="storage-view-layout">
+        <div class="storage-header-bar">
+          <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+            <div class="breadcrumbs-bar" id="storage-breadcrumbs">
+              <a href="javascript:void(0)" class="breadcrumb-item" onclick="navigateStorage('')">storage</a>
+            </div>
+            <div class="storage-path-display" id="storage-path-box">
+              <span>📁</span>
+              <span class="storage-path-text" id="storage-current-abspath" title="Click để sao chép đường dẫn" onclick="copyCurrentStoragePath()">...</span>
+              <button class="btn-copy-path" onclick="copyCurrentStoragePath()" title="Sao chép đường dẫn">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              </button>
+            </div>
+            <div id="storage-summary-badge" style="display: flex; align-items: center; gap: 6px; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border-subtle); padding: 5px 12px; border-radius: var(--radius-sm); font-size: 12px; color: var(--text-secondary); font-family: var(--font-code);">
+              Đang tải...
+            </div>
+          </div>
+          <div style="display: flex; gap: 10px; align-items: center;">
+            <button class="btn-primary" onclick="openCurrentInExplorer()" style="display:inline-flex; align-items:center; gap:6px; background:linear-gradient(135deg, #0284c7, #0ea5e9);" title="Mở thư mục hiện tại trong Windows File Explorer">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              Mở trong Explorer
+            </button>
+            <button id="btn-delete-current-folder" class="btn-secondary" style="display: none; color: #f43f5e; padding: 6px 12px; align-items: center; gap: 6px;" onclick="deleteCurrentFolder()" title="Xóa toàn bộ thư mục hiện tại">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+              Xóa thư mục này
+            </button>
+            <button class="btn-secondary" onclick="loadStoragePath(currentStoragePath)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+              Làm mới
+            </button>
+          </div>
+        </div>
+
+        <!-- Storage Items Grid -->
+        <div class="storage-grid" id="storage-items-grid"></div>
+      </div>
+    </div>
+
+    <!-- ====================================================================
+         3. SQL CONSOLE VIEW
+         ==================================================================== -->
+    <div id="view-sql" class="studio-view">
+      <div class="sql-view-layout">
+        <div class="sql-editor-container">
+          <div class="sql-editor-toolbar">
+            <div class="sql-snippets">
+              <span>Mẫu truy vấn nhanh:</span>
+              <span class="snippet-chip" onclick="setSql('SELECT novel_id, title, author FROM novels;')">Novels List</span>
+              <span class="snippet-chip" onclick="setSql('SELECT novel_id, count(*) as total_chapters FROM chapters GROUP BY novel_id ORDER BY total_chapters DESC;')">Chapters Count</span>
+              <span class="snippet-chip" onclick="setSql('SELECT * FROM epub_build_jobs ORDER BY created_at DESC LIMIT 20;')">Recent EPUB Jobs</span>
+              <span class="snippet-chip" onclick="setSql('SELECT review_status, count(*) FROM chapters GROUP BY review_status;')">Review Status</span>
+            </div>
+            <div>
+              <span style="font-size: 11px;">Phím tắt: <b>Ctrl + Enter</b> để chạy</span>
+            </div>
+          </div>
+          <textarea id="sql-input" class="sql-textarea" placeholder="Nhập câu truy vấn SQL tại đây... (SELECT * FROM novels...)" onkeydown="handleSqlKey(event)">SELECT novel_id, title, author, current_epub_key FROM novels;</textarea>
+        </div>
+
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <div style="display: flex; gap: 10px;">
+            <button class="btn-primary" onclick="runSqlQuery()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              Chạy truy vấn
+            </button>
+            <button class="btn-secondary" onclick="document.getElementById('sql-input').value = ''">Xóa</button>
+          </div>
+          <div id="sql-benchmark-badge" style="font-family: var(--font-code); font-size: 12px; color: var(--accent-cyan);"></div>
+        </div>
+
+        <div class="sql-results-container">
+          <div class="sql-results-header">
+            <span id="sql-results-title">Kết quả truy vấn</span>
+            <div style="display: flex; gap: 8px;">
+              <button class="btn-secondary" style="padding: 2px 8px;" onclick="exportSqlResultsCSV()">Xuất CSV</button>
+            </div>
+          </div>
+          <div class="table-grid-wrapper">
+            <table class="data-grid" id="sql-results-grid">
+              <thead id="sql-thead"></thead>
+              <tbody id="sql-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       JSON & ROW INSPECTOR MODAL
+       ==================================================================== -->
+  <div id="inspector-modal" class="modal-backdrop" onclick="closeInspectorModal(event)">
+    <div class="modal-box" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <div class="modal-title" id="inspector-modal-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          <span>JSON Inspector</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <button class="btn-secondary" id="btn-copy-json" style="padding: 4px 10px;" onclick="copyInspectorContent()">
+            Sao chép JSON
+          </button>
+          <button class="modal-close" onclick="closeInspectorModal()">&times;</button>
+        </div>
+      </div>
+      <div class="modal-body">
+        <pre class="json-code-block" id="inspector-code-content"></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       FRONTEND LOGIC (Vanilla JS — Fast, Reactive, Zero External CDN)
+       ==================================================================== -->
+  <script>
+    // Safe HTML Escaping for Text Nodes
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    // Authenticated Fetch Helper for Studio
+    async function studioFetch(url, options = {}) {
+      const headers = options.headers ? { ...options.headers } : {};
+      try {
+        if (window.EpubAuth && typeof window.EpubAuth.getAccessToken === "function") {
+          const tok = await window.EpubAuth.getAccessToken();
+          if (tok) headers["Authorization"] = `Bearer ${tok}`;
+        } else {
+          const tok = localStorage.getItem("epub_auth_token") || localStorage.getItem("supabase.auth.token");
+          if (tok) {
+            try {
+              const parsed = JSON.parse(tok);
+              const bearer = parsed.access_token || parsed.currentSession?.access_token || tok;
+              headers["Authorization"] = `Bearer ${bearer}`;
+            } catch (_) {
+              headers["Authorization"] = `Bearer ${tok}`;
+            }
+          }
+        }
+      } catch (_) {}
+      return fetch(url, { ...options, headers });
+    }
+
+    // State Management
+    let allTables = [];
+    let currentTable = null;
+    let currentColumns = [];
+    let currentData = [];
+    let currentLimit = 50;
+    let currentOffset = 0;
+    let currentTotal = 0;
+    let currentSearch = "";
+    let currentSortBy = null;
+    let currentOrder = "asc";
+    let currentFilterCol = null;
+    let currentFilterOp = "eq";
+    let currentFilterVal = null;
+
+    let currentStoragePath = "";
+    let lastSqlResults = null;
+
+    // --------------------------------------------------------------------------
+    // Init on Load
+    // --------------------------------------------------------------------------
+    window.addEventListener("DOMContentLoaded", async () => {
+      // Event delegation for table sidebar
+      document.getElementById("table-list-container")?.addEventListener("click", (e) => {
+        const item = e.target.closest("[data-table]");
+        if (item) selectTable(item.dataset.table);
+      });
+
+      // Event delegation for grid table header sort
+      document.getElementById("grid-thead")?.addEventListener("click", (e) => {
+        const th = e.target.closest("[data-sort-col]");
+        if (th) toggleSort(th.dataset.sortCol);
+      });
+
+      // Event delegation for grid table body inspect row & cell json
+      document.getElementById("grid-tbody")?.addEventListener("click", (e) => {
+        const btn = e.target.closest("[data-inspect-row]");
+        if (btn) {
+          const rowIdx = parseInt(btn.dataset.inspectRow, 10);
+          inspectRowByIndex(rowIdx);
+          return;
+        }
+        const badge = e.target.closest("[data-cell-row]");
+        if (badge) {
+          const rowIdx = parseInt(badge.dataset.cellRow, 10);
+          const colName = badge.dataset.cellCol;
+          inspectCellJson(rowIdx, colName);
+        }
+      });
+
+      // Event delegation for storage breadcrumbs
+      document.getElementById("storage-breadcrumbs")?.addEventListener("click", (e) => {
+        const crumb = e.target.closest("[data-crumb-path]");
+        if (crumb) navigateStorage(crumb.dataset.crumbPath);
+      });
+
+      // Event delegation for storage items grid
+      document.getElementById("storage-items-grid")?.addEventListener("click", (e) => {
+        const btn = e.target.closest("[data-card-btn]");
+        if (btn) {
+          e.stopPropagation();
+          const action = btn.dataset.cardBtn;
+          const path = btn.dataset.path;
+          if (action === "explorer") openCurrentInExplorer(path);
+          else if (action === "copy-path") copyCurrentStoragePath(path);
+          else if (action === "delete-file") deleteStorageFile(path);
+          else if (action === "delete-folder") deleteStorageFolder(path, btn.dataset.name, parseInt(btn.dataset.count, 10) || 0);
+          return;
+        }
+        const clickable = e.target.closest("[data-storage-action]");
+        if (clickable) {
+          const action = clickable.dataset.storageAction;
+          if (action === "navigate") navigateStorage(clickable.dataset.storagePath);
+          else if (action === "preview") previewStorageFile(clickable.dataset.storageUrl, clickable.dataset.storageName, clickable.dataset.isImg === "true");
+        }
+      });
+
+      // Event delegation for inspector content modal actions (like cancel build job)
+      document.getElementById("inspector-modal")?.addEventListener("click", (e) => {
+        const btn = e.target.closest("[data-cancel-job-id]");
+        if (btn) {
+          cancelActiveBuildJob(btn.dataset.cancelNovelId, btn.dataset.cancelJobId);
+        }
+      });
+
+      await loadOverview();
+      await loadTablesList();
+      await pollActiveJobs();
+      setInterval(pollActiveJobs, 2500);
+
+      // Setup global keyboard shortcut
+      window.addEventListener("keydown", (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+          e.preventDefault();
+          document.getElementById("sidebar-table-search")?.focus();
+        }
+      });
+    });
+
+    // --------------------------------------------------------------------------
+    // View Switcher
+    // --------------------------------------------------------------------------
+    function switchView(viewName) {
+      document.querySelectorAll(".studio-tabs .tab-btn").forEach(btn => btn.classList.remove("active"));
+      document.querySelectorAll(".studio-view").forEach(view => view.classList.remove("active"));
+
+      const targetBtn = document.querySelector(`.studio-tabs button[onclick*="${viewName}"]`);
+      if (targetBtn) targetBtn.classList.add("active");
+
+      const targetView = document.getElementById(`view-${viewName}`);
+      if (targetView) targetView.classList.add("active");
+
+      if (viewName === "storage") {
+        loadStoragePath("");
+      }
+    }
+
+    // --------------------------------------------------------------------------
+    // Overview HUD
+    // --------------------------------------------------------------------------
+    async function loadOverview() {
+      try {
+        const res = await studioFetch("/api/v1/studio/overview");
+        if (!res.ok) return;
+        const data = await res.json();
+        document.getElementById("hud-db-size").textContent = `${data.database_size_mb} MB`;
+        document.getElementById("hud-tables-count").textContent = data.total_tables;
+        document.getElementById("hud-storage-count").textContent = data.storage_file_count;
+      } catch (err) {
+        console.error("Failed to load overview:", err);
+      }
+    }
+
+    // --------------------------------------------------------------------------
+    // Tables List (Sidebar)
+    // --------------------------------------------------------------------------
+    async function loadTablesList() {
+      const container = document.getElementById("table-list-container");
+      try {
+        const res = await studioFetch("/api/v1/studio/tables");
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        allTables = await res.json();
+        renderSidebarTables(allTables);
+
+        // Select first table if none selected
+        if (allTables.length > 0 && !currentTable) {
+          // Ưu tiên chọn 'novels' nếu có
+          const preferred = allTables.find(t => t.name === "novels") || allTables[0];
+          selectTable(preferred.name);
+        }
+      } catch (err) {
+        container.innerHTML = `<div style="padding: 20px; color: #f43f5e; text-align: center;">Lỗi tải danh sách: ${escapeHtml(err.message)}</div>`;
+      }
+    }
+
+    function renderSidebarTables(tables) {
+      const container = document.getElementById("table-list-container");
+      if (tables.length === 0) {
+        container.innerHTML = `<div style="padding: 20px; text-align: center; color: var(--text-muted);">Không tìm thấy bảng</div>`;
+        return;
+      }
+
+      container.innerHTML = tables.map(t => {
+        const isActive = t.name === currentTable;
+        let iconSvg = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`;
+        if (t.name.includes("job")) {
+          iconSvg = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/></svg>`;
+        } else if (t.name.includes("chapter")) {
+          iconSvg = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`;
+        }
+
+        return `
+          <div class="table-list-item ${isActive ? 'active' : ''}" data-table="${escapeHtml(t.name)}">
+            <div class="table-item-name">
+              ${iconSvg}
+              <span>${escapeHtml(t.name)}</span>
+            </div>
+            <span class="table-row-count-badge">${Number(t.row_count).toLocaleString()}</span>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function filterTablesList() {
+      const q = (document.getElementById("sidebar-table-search").value || "").toLowerCase().trim();
+      const filtered = allTables.filter(t => t.name.toLowerCase().includes(q));
+      renderSidebarTables(filtered);
+    }
+
+    // --------------------------------------------------------------------------
+    // Table Data Loading & Rendering
+    // --------------------------------------------------------------------------
+    async function selectTable(tableName) {
+      currentTable = tableName;
+      currentOffset = 0;
+      currentSearch = "";
+      currentSortBy = null;
+      currentFilterCol = null;
+      currentFilterVal = null;
+      document.getElementById("grid-search-input").value = "";
+
+      renderSidebarTables(allTables);
+      document.getElementById("current-table-label").textContent = tableName;
+
+      // Populate filter columns dropdown
+      const tableMeta = allTables.find(t => t.name === tableName);
+      if (tableMeta) {
+        const colSelect = document.getElementById("filter-col-select");
+        colSelect.innerHTML = tableMeta.columns.map(c => `<option value="${c.name}">${c.name} (${c.type})</option>`).join("");
+      }
+
+      await fetchTableData();
+    }
+
+    async function fetchTableData() {
+      if (!currentTable) return;
+      const tbody = document.getElementById("grid-tbody");
+      tbody.innerHTML = `<tr><td colspan="20" style="text-align: center; padding: 40px; color: var(--text-muted);"><div class="spinner" style="margin: 0 auto 10px;"></div>Đang tải dữ liệu...</td></tr>`;
+
+      const params = new URLSearchParams({
+        limit: currentLimit,
+        offset: currentOffset,
+      });
+      if (currentSearch) params.set("search", currentSearch);
+      if (currentSortBy) {
+        params.set("sort_by", currentSortBy);
+        params.set("order", currentOrder);
+      }
+      if (currentFilterCol) {
+        params.set("filter_col", currentFilterCol);
+        params.set("filter_op", currentFilterOp);
+        if (currentFilterVal !== null) params.set("filter_val", currentFilterVal);
+      }
+
+      try {
+        const res = await studioFetch(`/api/v1/studio/tables/${currentTable}/data?${params.toString()}`);
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const json = await res.json();
+
+        currentColumns = json.columns;
+        currentData = json.rows;
+        currentTotal = json.total;
+
+        renderGridHeader(currentColumns);
+        renderGridBody(currentColumns, currentData);
+        updatePaginationInfo(json);
+      } catch (err) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="20" style="text-align: center; padding: 40px; color: #f43f5e;">
+              <div style="font-weight: 600; margin-bottom: 8px;">Lỗi tải dữ liệu: ${escapeHtml(err.message)}</div>
+              <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">Máy chủ có thể vừa khởi động lại hoặc mất kết nối tạm thời.</div>
+              <button class="btn-secondary" onclick="fetchTableData()" style="padding: 4px 14px;">Thử lại</button>
+            </td>
+          </tr>
+        `;
+      }
+    }
+
+    function renderGridHeader(columns) {
+      const thead = document.getElementById("grid-thead");
+      thead.innerHTML = `
+        <tr>
+          <th style="width: 40px; text-align: center;">#</th>
+          ${columns.map(col => {
+            const isSorted = currentSortBy === col.name;
+            const sortArrow = isSorted ? (currentOrder === "asc" ? " ▲" : " ▼") : "";
+            const isPk = col.pk;
+            const colNameEsc = escapeHtml(col.name);
+            const colTypeEsc = escapeHtml(col.type);
+            return `
+              <th data-sort-col="${colNameEsc}" style="cursor: pointer;" title="Bấm để sắp xếp theo ${colNameEsc}">
+                <div class="col-header-inner">
+                  <span>${colNameEsc}${sortArrow}</span>
+                  <span class="col-type-tag ${isPk ? 'pk' : ''}">${isPk ? 'PK ' : ''}${colTypeEsc}</span>
+                </div>
+              </th>
+            `;
+          }).join("")}
+          <th style="width: 60px; text-align: center;">Thao tác</th>
+        </tr>
+      `;
+    }
+
+    function renderGridBody(columns, rows) {
+      const tbody = document.getElementById("grid-tbody");
+      if (rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="${columns.length + 2}" style="text-align: center; padding: 40px; color: var(--text-muted);">Không có bản ghi nào phù hợp.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = rows.map((row, idx) => {
+        const rowNum = currentOffset + idx + 1;
+        return `
+          <tr>
+            <td style="text-align: center; color: var(--text-faint); font-family: var(--font-code); font-size: 11px;">${rowNum}</td>
+            ${columns.map(col => {
+              const val = row[col.name];
+              return `<td>${formatCellValue(val, col, idx)}</td>`;
+            }).join("")}
+            <td style="text-align: center;">
+              <button class="btn-secondary" style="padding: 2px 6px; font-size: 11px;" data-inspect-row="${idx}" title="Xem chi tiết dòng">
+                Xem
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function formatCellValue(val, col, rowIdx) {
+      if (val === null || val === undefined) {
+        return `<span class="cell-null">null</span>`;
+      }
+      if (typeof val === "object") {
+        const count = Array.isArray(val) ? val.length : Object.keys(val).length;
+        const label = Array.isArray(val) ? `[${count} mục]` : `{${count} khóa}`;
+        return `<span class="cell-json-badge" data-cell-row="${rowIdx}" data-cell-col="${escapeHtml(col.name)}">${escapeHtml(label)}</span>`;
+      }
+      if (typeof val === "boolean") {
+        return `<span class="cell-mono" style="color: ${val ? '#34d399' : '#f43f5e'}; font-weight: 600;">${val ? 'true' : 'false'}</span>`;
+      }
+      if (col.name.includes("status")) {
+        const sVal = escapeHtml(String(val));
+        return `<span class="status-pill ${escapeHtml(String(val).toLowerCase())}">${sVal}</span>`;
+      }
+      if (col.name.includes("_at") && typeof val === "string") {
+        return `<span class="cell-mono" style="font-size: 11px;">${escapeHtml(val.replace("T", " ").substring(0, 19))}</span>`;
+      }
+      const str = escapeHtml(String(val));
+      return `<span title="${str}">${str}</span>`;
+    }
+
+    function inspectRowByIndex(idx) {
+      const row = currentData[idx];
+      if (row) inspectRow(row);
+    }
+
+    function inspectCellJson(rowIdx, colName) {
+      const row = currentData[rowIdx];
+      if (row && row[colName] !== undefined) {
+        inspectJson(colName, row[colName]);
+      }
+    }
+
+    function updatePaginationInfo(meta) {
+      const from = currentTotal === 0 ? 0 : currentOffset + 1;
+      const to = Math.min(currentOffset + currentLimit, currentTotal);
+      document.getElementById("grid-stats-text").textContent = `Hiển thị ${from} - ${to} trong tổng số ${currentTotal.toLocaleString()} bản ghi (⚡ ${meta.execution_ms} ms)`;
+      document.getElementById("page-display-text").textContent = `Trang ${meta.page} / ${meta.total_pages || 1}`;
+
+      document.getElementById("btn-prev-page").disabled = currentOffset === 0;
+      document.getElementById("btn-next-page").disabled = (currentOffset + currentLimit) >= currentTotal;
+    }
+
+    function prevPage() {
+      if (currentOffset > 0) {
+        currentOffset = Math.max(0, currentOffset - currentLimit);
+        fetchTableData();
+      }
+    }
+
+    function nextPage() {
+      if ((currentOffset + currentLimit) < currentTotal) {
+        currentOffset += currentLimit;
+        fetchTableData();
+      }
+    }
+
+    function changePageSize(newSize) {
+      currentLimit = parseInt(newSize, 10);
+      currentOffset = 0;
+      fetchTableData();
+    }
+
+    function toggleSort(colName) {
+      if (currentSortBy === colName) {
+        currentOrder = currentOrder === "asc" ? "desc" : "asc";
+      } else {
+        currentSortBy = colName;
+        currentOrder = "asc";
+      }
+      currentOffset = 0;
+      fetchTableData();
+    }
+
+    function handleSearchKey(e) {
+      if (e.key === "Enter") {
+        currentSearch = e.target.value.trim();
+        currentOffset = 0;
+        fetchTableData();
+      }
+    }
+
+    function toggleFilterBar() {
+      const bar = document.getElementById("filter-bar");
+      bar.style.display = bar.style.display === "none" ? "flex" : "none";
+    }
+
+    function applyFilter() {
+      currentFilterCol = document.getElementById("filter-col-select").value;
+      currentFilterOp = document.getElementById("filter-op-select").value;
+      currentFilterVal = document.getElementById("filter-val-input").value;
+      currentOffset = 0;
+      fetchTableData();
+    }
+
+    function clearFilter() {
+      currentFilterCol = null;
+      currentFilterVal = null;
+      document.getElementById("filter-val-input").value = "";
+      currentOffset = 0;
+      fetchTableData();
+    }
+
+    function reloadCurrentTable() {
+      fetchTableData();
+      loadOverview();
+    }
+
+    function exportCurrentTableCSV() {
+      if (!currentData || currentData.length === 0) return alert("Không có dữ liệu để xuất.");
+      const keys = currentColumns.map(c => c.name);
+      const csvLines = [keys.join(",")];
+      for (const row of currentData) {
+        const line = keys.map(k => {
+          let v = row[k];
+          if (v === null || v === undefined) return "";
+          if (typeof v === "object") v = JSON.stringify(v);
+          v = String(v).replace(/"/g, '""');
+          return `"${v}"`;
+        }).join(",");
+        csvLines.push(line);
+      }
+      downloadFileBlob(csvLines.join("\n"), `${currentTable}_export.csv`, "text/csv;charset=utf-8;");
+    }
+
+    // --------------------------------------------------------------------------
+    // Storage Explorer
+    // --------------------------------------------------------------------------
+    let currentStorageAbsPath = "";
+
+    async function loadStoragePath(subPath) {
+      currentStoragePath = subPath || "";
+      const grid = document.getElementById("storage-items-grid");
+      grid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: var(--text-muted);"><div class="spinner" style="margin: 0 auto 10px;"></div>Đang tải tệp tin storage...</div>`;
+
+      try {
+        const res = await studioFetch(`/api/v1/studio/storage/files?sub_path=${encodeURIComponent(currentStoragePath)}`);
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const data = await res.json();
+
+        currentStorageAbsPath = data.absolute_path || "";
+        const pathDisplay = document.getElementById("storage-current-abspath");
+        if (pathDisplay) pathDisplay.textContent = currentStorageAbsPath;
+
+        const summaryBadge = document.getElementById("storage-summary-badge");
+        if (summaryBadge) {
+          summaryBadge.innerHTML = `📊 <b>${data.total_items}</b> mục | <b>${data.total_size_formatted || '0 B'}</b> (${(data.total_files_count || 0).toLocaleString()} tệp)`;
+        }
+
+        const delCurrentBtn = document.getElementById("btn-delete-current-folder");
+        if (delCurrentBtn) {
+          delCurrentBtn.style.display = currentStoragePath ? "inline-flex" : "none";
+        }
+
+        renderStorageBreadcrumbs(data.breadcrumbs);
+        renderStorageItems(data.items);
+      } catch (err) {
+        grid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #f43f5e;">Lỗi: ${escapeHtml(err.message)}</div>`;
+      }
+    }
+
+    function renderStorageBreadcrumbs(breadcrumbs) {
+      const bar = document.getElementById("storage-breadcrumbs");
+      bar.innerHTML = breadcrumbs.map((b, idx) => {
+        const isLast = idx === breadcrumbs.length - 1;
+        if (isLast) {
+          return `<span style="color: #fff; font-weight: 600;">${escapeHtml(b.name)}</span>`;
+        }
+        return `
+          <a href="javascript:void(0)" class="breadcrumb-item" data-crumb-path="${escapeHtml(b.path)}">${escapeHtml(b.name)}</a>
+          <span class="breadcrumb-separator">/</span>
+        `;
+      }).join("");
+    }
+
+    function renderStorageItems(items) {
+      const grid = document.getElementById("storage-items-grid");
+      if (items.length === 0) {
+        grid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: var(--text-muted);">Thư mục trống.</div>`;
+        return;
+      }
+
+      grid.innerHTML = items.map(item => {
+        const isDir = item.is_dir;
+        const isEpub = item.name.toLowerCase().endsWith(".epub");
+        const isImg = item.mime_type && item.mime_type.startsWith("image/");
+        const safeAbs = item.absolute_path || "";
+        const nameEsc = escapeHtml(item.name);
+        const pathEsc = escapeHtml(item.path);
+        const absEsc = escapeHtml(safeAbs);
+        const urlEsc = escapeHtml(item.url || "#");
+        
+        let iconSvg = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`;
+        if (isDir) {
+          iconSvg = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`;
+        } else if (isEpub) {
+          iconSvg = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`;
+        } else if (isImg) {
+          iconSvg = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>`;
+        }
+
+        const sizeLabel = isDir
+          ? `<span style="color: #38bdf8; font-weight: 600;">📁 ${item.size_formatted || '0 B'}</span> <span style="color: var(--text-faint); font-size: 10px;">(${(item.file_count !== null ? item.file_count : 0).toLocaleString()} tệp)</span>`
+          : `<span style="color: #34d399; font-weight: 600;" title="${(item.size_bytes || 0).toLocaleString()} bytes">📄 ${item.size_formatted || '0 B'}</span>`;
+
+        return `
+          <div class="storage-card ${isDir ? 'is-dir' : 'is-file'} ${isEpub ? 'is-epub' : ''}">
+            <div data-storage-action="${isDir ? 'navigate' : 'preview'}" data-storage-path="${pathEsc}" data-storage-url="${urlEsc}" data-storage-name="${nameEsc}" data-is-img="${isImg ? 'true' : 'false'}" style="cursor: pointer;">
+              <div class="storage-card-icon">${iconSvg}</div>
+              <div class="storage-card-title" title="${nameEsc}">${nameEsc}</div>
+              <div class="card-path-tag" title="Đường dẫn ổ đĩa: ${absEsc}">${pathEsc}</div>
+              <div class="storage-card-meta">
+                <div style="font-family: var(--font-code); font-size: 11px;">${sizeLabel}</div>
+                <span style="font-size: 11px; color: var(--text-faint);">${item.modified_at ? escapeHtml(item.modified_at.split(' ')[0]) : ''}</span>
+              </div>
+            </div>
+            ${!isDir ? `
+              <div class="storage-card-actions">
+                <a href="${urlEsc}" download="${nameEsc}" class="btn-secondary" style="padding: 2px 8px; font-size: 11px; text-decoration: none;" title="Tải về tệp này">Tải về</a>
+                <button class="btn-secondary" style="padding: 2px 8px; font-size: 11px;" data-card-btn="explorer" data-path="${pathEsc}" title="Mở và chọn tệp tin này trong Windows Explorer">📂 Explorer</button>
+                <button class="btn-secondary" style="padding: 2px 6px; font-size: 11px;" data-card-btn="copy-path" data-path="${absEsc}" title="Sao chép đường dẫn tuyệt đối">📋 Path</button>
+                <button class="btn-secondary" style="padding: 2px 8px; font-size: 11px; color: #f43f5e;" data-card-btn="delete-file" data-path="${pathEsc}" title="Xóa tệp này">Xóa</button>
+              </div>
+            ` : `
+              <div class="storage-card-actions">
+                <button class="btn-secondary" style="padding: 2px 8px; font-size: 11px;" data-card-btn="explorer" data-path="${pathEsc}" title="Mở thư mục này trong Windows Explorer">📂 Explorer</button>
+                <button class="btn-secondary" style="padding: 2px 6px; font-size: 11px;" data-card-btn="copy-path" data-path="${absEsc}" title="Sao chép đường dẫn tuyệt đối">📋 Path</button>
+                <button class="btn-secondary" style="padding: 2px 8px; font-size: 11px; color: #f43f5e;" data-card-btn="delete-folder" data-path="${pathEsc}" data-name="${nameEsc}" data-count="${item.file_count || 0}" title="Xóa thư mục này">Xóa</button>
+              </div>
+            `}
+          </div>
+        `;
+      }).join("");
+    }
+
+    function navigateStorage(path) {
+      loadStoragePath(path);
+    }
+
+    async function openCurrentInExplorer(subPath) {
+      const pathTarget = subPath !== undefined ? subPath : currentStoragePath;
+      try {
+        const res = await studioFetch("/api/v1/studio/storage/open-explorer", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sub_path: pathTarget })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Không thể mở Explorer");
+        showToast("✓ " + (data.message || "Đã mở Windows Explorer!"));
+      } catch (err) {
+        alert("Lỗi: " + err.message);
+      }
+    }
+
+    function copyCurrentStoragePath(textToCopy) {
+      const val = textToCopy || currentStorageAbsPath;
+      if (!val) return;
+      navigator.clipboard.writeText(val).then(() => {
+        showToast("✓ Đã sao chép: " + val);
+      });
+    }
+
+    function showToast(message) {
+      let toast = document.getElementById("toast-notification");
+      if (!toast) {
+        toast = document.createElement("div");
+        toast.id = "toast-notification";
+        document.body.appendChild(toast);
+      }
+      toast.textContent = message;
+      toast.style.display = "flex";
+      clearTimeout(window.toastTimer);
+      window.toastTimer = setTimeout(() => {
+        toast.style.display = "none";
+      }, 3000);
+    }
+
+    async function deleteStorageFile(path) {
+      if (!confirm(`Bạn có chắc chắn muốn xóa tệp "${path}"?`)) return;
+      try {
+        const res = await studioFetch("/api/v1/studio/storage/files", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Xóa thất bại.");
+        showToast("✓ " + (data.message || "Đã xóa file"));
+        loadStoragePath(currentStoragePath);
+        loadOverview();
+      } catch (err) {
+        alert("Lỗi: " + err.message);
+      }
+    }
+
+    async function deleteStorageFolder(path, name, fileCount) {
+      const countInfo = fileCount > 0 ? `chứa ${fileCount.toLocaleString()} tệp tin` : "là thư mục rỗng";
+      const promptMsg = `CẢNH BÁO: Thư mục "${name}" (${countInfo}).\nBạn có chắc chắn muốn XÓA VĨNH VIỄN thư mục này cùng toàn bộ dữ liệu bên trong không?`;
+      if (!confirm(promptMsg)) return;
+
+      try {
+        const res = await studioFetch("/api/v1/studio/storage/files", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: path, recursive: true })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Xóa thư mục thất bại.");
+        showToast("✓ " + (data.message || "Đã xóa thư mục"));
+        loadStoragePath(currentStoragePath);
+        loadOverview();
+      } catch (err) {
+        alert("Lỗi: " + err.message);
+      }
+    }
+
+    async function deleteCurrentFolder() {
+      if (!currentStoragePath) return;
+      const parts = currentStoragePath.split("/");
+      const folderName = parts[parts.length - 1];
+      const parentPath = parts.slice(0, -1).join("/");
+
+      const promptMsg = `CẢNH BÁO: Bạn đang yêu cầu xóa toàn bộ thư mục hiện tại "${folderName}".\nBạn có chắc chắn muốn XÓA VĨNH VIỄN thư mục này cùng toàn bộ dữ liệu bên trong không?`;
+      if (!confirm(promptMsg)) return;
+
+      try {
+        const res = await studioFetch("/api/v1/studio/storage/files", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: currentStoragePath, recursive: true })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Xóa thư mục thất bại.");
+        showToast("✓ " + (data.message || "Đã xóa thư mục"));
+        loadStoragePath(parentPath);
+        loadOverview();
+      } catch (err) {
+        alert("Lỗi: " + err.message);
+      }
+    }
+
+    function previewStorageFile(url, filename, isImage) {
+      if (isImage) {
+        const titleEl = document.getElementById("inspector-modal-title");
+        const contentEl = document.getElementById("inspector-code-content");
+        if (!titleEl || !contentEl) return;
+        titleEl.textContent = `Hình ảnh: ${filename || ""}`;
+        contentEl.textContent = "";
+        const img = document.createElement("img");
+        img.src = url;
+        img.alt = filename || "";
+        img.style.maxWidth = "100%";
+        img.style.borderRadius = "8px";
+        contentEl.appendChild(img);
+        inspectorRawContent = "";
+        document.getElementById("inspector-modal").classList.add("open");
+      } else {
+        window.open(url, "_blank");
+      }
+    }
+
+    // --------------------------------------------------------------------------
+    // SQL Console
+    // --------------------------------------------------------------------------
+    function setSql(query) {
+      document.getElementById("sql-input").value = query;
+      runSqlQuery();
+    }
+
+    function handleSqlKey(e) {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        e.preventDefault();
+        runSqlQuery();
+      }
+    }
+
+    async function runSqlQuery() {
+      const q = document.getElementById("sql-input").value.trim();
+      if (!q) return;
+
+      const badge = document.getElementById("sql-benchmark-badge");
+      badge.textContent = "Đang thực thi...";
+
+      try {
+        const res = await studioFetch("/api/v1/studio/sql", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: q, limit: 100 })
+        });
+        const json = await res.json();
+        lastSqlResults = json;
+
+        if (!json.success) {
+          badge.textContent = `❌ Lỗi (${json.execution_ms} ms)`;
+          document.getElementById("sql-thead").innerHTML = "";
+          document.getElementById("sql-tbody").innerHTML = `<tr><td style="color: #f43f5e; padding: 20px;">${escapeHtml(json.error)}</td></tr>`;
+          return;
+        }
+
+        badge.textContent = `⚡ ${json.execution_ms} ms | ${json.row_count !== undefined ? json.row_count + ' dòng trả về' : escapeHtml(json.message)}`;
+
+        if (json.is_query && json.columns) {
+          document.getElementById("sql-thead").innerHTML = `<tr>${json.columns.map(c => `<th>${escapeHtml(c)}</th>`).join("")}</tr>`;
+          document.getElementById("sql-tbody").innerHTML = json.rows.map(r => `
+            <tr>${json.columns.map(c => `<td>${formatCellValue(r[c], { name: c, type: 'TEXT' })}</td>`).join("")}</tr>
+          `).join("");
+        } else {
+          document.getElementById("sql-thead").innerHTML = "";
+          document.getElementById("sql-tbody").innerHTML = `<tr><td style="color: #10b981; padding: 20px;">${escapeHtml(json.message)}</td></tr>`;
+        }
+      } catch (err) {
+        badge.textContent = "Lỗi kết nối";
+        alert("Lỗi: " + err.message);
+      }
+    }
+
+    function exportSqlResultsCSV() {
+      if (!lastSqlResults || !lastSqlResults.rows || lastSqlResults.rows.length === 0) {
+        return alert("Không có kết quả truy vấn để xuất.");
+      }
+      const keys = lastSqlResults.columns;
+      const lines = [keys.join(",")];
+      for (const r of lastSqlResults.rows) {
+        const line = keys.map(k => `"${String(r[k] || '').replace(/"/g, '""')}"`).join(",");
+        lines.push(line);
+      }
+      downloadFileBlob(lines.join("\n"), "query_results.csv", "text/csv;charset=utf-8;");
+    }
+
+    // --------------------------------------------------------------------------
+    // Modal / Inspector Helpers
+    // --------------------------------------------------------------------------
+    let inspectorRawContent = "";
+
+    function inspectJson(keyName, jsonObj) {
+      const formatted = JSON.stringify(jsonObj, null, 2);
+      inspectorRawContent = formatted;
+      document.getElementById("inspector-modal-title").innerHTML = `<span>JSON: ${escapeHtml(keyName)}</span>`;
+      document.getElementById("inspector-code-content").textContent = formatted;
+      document.getElementById("inspector-modal").classList.add("open");
+    }
+
+    function inspectRow(rowObj) {
+      const formatted = JSON.stringify(rowObj, null, 2);
+      inspectorRawContent = formatted;
+      document.getElementById("inspector-modal-title").innerHTML = `<span>Chi tiết dòng</span>`;
+      document.getElementById("inspector-code-content").textContent = formatted;
+      document.getElementById("inspector-modal").classList.add("open");
+    }
+
+    function inspectContent(title, contentHtml, isCode = true) {
+      document.getElementById("inspector-modal-title").textContent = title || "";
+      if (isCode) {
+        inspectorRawContent = contentHtml;
+        document.getElementById("inspector-code-content").textContent = contentHtml;
+      } else {
+        inspectorRawContent = "";
+        document.getElementById("inspector-code-content").innerHTML = contentHtml;
+      }
+      document.getElementById("inspector-modal").classList.add("open");
+    }
+
+    function closeInspectorModal() {
+      document.getElementById("inspector-modal").classList.remove("open");
+    }
+
+    function copyInspectorContent() {
+      if (!inspectorRawContent) return;
+      navigator.clipboard.writeText(inspectorRawContent).then(() => {
+        const btn = document.getElementById("btn-copy-json");
+        btn.textContent = "✓ Đã chép!";
+        btn.style.color = "#34d399";
+        setTimeout(() => {
+          btn.textContent = "Sao chép JSON";
+          btn.style.color = "";
+        }, 1500);
+      });
+    }
+
+    function downloadFileBlob(content, filename, mimeType) {
+      const blob = new Blob([content], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+    // --------------------------------------------------------------------------
+    // Background Job Monitor & Progress HUD
+    // --------------------------------------------------------------------------
+    let studioActiveJobs = [];
+
+    async function pollActiveJobs() {
+      try {
+        const res = await studioFetch("/api/v1/studio/jobs/active");
+        if (!res.ok) return;
+        const jobs = await res.json();
+        studioActiveJobs = jobs || [];
+        const badge = document.getElementById("header-active-job-badge");
+        if (!badge) return;
+
+        if (studioActiveJobs.length > 0) {
+          const mainJob = studioActiveJobs[0];
+          badge.style.display = "inline-flex";
+          const pct = Math.max(0, Math.min(100, mainJob.progress_percentage || 0));
+          const chText = mainJob.total_chapters > 0 ? ` (${mainJob.processed_chapters}/${mainJob.total_chapters})` : "";
+          document.getElementById("haj-text").textContent = `⚙️ ${mainJob.novel_id}: ${pct}%${chText}`;
+          document.getElementById("haj-fill").style.width = `${pct}%`;
+          badge.title = `Tác vụ: ${mainJob.job_id}\nTrạng thái: ${mainJob.status}\nBước: ${mainJob.current_step}\nNhấn để xem chi tiết`;
+
+          // If inspector modal is currently viewing active job, refresh it in-place
+          const modalTitle = document.getElementById("inspector-modal-title");
+          if (modalTitle && modalTitle.innerText.includes("Tiến trình biên dịch EPUB") && document.getElementById("inspector-modal").classList.contains("open")) {
+            showActiveJobModal();
+          }
+        } else {
+          badge.style.display = "none";
+        }
+      } catch (_) {}
+    }
+
+    function showActiveJobModal() {
+      if (!studioActiveJobs || studioActiveJobs.length === 0) {
+        inspectContent("Tiến trình biên dịch EPUB ngầm", "<div style='text-align:center; padding:30px; color:var(--text-muted);'>Hiện không có tác vụ nào đang chạy ngầm.</div>", false);
+        return;
+      }
+
+      const html = studioActiveJobs.map(job => {
+        const pct = Math.max(0, Math.min(100, job.progress_percentage || 0));
+        const isProc = job.status === "processing";
+        const statusBadge = isProc
+          ? `<span style="background: rgba(14,165,233,0.2); border: 1px solid rgba(14,165,233,0.5); color: #38bdf8; padding: 2px 8px; border-radius: 4px; font-size: 11px;">PROCESSING</span>`
+          : `<span style="background: rgba(245,158,11,0.2); border: 1px solid rgba(245,158,11,0.5); color: #fbbf24; padding: 2px 8px; border-radius: 4px; font-size: 11px;">QUEUED</span>`;
+
+        return `
+          <div style="background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 16px; margin-bottom: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+              <div>
+                <b style="color: #38bdf8; font-size: 15px;">${escapeHtml(job.novel_id)}</b>
+                <span style="margin-left: 8px;">${statusBadge}</span>
+                <span style="background: rgba(255,255,255,0.06); color: #94a3b8; padding: 2px 6px; border-radius: 4px; font-size: 11px; margin-left: 4px;">${escapeHtml(job.strategy)}</span>
+              </div>
+              <div style="font-size: 18px; font-weight: 700; color: #34d399; font-family: var(--font-code);">${pct}%</div>
+            </div>
+
+            <!-- Progress Bar -->
+            <div style="width: 100%; height: 8px; background: rgba(255,255,255,0.08); border-radius: 4px; overflow: hidden; margin-bottom: 10px;">
+              <div style="width: ${pct}%; height: 100%; background: linear-gradient(90deg, #38bdf8, #34d399); transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);"></div>
+            </div>
+
+            <!-- Step Detail -->
+            <div style="font-size: 12px; color: #cbd5e1; font-family: var(--font-code); margin-bottom: 12px; background: rgba(0,0,0,0.3); padding: 8px 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.05); word-break: break-all;">
+              <span class="spinner" style="display: inline-block; width: 10px; height: 10px; border-width: 2px; vertical-align: middle; margin-right: 6px;"></span>
+              ${escapeHtml(job.current_step || 'Đang chuẩn bị tiến trình...')}
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-size: 12px; color: var(--text-muted);">
+                Đã xử lý: <b style="color: #f1f5f9;">${Number(job.processed_chapters || 0).toLocaleString()}</b> / ${Number(job.total_chapters || 0).toLocaleString()} chương
+              </span>
+              <button class="btn btn-sm btn-danger" data-cancel-novel-id="${escapeHtml(job.novel_id)}" data-cancel-job-id="${escapeHtml(job.job_id)}" style="padding: 4px 12px; font-size: 11px; background: rgba(239,68,68,0.2); border: 1px solid rgba(239,68,68,0.5); color: #f87171; border-radius: 4px; cursor: pointer;">
+                🛑 Hủy tác vụ
+              </button>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      inspectContent("Tiến trình biên dịch EPUB ngầm", html, false);
+    }
+
+    async function cancelActiveBuildJob(novelId, jobId) {
+      if (!confirm(`Bạn có chắc muốn hủy tác vụ biên dịch #${jobId.slice(0, 8)}?`)) return;
+      try {
+        const res = await studioFetch(`/api/v1/library/novels/${encodeURIComponent(novelId)}/epub-builds/${encodeURIComponent(jobId)}/cancel`, {
+          method: "POST"
+        });
+        if (res.ok) {
+          showToast("Đã gửi tín hiệu hủy tác vụ.", "success");
+          setTimeout(pollActiveJobs, 500);
+        } else {
+          showToast("Không thể hủy tác vụ.", "error");
+        }
+      } catch (err) {
+        showToast("Lỗi: " + err.message, "error");
+      }
+    }
+  </script>
+</body>
+</html>

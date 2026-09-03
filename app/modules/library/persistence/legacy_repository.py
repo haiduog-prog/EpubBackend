@@ -2,7 +2,7 @@ import uuid
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Set, Any, Dict
-from sqlalchemy import select, delete, desc, or_, and_, text
+from sqlalchemy import select, delete, desc, or_, and_, text, case
 from sqlalchemy.orm import Session, selectinload
 
 from app.config import settings
@@ -818,12 +818,35 @@ class LibraryRepository:
         stmt = (
             select(EpubBuildJobModel)
             .where(EpubBuildJobModel.novel_id == novel_id)
-            .order_by(EpubBuildJobModel.created_at.desc())
+            .order_by(
+                case(
+                    (EpubBuildJobModel.status == "processing", 1),
+                    (EpubBuildJobModel.status == "queued", 2),
+                    else_=3,
+                ),
+                EpubBuildJobModel.created_at.desc(),
+            )
         )
         job = session.execute(stmt).scalars().first()
         if not job:
             return None
         return cls._model_to_epub_build_job(job)
+
+    @classmethod
+    def get_active_build_jobs(cls, session: Session) -> List[EpubBuildJobResponse]:
+        stmt = (
+            select(EpubBuildJobModel)
+            .where(EpubBuildJobModel.status.in_(("processing", "queued")))
+            .order_by(
+                case(
+                    (EpubBuildJobModel.status == "processing", 1),
+                    else_=2,
+                ),
+                EpubBuildJobModel.created_at.asc(),
+            )
+        )
+        jobs = session.execute(stmt).scalars().all()
+        return [cls._model_to_epub_build_job(j) for j in jobs]
 
     @classmethod
     def update_job_progress(

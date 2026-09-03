@@ -1010,6 +1010,10 @@ class StorageRepository:
         if data is not None:
             return data
 
+        # Khi cấu hình storage_provider == "local", tuyệt đối không fallback gọi ra Cloud R2 / Supabase
+        if settings.storage_provider.lower() == "local":
+            return None
+
         # Keep legacy R2 chapter files readable while Supabase is the primary provider.
         if active_provider != self.r2_provider and self.r2_provider.is_active:
             data = self.r2_provider.get_bytes(object_name, raise_on_error=raise_on_error)

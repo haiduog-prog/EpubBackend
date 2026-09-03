@@ -361,6 +361,13 @@ from app.modules.library.persistence.legacy_repository import LibraryRepository
 from app.schemas.library import EpubBuildJobCreateRequest, EpubBuildJobResponse
 
 
+@router.get("/epub-builds/active-jobs", response_model=List[EpubBuildJobResponse])
+def list_active_epub_build_jobs_endpoint():
+    """Lấy danh sách các job biên dịch EPUB đang chạy hoặc xếp hàng trên toàn hệ thống."""
+    with db_session() as session:
+        return LibraryRepository.get_active_build_jobs(session)
+
+
 @router.post("/novels/{novel_id}/epub-builds", response_model=EpubBuildJobResponse, status_code=202)
 def trigger_epub_build_endpoint(
     novel_id: str,
@@ -376,14 +383,36 @@ def trigger_epub_build_endpoint(
 
     target_indexes = []
     if target_chapters:
+        max_allowed_chapters = max(10_000, (novel.total_chapters or 0) + 100)
         for part in str(target_chapters).split(","):
             part = part.strip()
             if "-" in part:
                 p1, _, p2 = part.partition("-")
-                if p1.strip().isdigit() and p2.strip().isdigit():
-                    target_indexes.extend(range(int(p1.strip()), int(p2.strip()) + 1))
+                p1_str, p2_str = p1.strip(), p2.strip()
+                if p1_str.isdigit() and p2_str.isdigit():
+                    start_ch = int(p1_str)
+                    end_ch = int(p2_str)
+                    if start_ch <= end_ch:
+                        if (end_ch - start_ch + 1) > max_allowed_chapters or end_ch > max_allowed_chapters:
+                            raise HTTPException(
+                                status_code=400,
+                                detail=f"Dải chương yêu cầu ({start_ch}-{end_ch}) vượt quá giới hạn cho phép (tối đa {max_allowed_chapters} chương).",
+                            )
+                        target_indexes.extend(range(start_ch, end_ch + 1))
             elif part.isdigit():
-                target_indexes.append(int(part))
+                ch_idx = int(part)
+                if ch_idx > max_allowed_chapters:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Chương {ch_idx} vượt quá giới hạn tối đa ({max_allowed_chapters}).",
+                    )
+                target_indexes.append(ch_idx)
+
+        if len(target_indexes) > max_allowed_chapters:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Tổng số chương yêu cầu ({len(target_indexes)}) vượt quá giới hạn cho phép ({max_allowed_chapters}).",
+            )
 
     with db_session() as session:
         job_resp = LibraryRepository.mark_dirty_and_enqueue_job(

@@ -782,6 +782,8 @@ def test_cancellation_cleans_up_local_and_cloud_artifacts():
 
     prefix = f"novels/{test_novel_id}/exports/"
     artifacts_before = set(storage_repo.list_files(prefix))
+    legacy_alias_key = f"novels/{test_novel_id}/full.epub"
+    legacy_alias_before = storage_repo.get_bytes(legacy_alias_key)
 
     # Cancel triggered on callback after progress hits 90% (after upload step)
     cancel_flag = {"cancelled": False}
@@ -804,3 +806,5 @@ def test_cancellation_cleans_up_local_and_cloud_artifacts():
     # Any artifact created by this cancelled build must be removed; older test data is allowed.
     artifacts_after = set(storage_repo.list_files(prefix))
     assert artifacts_after - artifacts_before == set()
+    # A cancelled build must never promote/overwrite the legacy mutable alias.
+    assert storage_repo.get_bytes(legacy_alias_key) == legacy_alias_before

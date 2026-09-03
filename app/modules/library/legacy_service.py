@@ -468,9 +468,14 @@ class LegacyLibraryService:
         tải file full.epub từ storage, trích xuất lại toàn bộ các chương, lưu vào storage
         và trả về dict {chapter_index: full_text}.
         """
-        epub_candidates = [
+        meta = self.get_novel(novel_id)
+        epub_candidates = []
+        if meta and meta.current_epub_key:
+            epub_candidates.append(meta.current_epub_key)
+        epub_candidates.extend([
             f"novels/{novel_id}/full.epub",
-        ]
+            f"{novel_id}/full.epub",
+        ])
         epub_bytes = None
         for key in epub_candidates:
             epub_bytes = storage_repo.get_bytes(key)
@@ -519,6 +524,7 @@ class LegacyLibraryService:
         version: str = "translated",
         allow_epub_self_heal: bool = True,
         is_cancelled_callback: Optional[Any] = None,
+        novel_meta: Optional[Any] = None,
     ) -> Optional[str]:
         if is_cancelled_callback and is_cancelled_callback():
             from app.modules.library.application.epub_export_service import EpubBuildCancelledException
@@ -534,16 +540,17 @@ class LegacyLibraryService:
             except Exception:
                 return data_bytes.decode("latin1", errors="ignore")
 
-        # If requesting translated version, check if the chapter has actually been completed or translated
-        meta = self.get_novel(novel_id)
-        chapter = next((c for c in meta.chapters if c.chapter_index == chapter_index), None) if meta else None
-        if is_trans and chapter and chapter.status != ChapterStatus.COMPLETED and not chapter.r2_translated_key:
-            return None
-
         # Self-healing is intentionally opt-in for rebuilds. A missing blob must
         # not make every export worker download/extract the entire EPUB.
         if not allow_epub_self_heal:
             return None
+
+        # If requesting translated version, check if the chapter has actually been completed or translated
+        meta = novel_meta if novel_meta is not None else self.get_novel(novel_id)
+        if is_trans:
+            chapter = next((c for c in meta.chapters if c.chapter_index == chapter_index), None) if meta else None
+            if chapter and chapter.status != ChapterStatus.COMPLETED and not chapter.r2_translated_key:
+                return None
 
         extracted_map = self._extract_and_cache_chapters_from_epub_storage(novel_id, is_translated=is_trans)
         if chapter_index in extracted_map:
@@ -895,9 +902,9 @@ class LegacyLibraryService:
 
             chapters_to_scan = meta.chapters[:max_chapters]
             for ch in chapters_to_scan:
-                content = self.get_chapter_content(novel_id, ch.chapter_index, version="original")
+                content = self.get_chapter_content(novel_id, ch.chapter_index, version="original", novel_meta=meta)
                 if not content:
-                    content = self.get_chapter_content(novel_id, ch.chapter_index, version="translated", allow_epub_self_heal=False)
+                    content = self.get_chapter_content(novel_id, ch.chapter_index, version="translated", allow_epub_self_heal=False, novel_meta=meta)
                 if not content:
                     continue
 
@@ -1104,6 +1111,7 @@ class LegacyLibraryService:
                                 version="translated",
                                 allow_epub_self_heal=False,
                                 is_cancelled_callback=is_cancelled_callback,
+                                novel_meta=meta,
                             )
                             return ch.chapter_index, txt
 
@@ -1283,6 +1291,7 @@ class LegacyLibraryService:
                 version="translated",
                 allow_epub_self_heal=False,
                 is_cancelled_callback=is_cancelled_callback,
+                novel_meta=meta,
             )
             if translated:
                 return ch.chapter_index, translated
@@ -1293,6 +1302,7 @@ class LegacyLibraryService:
                 version="original",
                 allow_epub_self_heal=False,
                 is_cancelled_callback=is_cancelled_callback,
+                novel_meta=meta,
             )
             return ch.chapter_index, original
 

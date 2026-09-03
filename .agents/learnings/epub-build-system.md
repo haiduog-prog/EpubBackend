@@ -42,7 +42,13 @@
 - **Chi tiết**: Các tác vụ tải chương đồng thời qua `concurrent.futures.ThreadPoolExecutor` không tự động dừng khi job bị hủy ở tầng API/DB. Cần truyền trực tiếp `is_cancelled_callback()` vào worker function bên trong thread pool, kiểm tra trước mỗi request I/O và raise `EpubBuildCancelledException` ngay lập tức để ngắt thread, tránh việc các thread tiếp tục gửi request mạng quán tính.
 - **Files liên quan**: `app/modules/library/legacy_service.py`
 
+### Follow-up Queued Job & Concurrency Coalescing Architecture
+- **Ngày**: 2026-09-03
+- **Chi tiết**: Khi nhận được yêu cầu build mới trong lúc đã có một job đang `processing`, API không được return sớm. Thay vào đó, gọi `mark_dirty_and_enqueue_job()`: nếu có job đang `processing`, hệ thống tăng `desired_revision`, gộp `dirty_chapters` và tạo một job kế tiếp ở trạng thái `queued`. Nếu đã có job `queued`, hệ thống coalesce (gộp) dải chương mới vào job đó mà không làm mất yêu cầu biên dịch của người dùng.
+- **Files liên quan**: `app/modules/library/api.py`, `app/modules/library/persistence/legacy_repository.py`, `tests/test_epub_build_concurrency.py`
+
 ---
+
 
 ## Bugs & Solutions
 
@@ -264,3 +270,14 @@
 - **Ngày**: 2026-09-03
 - **Chi tiết**: Tách biệt việc lưu file lên Cloud Storage và promote file thành bản phát hành chính thức (`current_epub_key`). File artifact chỉ được công nhận khi `complete_job()` trong DB thành công với lease token hợp lệ. Nếu gặp sự cố ở giai đoạn 2 (lease timeout, job cancelled), worker tự động gọi `storage_repo.delete_file` xoá artifact để tránh rò rỉ file mồ côi.
 - **Files liên quan**: `app/modules/library/application/epub_build_worker.py`, `app/modules/library/application/epub_export_service.py`
+
+### Target Chapters DoS Guarding Pattern
+- **Ngày**: 2026-09-03
+- **Chi tiết**: Khi parse dải chương `target_chapters` (dạng `start-end`), phải chặn dải chương quá lớn (`end - start + 1 > max_allowed_chapters` hoặc `ch_idx > max_allowed_chapters`) ngay lập tức với HTTP 400 trước khi gọi `range()`. Ngăn ngừa cạn kiệt RAM (OOM) khi người dùng truyền tham số cực đại (ví dụ `1-100000000`).
+- **Files liên quan**: `app/modules/library/api.py`, `tests/test_epub_build_concurrency.py`
+
+### Safe Legacy Mutable Alias Promotion Pattern
+- **Ngày**: 2026-09-03
+- **Chi tiết**: Tệp mutable alias legacy (`novels/{id}/full.epub`) cho các reader cũ chỉ được phép tải lên/đồng bộ SAU KHI versioned immutable artifact (`exports/r{rev}-{token}.epub`) và trạng thái DB (`complete_job()`) đã commit thành công 100%. Nếu job bị hủy hoặc thất bại, alias cũ tuyệt đối không bị ghi đè hoặc làm hỏng.
+- **Files liên quan**: `app/modules/library/application/epub_build_worker.py`, `tests/test_epub_fast_patch.py`
+

@@ -67,9 +67,6 @@ def _mount_local_storage(target_app: FastAPI, storage_dir: Path = DEFAULT_STORAG
 
 
 _mount_local_storage(app)
-reader_assets_dir = os.path.join(os.path.dirname(__file__), "static", "reader-tts")
-if os.path.isdir(reader_assets_dir):
-    app.mount("/reader-assets", StaticFiles(directory=reader_assets_dir), name="reader-assets")
 
 
 NO_CACHE_HEADERS = {
@@ -77,6 +74,42 @@ NO_CACHE_HEADERS = {
     "Pragma": "no-cache",
     "Expires": "0",
 }
+
+
+def _mount_studio(target_app: FastAPI) -> bool:
+    """Mount Studio API and UI only in explicitly local, non-production profile."""
+    if (
+        settings.storage_provider.lower() != "local"
+        or settings.app_env.lower() not in LOCAL_APP_ENVS
+    ):
+        return False
+
+    from fastapi import Depends
+    from app.api.v1.studio import router as studio_router
+    from app.auth import get_current_user
+
+    target_app.include_router(
+        studio_router,
+        prefix="/api/v1",
+        dependencies=[Depends(get_current_user)],
+    )
+
+    @target_app.get("/studio", response_class=HTMLResponse)
+    def read_studio_ui():
+        studio_path = os.path.join(os.path.dirname(__file__), "static", "studio.html")
+        if os.path.exists(studio_path):
+            with open(studio_path, "r", encoding="utf-8") as f:
+                return Response(content=f.read(), media_type="text/html", headers=NO_CACHE_HEADERS)
+        return "<h1>Studio UI unavailable</h1>"
+
+    return True
+
+
+_mount_studio(app)
+
+reader_assets_dir = os.path.join(os.path.dirname(__file__), "static", "reader-tts")
+if os.path.isdir(reader_assets_dir):
+    app.mount("/reader-assets", StaticFiles(directory=reader_assets_dir), name="reader-assets")
 
 
 @app.get("/login", response_class=HTMLResponse)

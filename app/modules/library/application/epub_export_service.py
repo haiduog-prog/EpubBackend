@@ -125,6 +125,7 @@ class EpubExportService:
                                     version="translated",
                                     allow_epub_self_heal=False,
                                     is_cancelled_callback=is_cancelled_callback,
+                                    novel_meta=novel,
                                 )
                                 if not txt:
                                     txt = self._legacy.get_chapter_content(
@@ -133,6 +134,7 @@ class EpubExportService:
                                         version="original",
                                         allow_epub_self_heal=False,
                                         is_cancelled_callback=is_cancelled_callback,
+                                        novel_meta=novel,
                                     )
                                 if txt:
                                     chapter_payloads[ch.chapter_index] = (ch.chapter_title, txt)
@@ -237,7 +239,9 @@ class EpubExportService:
             # Mark uploaded_versioned_key ONLY after successful upload and verification
             uploaded_versioned_key = versioned_key
 
-            # Verify cancellation right after upload to prevent promoting cancelled artifact
+            # Verify cancellation right after uploading the immutable artifact. The
+            # mutable legacy alias is promoted by the worker only after complete_job
+            # commits successfully, so cancellation/failure cannot overwrite it.
             if is_cancelled_callback and is_cancelled_callback():
                 raise EpubBuildCancelledException(f"Job '{job_id or novel_id}' đã bị hủy.")
 

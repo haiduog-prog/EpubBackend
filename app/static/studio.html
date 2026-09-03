@@ -1869,7 +1869,7 @@
               <div class="card-path-tag" title="Đường dẫn ổ đĩa: ${absEsc}">${pathEsc}</div>
               <div class="storage-card-meta">
                 <div style="font-family: var(--font-code); font-size: 11px;">${sizeLabel}</div>
-                <span style="font-size: 11px; color: var(--text-faint);">${item.modified_at ? escapeHtml(item.modified_at.split(' ')[0]) : ''}</span>
+                <span style="font-size: 11px; color: var(--text-faint);" title="Thời gian cập nhật">Cập nhật: ${item.modified_at ? escapeHtml(item.modified_at) : '—'}</span>
               </div>
             </div>
             ${!isDir ? `

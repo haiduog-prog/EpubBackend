@@ -166,7 +166,9 @@ def test_studio_storage_files_isolated_and_traversal_guard(isolated_studio_env):
     data = res.json()
     assert len(data["items"]) == 1
     assert data["items"][0]["name"] == "sample.txt"
-
+    assert "created_at" not in data["items"][0]
+    assert len(data["items"][0]["modified_at"]) == 19
+    assert data["items"][0]["modified_at"][10] == " "
     # Chặn Path Traversal
     res_traversal = client.get("/api/v1/studio/storage/files?sub_path=../")
     assert res_traversal.status_code == 400

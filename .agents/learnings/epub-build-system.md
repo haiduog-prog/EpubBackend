@@ -1,6 +1,6 @@
 # EPUB Build System
 
-> Tổng hợp kiến thức về hệ thống biên dịch EPUB: Fast Patch, Background Build Worker, Advisory Lock, Revision Tracking, Retention Management, Realtime Progress Reporting, Graceful Cancellation, Cross-Cloud Storage Fallback và Scoped Range Isolation.
+> Tổng hợp kiến thức về hệ thống biên dịch EPUB: Fast Patch, Background Build Worker, Advisory Lock, Revision Tracking, Retention Management, Realtime Progress Reporting, Graceful Cancellation, Cross-Cloud Storage Fallback, Scoped Range Isolation, và ThreadPool Cancellation Propagation.
 > Cập nhật lần cuối: 2026-09-03
 
 ---
@@ -36,6 +36,11 @@
 - **Ngày**: 2026-09-03
 - **Chi tiết**: Hệ thống hỗ trợ song song hai nhà cung cấp lưu trữ đám mây (Cloudflare R2 làm primary cho băng thông cao, Supabase làm secondary cho legacy storage). Repository phải thực hiện fallback 2 chiều cho `file_exists()`, `download_file_stream()`, và `get_bytes()`: nếu primary provider (R2) không tìm thấy đối tượng, bắt buộc phải kiểm tra tiếp secondary provider (Supabase) trước khi kết luận đối tượng không tồn tại.
 - **Files liên quan**: `app/infrastructure/storage/legacy_storage.py`
+
+### ThreadPool Cancellation Propagation Architecture
+- **Ngày**: 2026-09-03
+- **Chi tiết**: Các tác vụ tải chương đồng thời qua `concurrent.futures.ThreadPoolExecutor` không tự động dừng khi job bị hủy ở tầng API/DB. Cần truyền trực tiếp `is_cancelled_callback()` vào worker function bên trong thread pool, kiểm tra trước mỗi request I/O và raise `EpubBuildCancelledException` ngay lập tức để ngắt thread, tránh việc các thread tiếp tục gửi request mạng quán tính.
+- **Files liên quan**: `app/modules/library/legacy_service.py`
 
 ---
 
@@ -139,6 +144,27 @@
 - **Fix**: Lọc `chapters_to_export = [ch for ch in sorted(meta.chapters) if ch.chapter_index in target_indexes]`, chỉ tải và đóng gói đúng các chương trong dải yêu cầu.
 - **Files liên quan**: `app/modules/library/legacy_service.py`
 
+### ThreadPool Chạy Quán Tính Khi Đã Hủy Job Do Thiếu Callback Trong Worker Loop
+- **Ngày**: 2026-09-03
+- **Vấn đề**: Người dùng bấm Hủy Biên Dịch trên UI, API trả về status cancelled nhưng log server vẫn tiếp tục gửi HTTP request tải các chương tiếp theo.
+- **Root cause**: `ThreadPoolExecutor` trong `export_full_epub` không nhận `is_cancelled_callback`. Khi job bị hủy ở DB, các luồng đang chạy không biết và vẫn tải nốt danh sách chương.
+- **Fix**: Truyền `is_cancelled_callback` vào `_fetch_chapter_text`. Kiểm tra trước mỗi lần gửi request; nếu True thì raise `EpubBuildCancelledException` ngay lập tức để ngắt thread pool.
+- **Files liên quan**: `app/modules/library/legacy_service.py`, `app/modules/library/application/epub_export_service.py`
+
+### Fallback Rebuild Bị Mất Scoped Range Do Worker Thiếu target_chapters
+- **Ngày**: 2026-09-03
+- **Vấn đề**: Dù job là fast_patch cho chương 151, khi bị fallback sang rebuild, server lại tải toàn bộ 4000 chương từ chương 0.
+- **Root cause**: Worker khi gọi `build_and_publish_epub` chỉ truyền `dirty_chapters=[151]`, để `target_chapters=None`. Khi rơi vào fallback `export_full_epub`, nó thấy `target_chapters=None` nên coi như xuất toàn bộ truyện.
+- **Fix**: Worker tự động chuyển đổi `dirty_chapters` thành chuỗi `target_chapters="151"` trước khi gọi build. Đồng thời trong `epub_export_service.py` tự động suy diễn `effective_target_chapters` từ `target_indexes` trước khi fallback.
+- **Files liên quan**: `app/modules/library/application/epub_build_worker.py`, `app/modules/library/application/epub_export_service.py`
+
+### EPUB Layout Rejection Do Regex Tên File Chương Quá Khắt Khe
+- **Ngày**: 2026-09-03
+- **Vấn đề**: File base EPUB trên storage bị `is_layout_standardized` đánh giá là không chuẩn và ép fallback sang rebuild toàn bộ.
+- **Root cause**: Regex cũ `^ch_\d{4}\.xhtml$` chỉ chấp nhận định dạng đúng 4 chữ số (`ch_0151.xhtml`). Nếu file base có tên `chapter_151.xhtml` hoặc `ch_151.xhtml` thì bị từ chối.
+- **Fix**: Mở rộng regex thành `^(?:ch|chapter)_?0*(\d+)\.(?:xhtml|html)$` trong cả `is_layout_standardized` và `patch_epub_streaming`.
+- **Files liên quan**: `app/modules/library/application/epub_zip_patcher.py`
+
 ---
 
 ## How-To
@@ -195,3 +221,8 @@
 - **Ngày**: 2026-09-03
 - **Chi tiết**: Phân biệt rạch ròi giữa "thay đổi cấu trúc toàn cục của tiểu thuyết" (`is_structural_dirty`) và "thao tác biên dịch theo dải chương cụ thể" (`is_scoped_range = bool(dirty_indexes and not force_rebuild)`). Khi người dùng yêu cầu thao tác trên một phạm vi xác định, hệ thống cô lập phạm vi đó: không cho phép cờ bẩn toàn cục ép sang `full_rebuild`, và không bao giờ tải duyệt các chương nằm ngoài phạm vi được chỉ định.
 - **Files liên quan**: `app/modules/library/persistence/legacy_repository.py`, `app/modules/library/legacy_service.py`
+
+### Worker Param Forwarding Invariance Pattern
+- **Ngày**: 2026-09-03
+- **Chi tiết**: Mọi tham số phạm vi dải chương (`target_chapters`, `dirty_chapters`) phải được bảo toàn xuyên suốt chuỗi gọi hàm: `API -> DB Job -> Worker Claim -> Export Service -> Fallback Rebuild`. Nếu một hàm trung gian chuyển giao thiếu đối số, hàm con sẽ hiểu nhầm là yêu cầu xuất toàn bộ cuốn sách. Phải luôn có lớp suy diễn tự động (`effective_target_chapters = target_chapters or ",".join(dirty_chapters)`) để bảo vệ tính bất biến.
+- **Files liên quan**: `app/modules/library/application/epub_build_worker.py`, `app/modules/library/application/epub_export_service.py`

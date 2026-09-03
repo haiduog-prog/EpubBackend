@@ -518,7 +518,12 @@ class LegacyLibraryService:
         chapter_index: int,
         version: str = "translated",
         allow_epub_self_heal: bool = True,
+        is_cancelled_callback: Optional[Any] = None,
     ) -> Optional[str]:
+        if is_cancelled_callback and is_cancelled_callback():
+            from app.modules.library.application.epub_export_service import EpubBuildCancelledException
+            raise EpubBuildCancelledException(f"Tiến trình lấy nội dung chương cho '{novel_id}' đã bị hủy.")
+
         is_trans = (version.lower() == "translated")
         key = self._chapter_key(novel_id, chapter_index, is_translated=is_trans)
 
@@ -1030,6 +1035,8 @@ class LegacyLibraryService:
         progress_callback: Optional[Any] = None,
         is_cancelled_callback: Optional[Any] = None,
     ) -> str:
+        from app.modules.library.application.epub_export_service import EpubBuildCancelledException
+
         meta = self.get_novel(novel_id)
         if not meta:
             raise ValueError(f"Không tìm thấy bộ truyện '{novel_id}'")
@@ -1085,17 +1092,63 @@ class LegacyLibraryService:
 
 
                         # Fetch ONLY the translated chapters in parallel (e.g. 50 out of 4000)
-                        from concurrent.futures import ThreadPoolExecutor
+                        from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
                         from html import escape
 
                         def _fetch_trans_text(ch):
-                            txt = self.get_chapter_content(novel_id, ch.chapter_index, version="translated", allow_epub_self_heal=False)
+                            if is_cancelled_callback and is_cancelled_callback():
+                                raise EpubBuildCancelledException(f"Tiến trình biên dịch cho '{novel_id}' đã bị hủy.")
+                            txt = self.get_chapter_content(
+                                novel_id,
+                                ch.chapter_index,
+                                version="translated",
+                                allow_epub_self_heal=False,
+                                is_cancelled_callback=is_cancelled_callback,
+                            )
                             return ch.chapter_index, txt
 
                         # Keep export concurrency below the DB pool capacity. A missing storage object may make get_chapter_content() consult Postgres, so one worker per chapter can exhaust the pool during a delta rebuild.
                         export_workers = max(1, min(4, len(translated_chapters)))
-                        with ThreadPoolExecutor(max_workers=export_workers) as executor:
-                            trans_texts = dict(executor.map(_fetch_trans_text, translated_chapters))
+                        trans_executor = ThreadPoolExecutor(max_workers=export_workers)
+                        trans_texts = {}
+                        pending_futures = {}
+                        next_chapter_index = 0
+                        try:
+                            while next_chapter_index < len(translated_chapters) and len(pending_futures) < export_workers:
+                                chapter = translated_chapters[next_chapter_index]
+                                pending_futures[trans_executor.submit(_fetch_trans_text, chapter)] = chapter
+                                next_chapter_index += 1
+
+                            while pending_futures:
+                                if is_cancelled_callback and is_cancelled_callback():
+                                    raise EpubBuildCancelledException(f"Tiến trình biên dịch cho '{novel_id}' đã bị hủy.")
+
+                                done, _ = wait(
+                                    tuple(pending_futures),
+                                    timeout=0.25,
+                                    return_when=FIRST_COMPLETED,
+                                )
+                                if not done:
+                                    continue
+
+                                for fut in done:
+                                    pending_futures.pop(fut, None)
+                                    ch_idx, txt = fut.result()
+                                    trans_texts[ch_idx] = txt
+                                    if is_cancelled_callback and is_cancelled_callback():
+                                        raise EpubBuildCancelledException(f"Tiến trình biên dịch cho '{novel_id}' đã bị hủy.")
+                                    if next_chapter_index < len(translated_chapters):
+                                        chapter = translated_chapters[next_chapter_index]
+                                        pending_futures[trans_executor.submit(_fetch_trans_text, chapter)] = chapter
+                                        next_chapter_index += 1
+                        except EpubBuildCancelledException:
+                            trans_executor.shutdown(wait=False, cancel_futures=True)
+                            raise
+                        except Exception:
+                            trans_executor.shutdown(wait=False, cancel_futures=True)
+                            raise
+                        else:
+                            trans_executor.shutdown(wait=True)
 
                         doc_items = list(base_book.get_items_of_type(ebooklib.ITEM_DOCUMENT))
                         doc_by_filename = {item.get_name(): item for item in doc_items}
@@ -1103,19 +1156,22 @@ class LegacyLibraryService:
                             f"ch_{ch.chapter_index:04d}.xhtml" for ch in meta.chapters
                         }
                         missing_base_names = sorted(expected_base_names - set(doc_by_filename))
-                        if missing_base_names and not target_indexes:
+                        if missing_base_names:
                             raise ValueError(
-                                f"EPUB nền thiếu {len(missing_base_names)} chương; chuyển sang full compile"
-                            )
-                        if missing_base_names and target_indexes:
-                            logger.warning(
-                                "EPUB nền thiếu %d chương ngoài phạm vi rebuild của '%s'; chỉ patch phạm vi được yêu cầu",
-                                len(missing_base_names),
-                                novel_id,
+                                f"EPUB nền thiếu {len(missing_base_names)} chương so với metadata; chuyển sang full compile"
                             )
 
-                        # Patch translated chapters in the requested range. A range rebuild
-                        # intentionally does not scan chapters outside that range.
+                        # Check that all target chapters exist in base EPUB
+                        missing_targets = [
+                            ch.chapter_index for ch in translated_chapters
+                            if f"ch_{ch.chapter_index:04d}.xhtml" not in doc_by_filename
+                        ]
+                        if missing_targets:
+                            raise ValueError(
+                                f"EPUB nền thiếu các chương mục tiêu cần vá: {missing_targets}; chuyển sang full compile"
+                            )
+
+                        # Patch translated chapters in the requested range.
                         patched_count = 0
                         for ch in translated_chapters:
                             txt = trans_texts.get(ch.chapter_index)
@@ -1124,21 +1180,10 @@ class LegacyLibraryService:
                             paragraphs = "".join(f"<p>{escape(p.strip())}</p>" for p in txt.split("\n") if p.strip())
                             html_content = f"<h1>{escape(ch.chapter_title)}</h1>{paragraphs}"
 
-                            target_doc = None
                             expected_name = f"ch_{ch.chapter_index:04d}.xhtml"
-                            if expected_name in doc_by_filename:
-                                target_doc = doc_by_filename[expected_name]
-                            else:
-                                logger.warning(
-                                    "Bỏ qua patch chương %s của '%s': không tìm thấy file XHTML %s",
-                                    ch.chapter_index,
-                                    novel_id,
-                                    expected_name,
-                                )
-
-                            if target_doc:
-                                target_doc.content = html_content.encode("utf-8")
-                                patched_count += 1
+                            target_doc = doc_by_filename[expected_name]
+                            target_doc.content = html_content.encode("utf-8")
+                            patched_count += 1
 
                         if patched_count > 0 or len(translated_chapters) == 0:
                             epub.write_epub(output_path, base_book)
@@ -1147,6 +1192,8 @@ class LegacyLibraryService:
                     finally:
                         if os.path.exists(tmp_base_path):
                             os.unlink(tmp_base_path)
+            except EpubBuildCancelledException:
+                raise
             except Exception as patch_err:
                 logger.warning("Delta patching failed for '%s', falling back to full compile: %s", novel_id, patch_err)
 
@@ -1195,26 +1242,16 @@ class LegacyLibraryService:
         )
         book.add_item(default_css)
 
-        # Nếu có target_indexes (người dùng chọn dải chương cụ thể, ví dụ 151-151),
-        # chỉ xuất các chương trong dải đó để không phải duyệt tải toàn bộ chương khác.
-        if target_indexes:
-            chapters_to_export = [ch for ch in sorted(meta.chapters, key=lambda ch: ch.chapter_index) if ch.chapter_index in target_indexes]
-            logger.info(
-                "Biên dịch EPUB theo phạm vi cho '%s': %d chương (phạm vi: %s)",
-                novel_id,
-                len(chapters_to_export),
-                sorted(target_indexes),
-            )
-        else:
-            chapters_to_export = sorted(meta.chapters, key=lambda ch: ch.chapter_index)
+        # Luôn biên dịch đầy đủ toàn bộ chương theo thứ tự để file EPUB artifact
+        # đại diện cho tác phẩm luôn toàn vẹn và không bị thiếu chương.
+        chapters_to_export = sorted(meta.chapters, key=lambda ch: ch.chapter_index)
 
         # Tải song song nội dung các chương qua Connection Pool, nhưng không tự
         # động tải/giải nén full.epub cho từng chương bị thiếu blob.
-        from concurrent.futures import ThreadPoolExecutor
+        from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
         from threading import Lock
 
         if is_cancelled_callback and is_cancelled_callback():
-            from app.modules.library.application.epub_export_service import EpubBuildCancelledException
             raise EpubBuildCancelledException(f"Tiến trình biên dịch cho '{novel_id}' đã bị hủy.")
 
         total_export = len(chapters_to_export)
@@ -1224,7 +1261,6 @@ class LegacyLibraryService:
         def _fetch_chapter_text(ch):
             nonlocal processed_count
             if is_cancelled_callback and is_cancelled_callback():
-                from app.modules.library.application.epub_export_service import EpubBuildCancelledException
                 raise EpubBuildCancelledException(f"Tiến trình biên dịch cho '{novel_id}' đã bị hủy.")
 
             with prog_lock:
@@ -1246,6 +1282,7 @@ class LegacyLibraryService:
                 ch.chapter_index,
                 version="translated",
                 allow_epub_self_heal=False,
+                is_cancelled_callback=is_cancelled_callback,
             )
             if translated:
                 return ch.chapter_index, translated
@@ -1255,12 +1292,51 @@ class LegacyLibraryService:
                 ch.chapter_index,
                 version="original",
                 allow_epub_self_heal=False,
+                is_cancelled_callback=is_cancelled_callback,
             )
             return ch.chapter_index, original
 
         export_workers = max(1, min(4, len(chapters_to_export)))
-        with ThreadPoolExecutor(max_workers=export_workers) as executor:
-            chapter_texts = dict(executor.map(_fetch_chapter_text, chapters_to_export)) if chapters_to_export else {}
+        full_executor = ThreadPoolExecutor(max_workers=export_workers)
+        chapter_texts = {}
+        pending_futures = {}
+        next_chapter_index = 0
+        try:
+            while next_chapter_index < len(chapters_to_export) and len(pending_futures) < export_workers:
+                chapter = chapters_to_export[next_chapter_index]
+                pending_futures[full_executor.submit(_fetch_chapter_text, chapter)] = chapter
+                next_chapter_index += 1
+
+            while pending_futures:
+                if is_cancelled_callback and is_cancelled_callback():
+                    raise EpubBuildCancelledException(f"Tiến trình biên dịch cho '{novel_id}' đã bị hủy.")
+
+                done, _ = wait(
+                    tuple(pending_futures),
+                    timeout=0.25,
+                    return_when=FIRST_COMPLETED,
+                )
+                if not done:
+                    continue
+
+                for fut in done:
+                    pending_futures.pop(fut, None)
+                    ch_idx, txt = fut.result()
+                    chapter_texts[ch_idx] = txt
+                    if is_cancelled_callback and is_cancelled_callback():
+                        raise EpubBuildCancelledException(f"Tiến trình biên dịch cho '{novel_id}' đã bị hủy.")
+                    if next_chapter_index < len(chapters_to_export):
+                        chapter = chapters_to_export[next_chapter_index]
+                        pending_futures[full_executor.submit(_fetch_chapter_text, chapter)] = chapter
+                        next_chapter_index += 1
+        except EpubBuildCancelledException:
+            full_executor.shutdown(wait=False, cancel_futures=True)
+            raise
+        except Exception:
+            full_executor.shutdown(wait=False, cancel_futures=True)
+            raise
+        else:
+            full_executor.shutdown(wait=True)
 
         if is_cancelled_callback and is_cancelled_callback():
             from app.modules.library.application.epub_export_service import EpubBuildCancelledException

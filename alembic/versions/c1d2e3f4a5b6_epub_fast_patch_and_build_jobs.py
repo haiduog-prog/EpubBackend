@@ -21,15 +21,16 @@ JSONType = sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), "post
  
 def upgrade() -> None:
     # Add columns to novels
-    op.add_column("novels", sa.Column("current_epub_key", sa.String(), nullable=True))
-    op.add_column("novels", sa.Column("desired_revision", sa.Integer(), nullable=False, server_default="0"))
-    op.add_column("novels", sa.Column("built_revision", sa.Integer(), nullable=False, server_default="0"))
-    op.add_column("novels", sa.Column("is_structural_dirty", sa.Boolean(), nullable=False, server_default="false"))
-    op.add_column("novels", sa.Column("dirty_chapters", JSONType, nullable=False, server_default=sa.text("'[]'")))
-    op.alter_column("novels", "desired_revision", server_default=None)
-    op.alter_column("novels", "built_revision", server_default=None)
-    op.alter_column("novels", "is_structural_dirty", server_default=None)
-    op.alter_column("novels", "dirty_chapters", server_default=None)
+    with op.batch_alter_table("novels", schema=None) as batch_op:
+        batch_op.add_column(sa.Column("current_epub_key", sa.String(), nullable=True))
+        batch_op.add_column(sa.Column("desired_revision", sa.Integer(), nullable=False, server_default="0"))
+        batch_op.add_column(sa.Column("built_revision", sa.Integer(), nullable=False, server_default="0"))
+        batch_op.add_column(sa.Column("is_structural_dirty", sa.Boolean(), nullable=False, server_default="false"))
+        batch_op.add_column(sa.Column("dirty_chapters", JSONType, nullable=False, server_default=sa.text("'[]'")))
+        batch_op.alter_column("desired_revision", server_default=None)
+        batch_op.alter_column("built_revision", server_default=None)
+        batch_op.alter_column("is_structural_dirty", server_default=None)
+        batch_op.alter_column("dirty_chapters", server_default=None)
  
     # Create epub_build_jobs table
     op.create_table(
@@ -62,8 +63,9 @@ def downgrade() -> None:
     op.drop_index("idx_epub_build_jobs_status_created", table_name="epub_build_jobs")
     op.drop_table("epub_build_jobs")
  
-    op.drop_column("novels", "dirty_chapters")
-    op.drop_column("novels", "is_structural_dirty")
-    op.drop_column("novels", "built_revision")
-    op.drop_column("novels", "desired_revision")
-    op.drop_column("novels", "current_epub_key")
+    with op.batch_alter_table("novels", schema=None) as batch_op:
+        batch_op.drop_column("dirty_chapters")
+        batch_op.drop_column("is_structural_dirty")
+        batch_op.drop_column("built_revision")
+        batch_op.drop_column("desired_revision")
+        batch_op.drop_column("current_epub_key")

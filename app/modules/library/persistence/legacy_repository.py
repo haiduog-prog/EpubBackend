@@ -5,6 +5,7 @@ from typing import List, Optional, Set, Any, Dict
 from sqlalchemy import select, delete, desc, or_, and_, text
 from sqlalchemy.orm import Session, selectinload
 
+from app.config import settings
 
 logger = logging.getLogger("EpubBackend.LibraryRepository")
 
@@ -528,10 +529,20 @@ class LibraryRepository:
 
             job_dict.update(dirty_dict)
             existing_job.dirty_chapters = job_dict
-            if is_structural or force_rebuild or (novel.is_structural_dirty and not is_scoped_range) or not has_existing_base:
+            # Never downgrade an existing structural or full_rebuild job!
+            if existing_job.is_structural or existing_job.strategy == "full_rebuild":
                 existing_job.is_structural = True
                 existing_job.strategy = "full_rebuild"
-            elif has_existing_base and is_scoped_range:
+            elif (
+                is_structural
+                or force_rebuild
+                or (novel.is_structural_dirty and not is_scoped_range)
+                or not has_existing_base
+                or not settings.epub_fast_patch_enabled
+            ):
+                existing_job.is_structural = True
+                existing_job.strategy = "full_rebuild"
+            else:
                 existing_job.is_structural = False
                 existing_job.strategy = "fast_patch"
             existing_job.target_revision = current_rev
@@ -545,8 +556,14 @@ class LibraryRepository:
             or force_rebuild
             or (novel.is_structural_dirty and not is_scoped_range)
             or not has_existing_base
+            or not settings.epub_fast_patch_enabled
         )
         strategy = "full_rebuild" if needs_full else "fast_patch"
+        job_is_structural = bool(
+            is_structural
+            or force_rebuild
+            or (novel.is_structural_dirty and (not is_scoped_range or strategy == "full_rebuild"))
+        )
 
         new_job = EpubBuildJobModel(
             job_id=job_id,
@@ -554,7 +571,7 @@ class LibraryRepository:
             status="queued",
             strategy=strategy,
             dirty_chapters=dirty_dict,
-            is_structural=bool(novel.is_structural_dirty or is_structural or force_rebuild),
+            is_structural=job_is_structural,
             target_revision=current_rev,
             attempts=0,
             max_attempts=3,

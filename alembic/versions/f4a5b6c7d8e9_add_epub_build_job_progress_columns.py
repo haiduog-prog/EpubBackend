@@ -17,24 +17,26 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("epub_build_jobs", sa.Column("current_step", sa.String(), nullable=True, server_default=""))
-    op.alter_column("epub_build_jobs", "current_step", server_default=None)
+    with op.batch_alter_table("epub_build_jobs", schema=None) as batch_op:
+        batch_op.add_column(sa.Column("current_step", sa.String(), nullable=True, server_default=""))
+        batch_op.alter_column("current_step", server_default=None)
 
-    op.add_column("epub_build_jobs", sa.Column("current_chapter", sa.Integer(), nullable=True))
+        batch_op.add_column(sa.Column("current_chapter", sa.Integer(), nullable=True))
 
-    op.add_column("epub_build_jobs", sa.Column("total_chapters", sa.Integer(), nullable=False, server_default="0"))
-    op.alter_column("epub_build_jobs", "total_chapters", server_default=None)
+        batch_op.add_column(sa.Column("total_chapters", sa.Integer(), nullable=False, server_default="0"))
+        batch_op.alter_column("total_chapters", server_default=None)
 
-    op.add_column("epub_build_jobs", sa.Column("processed_chapters", sa.Integer(), nullable=False, server_default="0"))
-    op.alter_column("epub_build_jobs", "processed_chapters", server_default=None)
+        batch_op.add_column(sa.Column("processed_chapters", sa.Integer(), nullable=False, server_default="0"))
+        batch_op.alter_column("processed_chapters", server_default=None)
 
-    op.add_column("epub_build_jobs", sa.Column("progress_percentage", sa.Integer(), nullable=False, server_default="0"))
-    op.alter_column("epub_build_jobs", "progress_percentage", server_default=None)
+        batch_op.add_column(sa.Column("progress_percentage", sa.Integer(), nullable=False, server_default="0"))
+        batch_op.alter_column("progress_percentage", server_default=None)
 
 
 def downgrade() -> None:
-    op.drop_column("epub_build_jobs", "progress_percentage")
-    op.drop_column("epub_build_jobs", "processed_chapters")
-    op.drop_column("epub_build_jobs", "total_chapters")
-    op.drop_column("epub_build_jobs", "current_chapter")
-    op.drop_column("epub_build_jobs", "current_step")
+    with op.batch_alter_table("epub_build_jobs", schema=None) as batch_op:
+        batch_op.drop_column("progress_percentage")
+        batch_op.drop_column("processed_chapters")
+        batch_op.drop_column("total_chapters")
+        batch_op.drop_column("current_chapter")
+        batch_op.drop_column("current_step")

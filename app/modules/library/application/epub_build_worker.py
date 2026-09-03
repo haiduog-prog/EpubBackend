@@ -16,6 +16,7 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.db.session import engine, db_session
+from app.infrastructure.storage.facade import storage_repo
 from app.modules.library.application.facade import library_service
 from app.modules.library.application.epub_export_service import EpubBuildCancelledException
 from app.modules.library.persistence.legacy_repository import LibraryRepository
@@ -181,28 +182,61 @@ async def run_epub_build_consumer() -> None:
 
                         # If lease was lost during a very long build, do not overwrite state
                         if lease_state["lost"]:
-                            logger.warning("Job '%s' finished build but lease was lost during execution; skipping completion", job_id)
+                            logger.warning("Job '%s' finished build but lease was lost during execution; skipping completion and deleting artifact", job_id)
+                            try:
+                                storage_repo.delete_file(result["epub_key"])
+                            except Exception:
+                                pass
                         else:
-                            # Complete job in database
-                            with db_session() as comp_session:
-                                comp_success = LibraryRepository.complete_job(
-                                    session=comp_session,
-                                    job_id=job_id,
-                                    built_revision=built_rev,
-                                    epub_key=result["epub_key"],
-                                    worker_id=WORKER_ID,
-                                )
-                                comp_session.commit()
+                            # Check if job was cancelled in DB right before completing
+                            is_job_cancelled = False
+                            with db_session() as chk_session:
+                                is_job_cancelled = LibraryRepository.is_job_cancelled(chk_session, job_id)
 
-                            if comp_success:
-                                # Best-effort retention cleanup outside transaction
-                                library_service.export_service.cleanup_old_revisions_best_effort(novel_id, built_rev)
-                                logger.info(
-                                    "EPUB build job '%s' completed successfully -> revision %d (%s)",
-                                    job_id,
-                                    built_rev,
-                                    result["epub_key"],
-                                )
+                            if is_job_cancelled:
+                                logger.info("Job '%s' was cancelled before completion; deleting uploaded cloud artifact", job_id)
+                                try:
+                                    storage_repo.delete_file(result["epub_key"])
+                                except Exception:
+                                    pass
+                                with db_session() as cancel_session:
+                                    LibraryRepository.cancel_job(
+                                        session=cancel_session,
+                                        novel_id=novel_id,
+                                        job_id=job_id,
+                                    )
+                                    cancel_session.commit()
+                            else:
+                                # Complete job in database
+                                with db_session() as comp_session:
+                                    comp_success = LibraryRepository.complete_job(
+                                        session=comp_session,
+                                        job_id=job_id,
+                                        built_revision=built_rev,
+                                        epub_key=result["epub_key"],
+                                        worker_id=WORKER_ID,
+                                    )
+                                    comp_session.commit()
+
+                                if comp_success:
+                                    # Best-effort retention cleanup outside transaction
+                                    library_service.export_service.cleanup_old_revisions_best_effort(
+                                        novel_id,
+                                        built_rev,
+                                        current_epub_key=result["epub_key"],
+                                    )
+                                    logger.info(
+                                        "EPUB build job '%s' completed successfully -> revision %d (%s)",
+                                        job_id,
+                                        built_rev,
+                                        result["epub_key"],
+                                    )
+                                else:
+                                    logger.warning("complete_job returned False for job '%s'; deleting unpromoted cloud artifact", job_id)
+                                    try:
+                                        storage_repo.delete_file(result["epub_key"])
+                                    except Exception:
+                                        pass
 
                     except EpubBuildCancelledException as cancel_exc:
                         logger.info("EPUB build job '%s' cancelled by user: %s", job_id, cancel_exc)

@@ -1,4 +1,5 @@
 import os
+import re
 import zipfile
 import tempfile
 import pytest
@@ -10,6 +11,7 @@ from app.config import settings
 from app.db.session import db_session
 from app.infrastructure.storage.facade import storage_repo
 from app.modules.library.application.epub_zip_patcher import EpubZipPatcher
+from app.modules.library.application.epub_export_service import EpubBuildCancelledException
 from app.modules.library.application.facade import library_service
 from app.modules.library.persistence.legacy_models import NovelModel, ChapterModel, EpubBuildJobModel
 from app.modules.library.persistence.legacy_repository import LibraryRepository
@@ -524,4 +526,281 @@ def test_export_full_epub_cancellation_and_regex(tmp_path):
         )
 
 
+def test_fallback_full_rebuild_publishes_all_chapters():
+    """Verify that when fast patch is not applicable, fallback FULL_REBUILD generates ALL novel chapters."""
+    test_novel_id = "test-fallback-all-chapters-novel"
+    existing = library_service.get_novel(test_novel_id)
+    if not existing:
+        library_service.create_novel(
+            NovelCreateRequest(
+                title="Test Fallback All Chapters",
+                novel_id=test_novel_id,
+            )
+        )
+    for i in range(1, 4):
+        library_service.add_or_update_chapter(
+            novel_id=test_novel_id,
+            chapter_index=i,
+            chapter_title=f"Chương {i}",
+            content=f"Nội dung chương {i}",
+        )
 
+    # Make sure no base EPUB exists
+    with db_session() as session:
+        nov = LibraryRepository.get_novel(session, test_novel_id)
+        if nov:
+            nov.current_epub_key = None
+            session.commit()
+
+    # Request scoped range build for chapter 2 only
+    result = library_service.export_service.build_and_publish_epub(
+        novel_id=test_novel_id,
+        force_rebuild=False,
+        dirty_chapters=[2],
+        target_chapters="2",
+    )
+    assert result["strategy"] == "full_rebuild"
+
+    # Verify that the generated EPUB contains ALL 3 chapters
+    out_path = result["output_path"]
+    assert os.path.exists(out_path)
+    with zipfile.ZipFile(out_path, "r") as zf:
+        names = zf.namelist()
+        chapter_entries = [n for n in names if re.search(r"ch_\d+\.xhtml", n)]
+        assert len(chapter_entries) == 3
+
+
+def test_job_coalesce_no_downgrade_structural():
+    """Verify that coalescing a scoped range request does NOT downgrade an existing structural/full_rebuild job."""
+    test_novel_id = "test-coalesce-no-downgrade"
+    with db_session() as session:
+        session.query(EpubBuildJobModel).filter(EpubBuildJobModel.novel_id == test_novel_id).delete()
+        novel = session.get(NovelModel, test_novel_id)
+        if not novel:
+            novel = NovelModel(
+                novel_id=test_novel_id,
+                title="Test Coalesce No Downgrade",
+                status="ongoing",
+            )
+            session.add(novel)
+        session.commit()
+
+        # 1. Enqueue structural full rebuild
+        job1 = LibraryRepository.mark_dirty_and_enqueue_job(
+            session=session,
+            novel_id=test_novel_id,
+            is_structural=True,
+            force_rebuild=True,
+        )
+        session.commit()
+        assert job1.is_structural is True
+        assert job1.strategy == "full_rebuild"
+
+        # 2. Coalesce scoped range request
+        job2 = LibraryRepository.mark_dirty_and_enqueue_job(
+            session=session,
+            novel_id=test_novel_id,
+            dirty_indexes=[151],
+            is_structural=False,
+            force_rebuild=False,
+        )
+        session.commit()
+        # Must retain full_rebuild and is_structural=True!
+        assert job2.is_structural is True
+        assert job2.strategy == "full_rebuild"
+
+
+def test_new_scoped_job_is_not_structural_even_if_novel_structural_dirty(tmp_path):
+    """Verify that when novel.is_structural_dirty is True, a new scoped range job has is_structural=False and strategy=fast_patch."""
+    test_novel_id = "test-scoped-dirty-struct"
+
+    # Create dummy base EPUB on storage
+    base_file = str(tmp_path / "base.epub")
+    _create_sample_base_epub(base_file, chapter_count=2)
+    storage_repo.upload_file_stream(base_file, f"novels/{test_novel_id}/full.epub")
+
+    with db_session() as session:
+        session.query(EpubBuildJobModel).filter(EpubBuildJobModel.novel_id == test_novel_id).delete()
+        nov = session.get(NovelModel, test_novel_id)
+        if not nov:
+            nov = NovelModel(
+                novel_id=test_novel_id,
+                title="Test Scoped Dirty Struct",
+                status="ongoing",
+            )
+            session.add(nov)
+        nov.is_structural_dirty = True
+        nov.current_epub_key = f"novels/{test_novel_id}/full.epub"
+        session.commit()
+
+        job = LibraryRepository.mark_dirty_and_enqueue_job(
+            session=session,
+            novel_id=test_novel_id,
+            dirty_indexes=[1],
+            is_structural=False,
+            force_rebuild=False,
+        )
+        session.commit()
+
+        assert job.is_structural is False
+        assert job.strategy == "fast_patch"
+
+
+def test_scoped_job_without_base_keeps_full_rebuild_structural_flag():
+    """A scoped request still needs a structural full rebuild when no base EPUB exists."""
+    test_novel_id = "test-scoped-dirty-no-base"
+
+    with db_session() as session:
+        session.query(EpubBuildJobModel).filter(EpubBuildJobModel.novel_id == test_novel_id).delete()
+        novel = session.get(NovelModel, test_novel_id)
+        if not novel:
+            novel = NovelModel(
+                novel_id=test_novel_id,
+                title="Test Scoped Dirty Without Base",
+                status="ongoing",
+            )
+            session.add(novel)
+        novel.is_structural_dirty = True
+        novel.current_epub_key = None
+        session.commit()
+
+        job = LibraryRepository.mark_dirty_and_enqueue_job(
+            session=session,
+            novel_id=test_novel_id,
+            dirty_indexes=[1],
+            is_structural=False,
+            force_rebuild=False,
+        )
+        session.commit()
+
+        assert job.is_structural is True
+        assert job.strategy == "full_rebuild"
+
+
+def test_missing_target_chapter_in_base_triggers_error(tmp_path):
+    """Verify that EpubZipPatcher raises ValueError when target chapter is missing in base EPUB."""
+    base_file = str(tmp_path / "base_missing.epub")
+    out_file = str(tmp_path / "out.epub")
+    _create_sample_base_epub(base_file, chapter_count=2)
+
+    # Try to patch chapter 5 (which does not exist in base EPUB with only chapters 1 and 2)
+    with pytest.raises(ValueError, match=r"Target chapters \[5\] not found in base EPUB"):
+        EpubZipPatcher.patch_epub_streaming(
+            base_epub_path=base_file,
+            output_epub_path=out_file,
+            chapter_payloads={5: ("Chương 5", "Nội dung chương 5")},
+        )
+
+
+def test_fast_patch_build_success_with_cancelled_callback(tmp_path):
+    """Verify that fast patch succeeds without fallback when is_cancelled_callback is passed."""
+    test_novel_id = "test-fast-patch-success"
+    existing = library_service.get_novel(test_novel_id)
+    if not existing:
+        library_service.create_novel(
+            NovelCreateRequest(
+                title="Test Fast Patch Success",
+                novel_id=test_novel_id,
+            )
+        )
+    for i in range(1, 3):
+        library_service.add_or_update_chapter(
+            novel_id=test_novel_id,
+            chapter_index=i,
+            chapter_title=f"Chương {i}",
+            content=f"Nội dung chương {i}",
+        )
+    library_service.apply_chapter_translation(
+        novel_id=test_novel_id,
+        chapter_index=2,
+        content="Bản dịch chương 2 đã được cập nhật",
+    )
+
+    # Create valid standardized base EPUB on storage
+    base_file = str(tmp_path / "base_standard.epub")
+    _create_sample_base_epub(base_file, chapter_count=2, non_standard=False)
+    storage_repo.upload_file_stream(base_file, f"novels/{test_novel_id}/full.epub")
+
+    with db_session() as session:
+        nov = session.get(NovelModel, test_novel_id)
+        if not nov:
+            nov = NovelModel(
+                novel_id=test_novel_id,
+                title="Test Fast Patch Success",
+                status="ongoing",
+            )
+            session.add(nov)
+        nov.current_epub_key = f"novels/{test_novel_id}/full.epub"
+        nov.is_structural_dirty = False
+        nov.built_revision = 1
+        session.commit()
+
+    # Build only dirty chapter 2
+    result = library_service.export_service.build_and_publish_epub(
+        novel_id=test_novel_id,
+        force_rebuild=False,
+        dirty_chapters=[2],
+        target_chapters="2",
+        is_cancelled_callback=lambda: False,
+    )
+
+    assert result["strategy"] == "fast_patch"
+    assert result["patched_chapters_count"] == 1
+    assert result["built_revision"] >= 1
+    assert storage_repo.file_exists(result["epub_key"]) is True
+
+
+def test_cancellation_cleans_up_local_and_cloud_artifacts():
+    """Verify that if build is cancelled after upload, the cloud artifact is deleted and not left orphaned."""
+    test_novel_id = "test-cancel-cleanup-novel"
+    existing = library_service.get_novel(test_novel_id)
+    if not existing:
+        library_service.create_novel(
+            NovelCreateRequest(
+                title="Test Cancel Cleanup Novel",
+                novel_id=test_novel_id,
+            )
+        )
+    library_service.add_or_update_chapter(
+        novel_id=test_novel_id,
+        chapter_index=1,
+        chapter_title="Chương 1",
+        content="Nội dung chương 1",
+    )
+
+    with db_session() as session:
+        nov = session.get(NovelModel, test_novel_id)
+        if not nov:
+            nov = NovelModel(
+                novel_id=test_novel_id,
+                title="Test Cancel Cleanup Novel",
+                status="ongoing",
+            )
+            session.add(nov)
+        nov.built_revision = 0
+        session.commit()
+
+    prefix = f"novels/{test_novel_id}/exports/"
+    artifacts_before = set(storage_repo.list_files(prefix))
+
+    # Cancel triggered on callback after progress hits 90% (after upload step)
+    cancel_flag = {"cancelled": False}
+
+    def _chk():
+        return cancel_flag["cancelled"]
+
+    def _prog(step, ch_idx, processed, total, pct):
+        if pct >= 90:
+            cancel_flag["cancelled"] = True
+
+    with pytest.raises(EpubBuildCancelledException):
+        library_service.export_service.build_and_publish_epub(
+            novel_id=test_novel_id,
+            force_rebuild=True,
+            progress_callback=_prog,
+            is_cancelled_callback=_chk,
+        )
+
+    # Any artifact created by this cancelled build must be removed; older test data is allowed.
+    artifacts_after = set(storage_repo.list_files(prefix))
+    assert artifacts_after - artifacts_before == set()

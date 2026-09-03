@@ -1,6 +1,6 @@
 # EPUB Build System
 
-> Tổng hợp kiến thức về hệ thống biên dịch EPUB: Fast Patch, Background Build Worker, Advisory Lock, Revision Tracking, Retention Management, Realtime Progress Reporting và Graceful Cancellation.
+> Tổng hợp kiến thức về hệ thống biên dịch EPUB: Fast Patch, Background Build Worker, Advisory Lock, Revision Tracking, Retention Management, Realtime Progress Reporting, Graceful Cancellation, Cross-Cloud Storage Fallback và Scoped Range Isolation.
 > Cập nhật lần cuối: 2026-09-03
 
 ---
@@ -31,6 +31,11 @@
 - **Ngày**: 2026-09-03
 - **Chi tiết**: Client poll trạng thái job qua API và nhận thông tin `current_step`, `current_chapter`, `processed_chapters`, `total_chapters`, `progress_percentage`. Khi người dùng bấm "Hủy", client gọi `POST /epub-builds/{job_id}/cancel`. Worker/Exporter kiểm tra qua `is_cancelled_callback()` trước mỗi lượt tải chương. Nếu bị hủy, hệ thống raise `EpubBuildCancelledException`, dọn dẹp file tạm, không cập nhật storage và chuyển job sang trạng thái `cancelled`.
 - **Files liên quan**: `app/modules/library/application/epub_export_service.py`, `app/modules/library/application/epub_build_worker.py`, `app/modules/library/api.py`
+
+### Cross-Cloud Storage Fallback Architecture
+- **Ngày**: 2026-09-03
+- **Chi tiết**: Hệ thống hỗ trợ song song hai nhà cung cấp lưu trữ đám mây (Cloudflare R2 làm primary cho băng thông cao, Supabase làm secondary cho legacy storage). Repository phải thực hiện fallback 2 chiều cho `file_exists()`, `download_file_stream()`, và `get_bytes()`: nếu primary provider (R2) không tìm thấy đối tượng, bắt buộc phải kiểm tra tiếp secondary provider (Supabase) trước khi kết luận đối tượng không tồn tại.
+- **Files liên quan**: `app/infrastructure/storage/legacy_storage.py`
 
 ---
 
@@ -113,6 +118,27 @@
 - **Fix**: Tạo migration Alembic thêm các cột mới và chạy `python -m alembic upgrade head`.
 - **Files liên quan**: `alembic/versions/f4a5b6c7d8e9_add_epub_build_job_progress_columns.py`, `app/modules/library/persistence/legacy_models.py`
 
+### Base EPUB False-Miss Do Thiếu Cross-Cloud Fallback Giữa R2 và Supabase
+- **Ngày**: 2026-09-03
+- **Vấn đề**: Người dùng xuất chương 151 nhưng hệ thống luôn nhận định `has_existing_base = False` và ép sang `FULL_REBUILD`.
+- **Root cause**: Trên Render, R2 là active provider nhưng file `full.epub` nằm trên Supabase. Hàm `storage_repo.file_exists()` chỉ kiểm tra R2 và local disk, không hỏi Supabase nên trả về False.
+- **Fix**: Bổ sung fallback kiểm tra chéo sang Supabase trong `file_exists()`, `download_file_stream()`, và `get_bytes()`. Đồng thời kiểm tra cả hai tiền tố `novels/{id}/full.epub` và `{id}/full.epub`.
+- **Files liên quan**: `app/infrastructure/storage/legacy_storage.py`, `app/modules/library/persistence/legacy_repository.py`
+
+### Cờ is_structural_dirty Toàn Cục Ép Scoped Range Sang FULL_REBUILD
+- **Ngày**: 2026-09-03
+- **Vấn đề**: Khi một bộ truyện chưa từng build thành công, cờ `is_structural_dirty` vẫn là `True` trong database, khiến mọi request vá theo dải chương cụ thể (151-151) bị ép sang `FULL_REBUILD`.
+- **Root cause**: Điều kiện `needs_full = bool(... or novel.is_structural_dirty ...)` không phân biệt giữa rebuild toàn bộ và vá dải chương cụ thể.
+- **Fix**: Định nghĩa `is_scoped_range = bool(dirty_indexes and not force_rebuild)`. Chỉ kích hoạt `full_rebuild` từ cờ này khi `novel.is_structural_dirty and not is_scoped_range`.
+- **Files liên quan**: `app/modules/library/persistence/legacy_repository.py`
+
+### export_full_epub Bỏ Qua target_indexes Khi Rebuild Dải Chương
+- **Ngày**: 2026-09-03
+- **Vấn đề**: Khi rebuild dải chương 151-151, worker vẫn duyệt và tải toàn bộ các chương từ chương 0 của cả bộ truyện.
+- **Root cause**: Code cũ trong `export_full_epub` cố tình log "bỏ qua range" và gán `chapters_to_export = sorted(meta.chapters)`.
+- **Fix**: Lọc `chapters_to_export = [ch for ch in sorted(meta.chapters) if ch.chapter_index in target_indexes]`, chỉ tải và đóng gói đúng các chương trong dải yêu cầu.
+- **Files liên quan**: `app/modules/library/legacy_service.py`
+
 ---
 
 ## How-To
@@ -164,3 +190,8 @@
 - **Ngày**: 2026-09-03
 - **Chi tiết**: Hàm xử lý I/O nặng độc lập (`build_and_publish_epub`) không phụ thuộc trực tiếp vào DB session dài hạn. Thay vào đó, worker tiêm một callback nhẹ: mỗi khi tải xong một phần tử, callback mở một transaction con ngắn hạn ghi nhận `current_step` và commit ngay lập tức. Client poll status sẽ nhận được dòng trạng thái live mượt mà mà không gây database lock contention.
 - **Files liên quan**: `app/modules/library/application/epub_export_service.py`, `app/modules/library/application/epub_build_worker.py`
+
+### Scoped Range Isolation Pattern
+- **Ngày**: 2026-09-03
+- **Chi tiết**: Phân biệt rạch ròi giữa "thay đổi cấu trúc toàn cục của tiểu thuyết" (`is_structural_dirty`) và "thao tác biên dịch theo dải chương cụ thể" (`is_scoped_range = bool(dirty_indexes and not force_rebuild)`). Khi người dùng yêu cầu thao tác trên một phạm vi xác định, hệ thống cô lập phạm vi đó: không cho phép cờ bẩn toàn cục ép sang `full_rebuild`, và không bao giờ tải duyệt các chương nằm ngoài phạm vi được chỉ định.
+- **Files liên quan**: `app/modules/library/persistence/legacy_repository.py`, `app/modules/library/legacy_service.py`

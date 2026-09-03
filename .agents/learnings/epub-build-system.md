@@ -1,6 +1,6 @@
 # EPUB Build System
 
-> Tổng hợp kiến thức về hệ thống biên dịch EPUB: Fast Patch, Background Build Worker, Advisory Lock, Revision Tracking, Retention Management, Realtime Progress Reporting, Graceful Cancellation, Cross-Cloud Storage Fallback, Scoped Range Isolation, và ThreadPool Cancellation Propagation.
+> Tổng hợp kiến thức về hệ thống biên dịch EPUB: Fast Patch, Background Build Worker, Advisory Lock, Revision Tracking, Retention Management, Realtime Progress Reporting, Graceful Cancellation, Cross-Cloud Storage Fallback, Scoped Range Isolation, Sliding Window Concurrency, và Two-Phase Artifact Guarding.
 > Cập nhật lần cuối: 2026-09-03
 
 ---
@@ -9,7 +9,7 @@
 
 ### FAST_PATCH vs FULL_REBUILD Two-Strategy Pattern
 - **Ngày**: 2026-09-02
-- **Chi tiết**: Hệ thống dùng hai chiến lược build EPUB. FAST_PATCH chỉ thay thế XHTML chapters đã thay đổi trong archive ZIP có sẵn bằng Info-ZIP `zip -u` (hoặc fallback Python zipfile streaming). FULL_REBUILD dùng `ebooklib.write_epub()` tạo lại toàn bộ. FAST_PATCH chỉ áp dụng khi: (a) `epub_fast_patch_enabled=True`, (b) không phải structural change, (c) layout standardized (`ch_NNNN.xhtml`). Mọi trường hợp khác fallback FULL_REBUILD.
+- **Chi tiết**: Hệ thống dùng hai chiến lược build EPUB. FAST_PATCH chỉ thay thế XHTML chapters đã thay đổi trong archive ZIP có sẵn bằng Info-ZIP `zip -u` (hoặc fallback Python zipfile streaming). FULL_REBUILD dùng `ebooklib.write_epub()` tạo lại toàn bộ. FAST_PATCH chỉ áp dụng khi: (a) `epub_fast_patch_enabled=True`, (b) không `force_rebuild` và nếu có `is_structural_dirty` thì request phải là scoped range, (c) layout standardized (`ch_NNNN.xhtml`). Mọi trường hợp khác fallback FULL_REBUILD.
 - **Files liên quan**: `app/modules/library/application/epub_export_service.py`, `app/modules/library/application/epub_zip_patcher.py`
 
 ### Background Build Consumer (Single Worker)
@@ -22,9 +22,9 @@
 - **Chi tiết**: `dirty_chapters` lưu dưới dạng dict `{"chapter_index": revision_number}` thay vì list. Khi worker claim job, nó snapshot `claimed_dirty_chapters`. Khi complete, so sánh claimed vs current: nếu chapter có revision mới hơn claimed → giữ lại trong dirty set và tự enqueue job tiếp. Pattern này giải quyết race condition khi user sửa chapter cùng lúc worker đang build.
 - **Files liên quan**: `app/modules/library/persistence/legacy_repository.py` (mark_dirty_and_enqueue_job, complete_job)
 
-### Immutable Versioned EPUB Artifacts
-- **Ngày**: 2026-09-02
-- **Chi tiết**: Mỗi build tạo file `novels/{id}/exports/r{rev}.epub` trên Object Storage (Supabase/R2). File là immutable — không bao giờ ghi đè. Retention policy xóa revision cũ: `oldest_to_keep = current_rev - retention_copies + 1`. Novel model lưu `current_epub_key` trỏ vào revision mới nhất.
+### Immutable Versioned EPUB Artifacts & Attempt Tokens
+- **Ngày**: 2026-09-03
+- **Chi tiết**: Mỗi build tạo file `novels/{id}/exports/r{rev}-{artifact_token}.epub` trên Object Storage (Supabase/R2). Việc gắn `artifact_token` (UUID4 hex) đảm bảo mỗi lần chạy hoặc retry độc lập hoàn toàn, không bao giờ ghi đè hoặc xoá nhầm artifact hợp lệ của nhau. Retention policy dọn dẹp các bản sao cũ hoặc bản trùng revision nhưng khác `current_epub_key`.
 - **Files liên quan**: `app/modules/library/application/epub_export_service.py`
 
 ### Realtime Progress & Graceful Cancellation Architecture
@@ -137,26 +137,54 @@
 - **Fix**: Định nghĩa `is_scoped_range = bool(dirty_indexes and not force_rebuild)`. Chỉ kích hoạt `full_rebuild` từ cờ này khi `novel.is_structural_dirty and not is_scoped_range`.
 - **Files liên quan**: `app/modules/library/persistence/legacy_repository.py`
 
-### export_full_epub Bỏ Qua target_indexes Khi Rebuild Dải Chương
+### Published EPUB Artifact Bắt Buộc Phải Chứa Toàn Bộ Cuốn Sách
 - **Ngày**: 2026-09-03
-- **Vấn đề**: Khi rebuild dải chương 151-151, worker vẫn duyệt và tải toàn bộ các chương từ chương 0 của cả bộ truyện.
-- **Root cause**: Code cũ trong `export_full_epub` cố tình log "bỏ qua range" và gán `chapters_to_export = sorted(meta.chapters)`.
-- **Fix**: Lọc `chapters_to_export = [ch for ch in sorted(meta.chapters) if ch.chapter_index in target_indexes]`, chỉ tải và đóng gói đúng các chương trong dải yêu cầu.
-- **Files liên quan**: `app/modules/library/legacy_service.py`
+- **Vấn đề**: Khi fast patch thất bại hoặc không có base EPUB, nếu truyền `target_chapters` vào fallback `FULL_REBUILD`, hệ thống chỉ xuất các chương trong dải yêu cầu (vd: chương 151) và sau đó gán artifact này làm `current_epub_key` của bộ truyện, phá hỏng file EPUB chính của truyện.
+- **Root cause**: Nhầm lẫn giữa việc "biên dịch nhanh một chương" với việc "xuất bản file EPUB đại diện cho cả cuốn tiểu thuyết".
+- **Fix**: Khi fallback sang `FULL_REBUILD`, `EpubExportService` luôn gọi `export_full_epub` với `target_chapters=None` và `export_full_epub` Strategy 2 luôn biên dịch đầy đủ mọi chương của tác phẩm.
+- **Files liên quan**: `app/modules/library/application/epub_export_service.py`, `app/modules/library/legacy_service.py`
 
-### ThreadPool Chạy Quán Tính Khi Đã Hủy Job Do Thiếu Callback Trong Worker Loop
+### Coalesce Job Không Được Downgrade Job Structural / Full Rebuild Đã Có
 - **Ngày**: 2026-09-03
-- **Vấn đề**: Người dùng bấm Hủy Biên Dịch trên UI, API trả về status cancelled nhưng log server vẫn tiếp tục gửi HTTP request tải các chương tiếp theo.
-- **Root cause**: `ThreadPoolExecutor` trong `export_full_epub` không nhận `is_cancelled_callback`. Khi job bị hủy ở DB, các luồng đang chạy không biết và vẫn tải nốt danh sách chương.
-- **Fix**: Truyền `is_cancelled_callback` vào `_fetch_chapter_text`. Kiểm tra trước mỗi lần gửi request; nếu True thì raise `EpubBuildCancelledException` ngay lập tức để ngắt thread pool.
+- **Vấn đề**: Khi một job `full_rebuild` đang chờ trong hàng đợi, một request scoped range (vd: dải 151-151) tới sau đã ghi đè và hạ cấp `strategy` thành `fast_patch` và `is_structural = False`. Ngoài ra, `new_job.is_structural` bị set `True` khi novel có `is_structural_dirty`, khiến worker tự ý ép thành full rebuild.
+- **Root cause**: Logic coalescing thiếu điều kiện bảo vệ trạng thái `existing_job.is_structural` / `existing_job.strategy == "full_rebuild"`, và logic tạo `new_job` không loại trừ `is_scoped_range` khi gán `is_structural`.
+- **Fix**: Trong `mark_dirty_and_enqueue_job`, bảo lưu `is_structural=True` và `strategy="full_rebuild"` cho `existing_job` nếu job đã ở trạng thái đó. Khi không có base EPUB hoặc fast patch bị tắt, strategy mới cũng là `full_rebuild`; cờ structural được bật tương ứng để complete job xử lý đúng dirty state. Với scoped request có base hợp lệ, `is_structural_dirty` không tự ép thành full rebuild.
+- **Files liên quan**: `app/modules/library/persistence/legacy_repository.py`
+
+### EPUB Nền Thiếu Chapter Mục Tiêu Phải Fallback Full Compile
+- **Ngày**: 2026-09-03
+- **Vấn đề**: Trong Strategy 1 (`export_full_epub`), khi base EPUB thiếu chapter mục tiêu cần vá, code chỉ in warning rồi bỏ qua và vẫn lưu file EPUB trả về thành công, tạo ra artifact thiếu dữ liệu.
+- **Root cause**: Thiếu validation fail-fast cho danh sách `translated_chapters` đối chiếu với `doc_by_filename`.
+- **Fix**: Kiểm tra chặt chẽ `missing_targets = [ch for ch in translated_chapters if expected_name not in doc_by_filename]`. Nếu phát hiện thiếu, `raise ValueError` ngay lập tức để fallback sang Strategy 2 (Full Compilation).
+- **Files liên quan**: `app/modules/library/legacy_service.py`, `app/modules/library/application/epub_zip_patcher.py`
+
+### get_chapter_content() Mismatch Signature Gây Fallback Fast Patch Âm Thầm
+- **Ngày**: 2026-09-03
+- **Vấn đề**: Fast patch truyền `is_cancelled_callback` vào `get_chapter_content()`, nhưng hàm chỉ nhận 4 tham số. Phát sinh `TypeError`, bị catch ở khối ngoài nuốt lỗi và âm thầm đẩy sang full rebuild.
+- **Root cause**: Cập nhật caller nhưng quên đồng bộ callee signature.
+- **Fix**: Thêm `is_cancelled_callback: Optional[Any] = None` vào `get_chapter_content()` và kiểm tra cancellation ngay trước khi đọc storage.
 - **Files liên quan**: `app/modules/library/legacy_service.py`, `app/modules/library/application/epub_export_service.py`
 
-### Fallback Rebuild Bị Mất Scoped Range Do Worker Thiếu target_chapters
+### UnboundLocalError Do Import Exception Sau Exception Handler Cùng Scope
 - **Ngày**: 2026-09-03
-- **Vấn đề**: Dù job là fast_patch cho chương 151, khi bị fallback sang rebuild, server lại tải toàn bộ 4000 chương từ chương 0.
-- **Root cause**: Worker khi gọi `build_and_publish_epub` chỉ truyền `dirty_chapters=[151]`, để `target_chapters=None`. Khi rơi vào fallback `export_full_epub`, nó thấy `target_chapters=None` nên coi như xuất toàn bộ truyện.
-- **Fix**: Worker tự động chuyển đổi `dirty_chapters` thành chuỗi `target_chapters="151"` trước khi gọi build. Đồng thời trong `epub_export_service.py` tự động suy diễn `effective_target_chapters` từ `target_indexes` trước khi fallback.
-- **Files liên quan**: `app/modules/library/application/epub_build_worker.py`, `app/modules/library/application/epub_export_service.py`
+- **Vấn đề**: `except EpubBuildCancelledException` ở Strategy 1 chạy trước câu lệnh import exception cùng tên ở Strategy 2 trong cùng một hàm. Bytecode compiler coi đây là local variable và ném `UnboundLocalError`.
+- **Root cause**: Import trong function tạo local binding cho toàn bộ function scope.
+- **Fix**: Import `EpubBuildCancelledException` ngay đầu hàm `_export_full_epub_unlocked`.
+- **Files liên quan**: `app/modules/library/legacy_service.py`
+
+### Sliding Window Concurrency Ngắt I/O Tức Thì Khi Cancel
+- **Ngày**: 2026-09-03
+- **Vấn đề**: `executor.map()` nạp toàn bộ danh sách task vào queue và block tuần tự. Nếu task đầu bị nghẽn mạng, các task sau dù bị huỷ cũng không ngắt được ngay.
+- **Root cause**: Queue không có backpressure và hàm đợi không hỗ trợ timeout ngắt quãng.
+- **Fix**: Duy trì cửa sổ trượt tối đa `export_workers` pending futures; dùng `wait(..., timeout=0.25, return_when=FIRST_COMPLETED)` để kiểm tra cancellation định kỳ mỗi 250ms, gọi `shutdown(wait=False, cancel_futures=True)` ngắt tức thì.
+- **Files liên quan**: `app/modules/library/legacy_service.py`
+
+### Cloud Cleanup An Toàn Chống Race/Retry & Dọn Dẹp Unpromoted Artifacts
+- **Ngày**: 2026-09-03
+- **Vấn đề**: `uploaded_versioned_key` gán trước khi upload khiến retry thất bại có thể xoá nhầm artifact hợp lệ của lần trước. Ngoài ra nếu worker mất lease hoặc completion trả về False sau upload, artifact bị bỏ mồ côi trên cloud.
+- **Root cause**: Tracking sớm và thiếu cleanup ở worker khi complete job thất bại.
+- **Fix**: Gán tracking SAU KHI upload và verify thành công. Dùng `artifact_token` (UUID4 hex) cho mỗi artifact. Trong worker, nếu lease mất hoặc `complete_job` trả về False, tự động gọi `storage_repo.delete_file` dọn sạch cloud artifact chưa được promote.
+- **Files liên quan**: `app/modules/library/application/epub_export_service.py`, `app/modules/library/application/epub_build_worker.py`
 
 ### EPUB Layout Rejection Do Regex Tên File Chương Quá Khắt Khe
 - **Ngày**: 2026-09-03
@@ -219,10 +247,20 @@
 
 ### Scoped Range Isolation Pattern
 - **Ngày**: 2026-09-03
-- **Chi tiết**: Phân biệt rạch ròi giữa "thay đổi cấu trúc toàn cục của tiểu thuyết" (`is_structural_dirty`) và "thao tác biên dịch theo dải chương cụ thể" (`is_scoped_range = bool(dirty_indexes and not force_rebuild)`). Khi người dùng yêu cầu thao tác trên một phạm vi xác định, hệ thống cô lập phạm vi đó: không cho phép cờ bẩn toàn cục ép sang `full_rebuild`, và không bao giờ tải duyệt các chương nằm ngoài phạm vi được chỉ định.
+- **Chi tiết**: Phân biệt rạch ròi giữa "thay đổi cấu trúc toàn cục của tiểu thuyết" (`is_structural_dirty`) và "thao tác biên dịch theo dải chương cụ thể" (`is_scoped_range = bool(dirty_indexes and not force_rebuild)`). Khi có base EPUB hợp lệ và fast patch bật, request scoped chỉ tải các chapter trong phạm vi. Nếu không có base, layout không hợp lệ hoặc fast patch thất bại, fallback vẫn phải tải đầy đủ để artifact được publish luôn đại diện cho toàn bộ cuốn sách.
 - **Files liên quan**: `app/modules/library/persistence/legacy_repository.py`, `app/modules/library/legacy_service.py`
 
 ### Worker Param Forwarding Invariance Pattern
 - **Ngày**: 2026-09-03
-- **Chi tiết**: Mọi tham số phạm vi dải chương (`target_chapters`, `dirty_chapters`) phải được bảo toàn xuyên suốt chuỗi gọi hàm: `API -> DB Job -> Worker Claim -> Export Service -> Fallback Rebuild`. Nếu một hàm trung gian chuyển giao thiếu đối số, hàm con sẽ hiểu nhầm là yêu cầu xuất toàn bộ cuốn sách. Phải luôn có lớp suy diễn tự động (`effective_target_chapters = target_chapters or ",".join(dirty_chapters)`) để bảo vệ tính bất biến.
+- **Chi tiết**: Mọi tham số phạm vi dải chương (`target_chapters`, `dirty_chapters`) phải được bảo toàn xuyên suốt chuỗi gọi hàm `API -> DB Job -> Worker Claim -> Export Service`. Ở fallback full rebuild, phạm vi được cố ý bỏ qua để artifact publish chứa toàn bộ cuốn sách; chỉ fast patch mới dùng phạm vi để giới hạn I/O.
+- **Files liên quan**: `app/modules/library/application/epub_build_worker.py`, `app/modules/library/application/epub_export_service.py`
+
+### Sliding Window Concurrency with Cooperative Cancellation Pattern
+- **Ngày**: 2026-09-03
+- **Chi tiết**: Giới hạn pending futures tối đa bằng `export_workers` và dùng `wait(timeout=0.25, return_when=FIRST_COMPLETED)` để kiểm tra cancellation định kỳ thay vì nạp toàn bộ danh sách vào thread pool. Kết hợp callback kiểm tra cooperative cancellation ở tầng thấp nhất (`get_chapter_content`) để ngắt I/O ngay trước khi gửi request xuống storage.
+- **Files liên quan**: `app/modules/library/legacy_service.py`
+
+### Two-Phase Post-Upload Artifact Guarding Pattern
+- **Ngày**: 2026-09-03
+- **Chi tiết**: Tách biệt việc lưu file lên Cloud Storage và promote file thành bản phát hành chính thức (`current_epub_key`). File artifact chỉ được công nhận khi `complete_job()` trong DB thành công với lease token hợp lệ. Nếu gặp sự cố ở giai đoạn 2 (lease timeout, job cancelled), worker tự động gọi `storage_repo.delete_file` xoá artifact để tránh rò rỉ file mồ côi.
 - **Files liên quan**: `app/modules/library/application/epub_build_worker.py`, `app/modules/library/application/epub_export_service.py`

@@ -4626,6 +4626,7 @@
                 const jobData = await enqueueRes.json().catch(() => ({}));
                 const targetJobId = jobData.job_id || 'status';
                 currentEpubBuildJobId = targetJobId;
+                if (typeof startFloatingBuildPolling === 'function') startFloatingBuildPolling();
 
                 // Update strategy badge from server response
                 if (jobData.strategy) {
@@ -5454,16 +5455,38 @@
         // ====================================================================
         let activeFloatingBuildJob = null;
         let isPollingActiveFloatingJobs = false;
+        let floatingBuildPollTimer = null;
+
+        function scheduleNextFloatingBuildPoll(delayMs = 2500) {
+            if (floatingBuildPollTimer) clearTimeout(floatingBuildPollTimer);
+            floatingBuildPollTimer = setTimeout(pollActiveFloatingBuildJobs, delayMs);
+        }
+
+        function startFloatingBuildPolling() {
+            if (floatingBuildPollTimer) clearTimeout(floatingBuildPollTimer);
+            pollActiveFloatingBuildJobs();
+        }
+
+        function stopFloatingBuildPolling() {
+            if (floatingBuildPollTimer) {
+                clearTimeout(floatingBuildPollTimer);
+                floatingBuildPollTimer = null;
+            }
+        }
 
         async function pollActiveFloatingBuildJobs() {
             if (isPollingActiveFloatingJobs) return;
+            if (document.hidden) return;
             isPollingActiveFloatingJobs = true;
             const mainModal = document.getElementById('modal-epub-build-progress');
             const isMainModalOpen = mainModal && mainModal.classList.contains('active');
 
             try {
                 const res = await fetch(apiUrl('/api/v1/library/epub-builds/active-jobs'));
-                if (!res.ok) return;
+                if (!res.ok) {
+                    stopFloatingBuildPolling();
+                    return;
+                }
                 const jobs = await res.json();
                 const bar = document.getElementById('floating-build-bar');
                 if (!bar) return;
@@ -5474,26 +5497,28 @@
 
                     if (isMainModalOpen) {
                         bar.style.display = 'none';
-                        return;
+                    } else {
+                        bar.style.display = 'block';
+                        const pct = Math.max(0, Math.min(100, job.progress_percentage || 0));
+
+                        document.getElementById('fbb-novel-title').textContent = job.novel_id;
+                        document.getElementById('fbb-pct').textContent = `${pct}%`;
+                        document.getElementById('fbb-fill').style.width = `${pct}%`;
+                        document.getElementById('fbb-strategy').textContent = (job.strategy || 'EPUB').toUpperCase();
+
+                        const stepText = job.current_step || (job.status === 'queued' ? 'Đang xếp hàng chờ...' : 'Đang xử lý...');
+                        const chCount = job.total_chapters > 0 ? ` [${job.processed_chapters}/${job.total_chapters}]` : '';
+                        document.getElementById('fbb-step').textContent = `${stepText}${chCount}`;
+
+                        document.getElementById('fbb-btn-detail').style.display = 'inline-flex';
+                        document.getElementById('fbb-btn-cancel').style.display = 'inline-flex';
+                        document.getElementById('fbb-btn-download').style.display = 'none';
+                        document.getElementById('fbb-btn-dismiss').style.display = 'none';
+                        document.getElementById('fbb-spinner').style.display = 'inline-block';
                     }
 
-                    bar.style.display = 'block';
-                    const pct = Math.max(0, Math.min(100, job.progress_percentage || 0));
-
-                    document.getElementById('fbb-novel-title').textContent = job.novel_id;
-                    document.getElementById('fbb-pct').textContent = `${pct}%`;
-                    document.getElementById('fbb-fill').style.width = `${pct}%`;
-                    document.getElementById('fbb-strategy').textContent = (job.strategy || 'EPUB').toUpperCase();
-
-                    const stepText = job.current_step || (job.status === 'queued' ? 'Đang xếp hàng chờ...' : 'Đang xử lý...');
-                    const chCount = job.total_chapters > 0 ? ` [${job.processed_chapters}/${job.total_chapters}]` : '';
-                    document.getElementById('fbb-step').textContent = `${stepText}${chCount}`;
-
-                    document.getElementById('fbb-btn-detail').style.display = 'inline-flex';
-                    document.getElementById('fbb-btn-cancel').style.display = 'inline-flex';
-                    document.getElementById('fbb-btn-download').style.display = 'none';
-                    document.getElementById('fbb-btn-dismiss').style.display = 'none';
-                    document.getElementById('fbb-spinner').style.display = 'inline-block';
+                    // Keep polling while job is actively running
+                    scheduleNextFloatingBuildPoll(2500);
                 } else {
                     if (activeFloatingBuildJob && (activeFloatingBuildJob.status === 'processing' || activeFloatingBuildJob.status === 'queued')) {
                         const prevJob = activeFloatingBuildJob;
@@ -5545,8 +5570,12 @@
                         bar.style.display = 'none';
                         activeFloatingBuildJob = null;
                     }
+
+                    // Stop polling when no active jobs remain!
+                    stopFloatingBuildPolling();
                 }
             } catch (_) {
+                stopFloatingBuildPolling();
             } finally {
                 isPollingActiveFloatingJobs = false;
             }
@@ -5556,6 +5585,7 @@
             const bar = document.getElementById('floating-build-bar');
             if (bar) bar.style.display = 'none';
             activeFloatingBuildJob = null;
+            stopFloatingBuildPolling();
         }
 
         function openActiveBuildDetailFromBar() {
@@ -5573,7 +5603,7 @@
                     method: 'POST'
                 });
                 showToast('Đã yêu cầu hủy biên dịch.', 'info');
-                pollActiveFloatingBuildJobs();
+                startFloatingBuildPolling();
             } catch (e) {
                 showToast('Lỗi: ' + e.message, 'error');
             }
@@ -5587,10 +5617,15 @@
             await downloadCurrentEpubBuild();
         }
 
-        // Start background polling when window loads
+        // Start background polling when window loads (checks once, stops if no active jobs)
         window.addEventListener('DOMContentLoaded', () => {
             pollActiveFloatingBuildJobs();
-            setInterval(pollActiveFloatingBuildJobs, 2500);
+
+            document.addEventListener('visibilitychange', () => {
+                if (!document.hidden && !floatingBuildPollTimer) {
+                    pollActiveFloatingBuildJobs();
+                }
+            });
         });
     </script>
 

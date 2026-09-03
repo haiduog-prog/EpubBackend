@@ -1426,7 +1426,13 @@
       await loadOverview();
       await loadTablesList();
       await pollActiveJobs();
-      setInterval(pollActiveJobs, 2500);
+
+      // Listen to tab visibility: when switching back to tab, check once
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden && !studioActiveJobsTimer) {
+          pollActiveJobs();
+        }
+      });
 
       // Setup global keyboard shortcut
       window.addEventListener("keydown", (e) => {
@@ -2145,17 +2151,43 @@
     // Background Job Monitor & Progress HUD
     // --------------------------------------------------------------------------
     let studioActiveJobs = [];
+    let studioActiveJobsTimer = null;
+    let studioHadActiveJobs = false;
+
+    function scheduleNextActiveJobsPoll(delayMs = 2500) {
+      if (studioActiveJobsTimer) clearTimeout(studioActiveJobsTimer);
+      studioActiveJobsTimer = setTimeout(pollActiveJobs, delayMs);
+    }
+
+    function startActiveJobsPolling() {
+      if (studioActiveJobsTimer) clearTimeout(studioActiveJobsTimer);
+      pollActiveJobs();
+    }
+
+    function stopActiveJobsPolling() {
+      if (studioActiveJobsTimer) {
+        clearTimeout(studioActiveJobsTimer);
+        studioActiveJobsTimer = null;
+      }
+    }
 
     async function pollActiveJobs() {
+      // Don't poll when tab is backgrounded
+      if (document.hidden) return;
+
       try {
         const res = await studioFetch("/api/v1/studio/jobs/active");
-        if (!res.ok) return;
+        if (!res.ok) {
+          stopActiveJobsPolling();
+          return;
+        }
         const jobs = await res.json();
         studioActiveJobs = jobs || [];
         const badge = document.getElementById("header-active-job-badge");
         if (!badge) return;
 
         if (studioActiveJobs.length > 0) {
+          studioHadActiveJobs = true;
           const mainJob = studioActiveJobs[0];
           badge.style.display = "inline-flex";
           const pct = Math.max(0, Math.min(100, mainJob.progress_percentage || 0));
@@ -2169,13 +2201,26 @@
           if (modalTitle && modalTitle.innerText.includes("Tiến trình biên dịch EPUB") && document.getElementById("inspector-modal").classList.contains("open")) {
             showActiveJobModal();
           }
+
+          // Continue polling while active
+          scheduleNextActiveJobsPoll(2500);
         } else {
           badge.style.display = "none";
+          if (studioHadActiveJobs) {
+            studioHadActiveJobs = false;
+            loadOverview();
+            showToast("✓ Tác vụ biên dịch EPUB đã hoàn tất!");
+          }
+          // Stop polling completely when no active jobs are running!
+          stopActiveJobsPolling();
         }
-      } catch (_) {}
+      } catch (_) {
+        stopActiveJobsPolling();
+      }
     }
 
     function showActiveJobModal() {
+      startActiveJobsPolling();
       if (!studioActiveJobs || studioActiveJobs.length === 0) {
         inspectContent("Tiến trình biên dịch EPUB ngầm", "<div style='text-align:center; padding:30px; color:var(--text-muted);'>Hiện không có tác vụ nào đang chạy ngầm.</div>", false);
         return;
@@ -2233,7 +2278,7 @@
         });
         if (res.ok) {
           showToast("Đã gửi tín hiệu hủy tác vụ.", "success");
-          setTimeout(pollActiveJobs, 500);
+          setTimeout(startActiveJobsPolling, 500);
         } else {
           showToast("Không thể hủy tác vụ.", "error");
         }

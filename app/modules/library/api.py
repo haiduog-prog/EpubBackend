@@ -14,6 +14,7 @@ from app.schemas.library import (
     BulkDeleteNovelsResponse,
     ChapterApplyTranslationRequest,
     ChapterCreateRequest,
+    ChapterExtractionStats,
     ChapterItem,
     ChapterTranslatePreviewResponse,
     ChapterTranslateRequest,
@@ -292,6 +293,23 @@ def get_chapter_draft_endpoint(
     if content is None:
         raise HTTPException(status_code=404, detail="Bản draft cần duyệt không tồn tại.")
     return {"novel_id": novel_id, "chapter_index": chapter_index, "version": "draft", "content": content}
+
+
+@router.get(
+    "/novels/{novel_id}/chapters/{chapter_index}/extraction-stats",
+    response_model=ChapterExtractionStats,
+)
+def get_chapter_extraction_stats_endpoint(
+    novel_id: str,
+    chapter_index: int,
+    _: None = Depends(require_write_access),
+):
+    """Return Book Bible entities extracted from the chapter for reviewers."""
+    try:
+        return library_service.get_chapter_extraction_stats(novel_id, chapter_index)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
 
 @router.get("/novels/{novel_id}/chapters/{chapter_index}/character-snapshot")
 def get_chapter_character_snapshot_endpoint(novel_id: str, chapter_index: int, response: Response):

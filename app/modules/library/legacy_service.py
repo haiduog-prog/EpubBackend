@@ -26,6 +26,8 @@ from app.llm.factory import create_llm_client
 from app.schemas.book_bible import BookBible
 from app.schemas.library import (
     ChapterCreateRequest,
+    ChapterExtractionItem,
+    ChapterExtractionStats,
     ChapterItem,
     ChapterStatus,
     ChapterTranslatePreviewResponse,
@@ -584,6 +586,68 @@ class LegacyLibraryService:
             return data_bytes.decode("utf-8")
         except Exception:
             return data_bytes.decode("latin1", errors="ignore")
+
+    def get_chapter_extraction_stats(
+        self,
+        novel_id: str,
+        chapter_index: int,
+    ) -> ChapterExtractionStats:
+        """Return entities first extracted from the chapter for the review UI."""
+        meta = self.get_novel(novel_id)
+        if not meta:
+            raise ValueError(f"Không tìm thấy bộ truyện '{novel_id}'")
+
+        bible = storage_repo.get_bible(novel_id) or BookBible(novel_id=novel_id)
+
+        def belongs_to_chapter(entry: Any) -> bool:
+            return getattr(entry, "first_seen_chapter", None) == chapter_index
+
+        characters = [
+            ChapterExtractionItem(
+                original_name=character.original_name,
+                vi_name=character.vi_name,
+                detail=character.role,
+            )
+            for character in bible.characters
+            if belongs_to_chapter(character)
+        ]
+        places = [
+            ChapterExtractionItem(
+                original_name=place.original_name,
+                vi_name=place.vi_name,
+                detail=place.notes,
+            )
+            for place in bible.places
+            if belongs_to_chapter(place)
+        ]
+        terms = [
+            ChapterExtractionItem(
+                original_name=term.original_name,
+                vi_name=term.vi_name,
+                detail=term.notes,
+                category=term.category,
+            )
+            for term in bible.terms
+            if belongs_to_chapter(term)
+        ]
+
+        pending_change_count = sum(
+            1
+            for change in bible.pending_changes
+            if change.chapter_index == chapter_index and change.status == "pending"
+        )
+        return ChapterExtractionStats(
+            novel_id=novel_id,
+            chapter_index=chapter_index,
+            character_count=len(characters),
+            place_count=len(places),
+            term_count=len(terms),
+            pending_change_count=pending_change_count,
+            characters=characters,
+            places=places,
+            terms=terms,
+        )
+
     def get_chapter_content_url(
         self,
         novel_id: str,

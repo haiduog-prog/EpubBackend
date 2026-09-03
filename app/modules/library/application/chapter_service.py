@@ -2,7 +2,7 @@ from typing import Any, Dict, List, Optional
 
 from app.modules.library.legacy_service import LegacyLibraryService
 from app.schemas.book_bible import BookBible
-from app.schemas.library import ChapterItem
+from app.schemas.library import ChapterExtractionStats, ChapterItem
 
 
 class ChapterService:
@@ -16,6 +16,9 @@ class ChapterService:
 
     def content(self, novel_id: str, chapter_index: int, version: str = "translated") -> Optional[str]:
         return self._legacy.get_chapter_content(novel_id, chapter_index, version)
+
+    def extraction_stats(self, novel_id: str, chapter_index: int) -> ChapterExtractionStats:
+        return self._legacy.get_chapter_extraction_stats(novel_id, chapter_index)
 
     def content_url(self, chapter: ChapterItem, version: str = "translated") -> Optional[str]:
         return self._legacy.get_chapter_content_url_for_item(chapter, version)

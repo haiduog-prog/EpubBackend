@@ -3,6 +3,13 @@ import uuid
 import tempfile
 from typing import List, Tuple
 import pytest
+from app.schemas.book_bible import (
+    BookBible,
+    CharacterEntry,
+    PendingBibleChange,
+    PlaceEntry,
+    TermEntry,
+)
 from app.schemas.library import NovelCreateRequest, NovelUpdateRequest, ChapterStatus
 from app.services.library_service import LibraryService, slugify, parse_chapter_index_from_title
 
@@ -689,6 +696,68 @@ async def test_translate_chapter_fallback_when_original_is_empty(monkeypatch):
     assert service.get_chapter_content(novel_id, 1, version="translated") == "Bản dịch mới sau khi dịch lại chương 1."
 
     service.delete_novel(novel_id)
+
+
+def test_chapter_extraction_stats_are_scoped_to_chapter(monkeypatch):
+    service = LibraryService()
+    novel_id = f"chapter-stats-{uuid.uuid4().hex[:8]}"
+    service.create_novel(NovelCreateRequest(title="Chapter Stats", novel_id=novel_id))
+
+    bible = BookBible(
+        novel_id=novel_id,
+        characters=[
+            CharacterEntry(
+                character_id="char-1",
+                original_name="萧炎",
+                vi_name="Tiêu Viêm",
+                role="Nhân vật chính",
+                first_seen_chapter=3,
+            ),
+            CharacterEntry(
+                character_id="char-2",
+                original_name="药老",
+                vi_name="Dược Lão",
+                first_seen_chapter=4,
+            ),
+        ],
+        places=[
+            PlaceEntry(original_name="乌坦城", vi_name="Ô Thản Thành", first_seen_chapter=3),
+        ],
+        terms=[
+            TermEntry(
+                original_name="斗气",
+                vi_name="Đấu khí",
+                category="power",
+                first_seen_chapter=3,
+            ),
+        ],
+        pending_changes=[
+            PendingBibleChange(
+                change_id="pending-3",
+                change_type="canonical_correction",
+                target_id="char-1",
+                chapter_index=3,
+                status="pending",
+            ),
+        ],
+    )
+    monkeypatch.setattr(
+        "app.modules.library.legacy_service.storage_repo.get_bible",
+        lambda requested_novel_id: bible if requested_novel_id == novel_id else None,
+    )
+
+    try:
+        stats = service.get_chapter_extraction_stats(novel_id, 3)
+
+        assert stats.character_count == 1
+        assert stats.place_count == 1
+        assert stats.term_count == 1
+        assert stats.pending_change_count == 1
+        assert [item.vi_name for item in stats.characters] == ["Tiêu Viêm"]
+        assert [item.vi_name for item in stats.places] == ["Ô Thản Thành"]
+        assert stats.terms[0].category == "power"
+    finally:
+        service.delete_novel(novel_id)
 
 
 def test_get_chapter_content_self_healing_from_full_epub():

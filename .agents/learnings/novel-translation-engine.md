@@ -124,7 +124,19 @@
 - **Chi tiết**: Address term có thể giữ tên/đại từ gốc trong observation để audit, nhưng `self_term` và `other_term` phải là tiếng Việt. Resolver dựng Bible hiệu lực theo chapter, loại observation CJK và chỉ chọn counterpart name không-CJK; nếu không có tên dịch dùng `đối phương`.
 - **Files liên quan**: `app/modules/book_bible/domain/address_term_policy.py`, `app/modules/book_bible/domain/legacy_address_resolver.py`, `app/modules/book_bible/domain/legacy_review_policy.py`
 
+### Chapter Review Extraction Statistics
+- **Ngày**: 2026-09-03
+- **Chi tiết**: Màn hình duyệt chương đọc thống kê nhân vật, địa danh và thuật ngữ được phát hiện riêng trong chapter từ Book Bible. Backend lọc theo `first_seen_chapter`, còn frontend hiển thị ba nhóm độc lập cùng số lượng pending changes.
+- **Files liên quan**: `app/modules/library/api.py`, `app/modules/library/legacy_service.py`, `app/static/index.html`
+
 ## Bugs & Solutions
+
+### Translation Review Status Is Intentional
+- **Ngày**: 2026-09-03
+- **Vấn đề**: Chương vừa dịch thường ở trạng thái chờ duyệt thay vì hoàn tất.
+- **Root cause**: Luồng dịch còn chạy Book Bible scan, terminology QA và semantic review; nếu phát hiện vấn đề hoặc review không hoàn thành thì draft được lưu với trạng thái `needs_review` để tránh publish bản chưa đạt.
+- **Fix**: Giữ review gate, đồng thời bổ sung thống kê trích xuất ngay trong popup duyệt để người dùng kiểm tra context trước khi áp dụng bản dịch.
+- **Files liên quan**: `app/modules/library/legacy_service.py`, `app/modules/translation/application/semantic_review_service.py`, `app/static/index.html`
 
 ### False 'Vừa xong' Timestamp Caused by Pydantic Dynamic Default Factory
 - **Ngày**: 2026-08-25
@@ -297,6 +309,15 @@ esponse_schema vào 	ypes.GenerateContentConfig, bổ sung regex dọn dẹp tra
 
 ## How-To
 
+### Xem Thống Kê Entity Khi Duyệt Chương
+- **Ngày**: 2026-09-03
+- **Bước thực hiện**:
+  1. Mở popup duyệt bản dịch của chapter.
+  2. Xem ba thẻ Nhân vật, Địa danh và Thuật ngữ cùng số lượng phát hiện.
+  3. Kiểm tra badge pending nếu Book Bible còn thay đổi chờ xử lý.
+  4. Danh sách chỉ hiển thị tên tiếng Việt; diff bản dịch vẫn dùng độc lập.
+- **Files liên quan**: `app/modules/library/api.py`, `app/static/index.html`
+
 ### Sử dụng Công Cụ Chọn Nhanh Chương & Phím Tắt Shift-Click để Dịch Lại
 - **Ngày**: 2026-08-25
 - **Bước thực hiện**:
@@ -425,6 +446,16 @@ esponse_schema vào 	ypes.GenerateContentConfig, bổ sung regex dọn dẹp tra
 - **Files liên quan**: `scripts/repair_cjk_address_terms.py`, `app/infrastructure/storage/legacy_storage.py`, `app/infrastructure/cache/direct_translation.py`
 
 ## Patterns
+
+### Read-only Chapter Statistics Endpoint
+- **Ngày**: 2026-09-03
+- **Chi tiết**: Dùng endpoint GET riêng theo `novel_id` và `chapter_index` để trả payload nhỏ, không làm thay đổi Book Bible. Service lọc entity theo `first_seen_chapter`; frontend gọi song song khi mở popup và fail-soft để diff vẫn dùng được nếu thống kê lỗi.
+- **Files liên quan**: `app/modules/library/schemas.py`, `app/modules/library/application/chapter_service.py`, `app/modules/library/application/facade.py`, `app/modules/library/api.py`
+
+### Vietnamese-only Review Presentation
+- **Ngày**: 2026-09-03
+- **Chi tiết**: API có thể giữ `original_name` cho audit và tương thích dữ liệu, nhưng UI duyệt chỉ render `vi_name`; không đưa tên gốc/CJK vào danh sách hiển thị. CSS dùng một cột cho tên tiếng Việt và giữ metadata ở dòng phụ.
+- **Files liên quan**: `app/static/index.html`, `docs/chapter-review-extraction-stats.md`
 
 ### Single-pass Correction with Publish Gate
 - **Ngày**: 2026-08-28

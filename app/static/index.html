@@ -683,6 +683,109 @@
             border-color: var(--accent);
             outline: none;
         }
+        .chapter-extraction-summary {
+            background: linear-gradient(135deg, rgba(15, 23, 42, 0.92), rgba(30, 41, 59, 0.7));
+            border: 1px solid rgba(129, 140, 248, 0.28);
+            border-radius: 12px;
+            padding: 0.8rem;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+        }
+        .chapter-extraction-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            margin-bottom: 0.65rem;
+        }
+        .chapter-extraction-heading {
+            display: flex;
+            align-items: baseline;
+            gap: 0.55rem;
+            flex-wrap: wrap;
+        }
+        .chapter-extraction-heading h4 {
+            margin: 0;
+            font-size: 0.9rem;
+            color: #e2e8f0;
+        }
+        .chapter-extraction-kicker {
+            color: #818cf8;
+            font-size: 0.68rem;
+            font-weight: 700;
+            letter-spacing: 0.09em;
+            text-transform: uppercase;
+        }
+        .chapter-extraction-pending {
+            color: #fbbf24;
+            font-size: 0.72rem;
+            white-space: nowrap;
+        }
+        .chapter-extraction-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.65rem;
+        }
+        .chapter-extraction-card {
+            min-width: 0;
+            padding: 0.65rem 0.7rem;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 9px;
+            background: rgba(2, 6, 23, 0.42);
+        }
+        .chapter-extraction-card.character { border-top: 2px solid #a78bfa; }
+        .chapter-extraction-card.place { border-top: 2px solid #38bdf8; }
+        .chapter-extraction-card.term { border-top: 2px solid #34d399; }
+        .chapter-extraction-card-title {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.5rem;
+            color: #cbd5e1;
+            font-size: 0.78rem;
+            font-weight: 700;
+        }
+        .chapter-extraction-count {
+            color: #f8fafc;
+            font-size: 1.05rem;
+        }
+        .chapter-extraction-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+            margin: 0.55rem 0 0;
+            padding: 0;
+            list-style: none;
+            max-height: 7.2rem;
+            overflow-y: auto;
+        }
+        .chapter-extraction-list li {
+            display: block;
+            align-items: center;
+            font-size: 0.73rem;
+            color: #cbd5e1;
+        }
+        .chapter-extraction-list li strong {
+            display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .chapter-extraction-list li strong { color: #f8fafc; }
+        .chapter-extraction-meta {
+            grid-column: 1 / -1;
+            color: #64748b;
+            font-size: 0.66rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .chapter-extraction-empty,
+        .chapter-extraction-error {
+            margin-top: 0.55rem;
+            color: #64748b;
+            font-size: 0.72rem;
+        }
+        .chapter-extraction-error { color: #fbbf24; }
         .retranslate-mobile-tabs {
             display: none;
             gap: 0.5rem;
@@ -697,6 +800,12 @@
             }
             .retranslate-pane.hide-on-mobile {
                 display: none;
+            }
+            .chapter-extraction-grid {
+                grid-template-columns: 1fr;
+            }
+            .chapter-extraction-list {
+                max-height: 5.5rem;
             }
         }
 
@@ -1648,6 +1757,20 @@
                             <button type="button" class="btn btn-secondary retranslate-tab-btn" data-tab="orig" onclick="setRetranslateMobileTab('orig')" style="padding:0.25rem 0.6rem; font-size:0.75rem;">📖 Gốc</button>
                         </div>
                     </div>
+
+                    <!-- Chapter extraction summary -->
+                    <section id="chapter-extraction-summary" class="chapter-extraction-summary" aria-live="polite">
+                        <div class="chapter-extraction-header">
+                            <div class="chapter-extraction-heading">
+                                <span class="chapter-extraction-kicker">Book Bible</span>
+                                <h4>Trích xuất trong chương này</h4>
+                            </div>
+                            <span id="chapter-extraction-pending" class="chapter-extraction-pending"></span>
+                        </div>
+                        <div id="chapter-extraction-content" class="chapter-extraction-grid">
+                            <div class="chapter-extraction-empty">Đang tải thống kê nhân vật, địa danh và thuật ngữ...</div>
+                        </div>
+                    </section>
 
                     <!-- 2-Column Comparison Grid -->
                     <div class="retranslate-diff-grid">
@@ -3481,7 +3604,8 @@
                 mode: 'review',
                 originalText: '',
                 prevText: '',
-                newText: ''
+                newText: '',
+                extractionStats: null
             };
 
             document.getElementById('retranslate-modal-title').innerHTML = `<i class="fa-solid fa-eye" style="color:#fbbf24;"></i> Duyệt draft: ${escapeHtml(chapterTitle)}`;
@@ -3498,14 +3622,16 @@
             startRetranslateTimer();
 
             try {
-                const [original, draft] = await Promise.all([
+                const [original, draft, extractionStats] = await Promise.all([
                     fetchWithCache(apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/chapters/${chapterIndex}/content?version=original`), {}, 300000, true),
-                    fetchWithCache(apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/chapters/${chapterIndex}/draft`), {}, 300000, true)
+                    fetchWithCache(apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/chapters/${chapterIndex}/draft`), {}, 300000, true),
+                    fetchWithCache(apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/chapters/${chapterIndex}/extraction-stats`), {}, 300000, true).catch(() => null)
                 ]);
                 if (!currentRetranslateData || currentRetranslateData.mode !== 'review') return;
                 currentRetranslateData.originalText = original.content || '';
                 currentRetranslateData.prevText = '(Chưa có bản dịch đã duyệt)';
                 currentRetranslateData.newText = draft.content || '';
+                currentRetranslateData.extractionStats = extractionStats;
                 stopRetranslateTimer();
                 renderRetranslateDiffView();
             } catch (err) {
@@ -3541,7 +3667,8 @@
                     chapterTitle,
                     provider,
                     apiKey,
-                    model
+                    model,
+                    extractionStats: null
                 };
 
                 await runChapterRetranslateRequest();
@@ -3556,7 +3683,8 @@
             document.getElementById('retranslate-diff-view').style.display = 'none';
 
             try {
-                const res = await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/chapters/${chapterIndex}/translate?preview_only=true`), {
+                const [res, extractionStats] = await Promise.all([
+                    fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/chapters/${chapterIndex}/translate?preview_only=true`), {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -3570,7 +3698,9 @@
                         model: model,
                         preview_only: true
                     })
-                });
+                    }),
+                    fetchWithCache(apiUrl(`/api/v1/library/novels/${encodeURIComponent(novelId)}/chapters/${chapterIndex}/extraction-stats`), {}, 300000, true).catch(() => null)
+                ]);
 
                 if (!res.ok) {
                     const err = await res.json();
@@ -3583,6 +3713,7 @@
                 currentRetranslateData.originalText = data.original_text || '';
                 currentRetranslateData.prevText = data.previous_translated_text || '';
                 currentRetranslateData.newText = data.new_translated_text || '';
+                currentRetranslateData.extractionStats = extractionStats;
 
                 renderRetranslateDiffView();
 
@@ -3591,6 +3722,66 @@
                 alert("Lỗi khi dịch: " + err.message);
                 cancelAndCloseRetranslateModal();
             }
+        }
+
+        function renderChapterExtractionStats(stats) {
+            const container = document.getElementById('chapter-extraction-content');
+            const pending = document.getElementById('chapter-extraction-pending');
+            if (!container || !pending) return;
+
+            if (!stats) {
+                pending.innerText = '';
+                container.innerHTML = '<div class="chapter-extraction-error">Không tải được thống kê Book Bible cho chương này.</div>';
+                return;
+            }
+
+            const groups = [
+                {
+                    key: 'characters',
+                    count: Number(stats.character_count || 0),
+                    label: 'Nhân vật',
+                    icon: 'fa-user-group',
+                    tone: 'character',
+                    meta: function(item) { return item.detail || ''; }
+                },
+                {
+                    key: 'places',
+                    count: Number(stats.place_count || 0),
+                    label: 'Địa danh',
+                    icon: 'fa-location-dot',
+                    tone: 'place',
+                    meta: function(item) { return item.detail || ''; }
+                },
+                {
+                    key: 'terms',
+                    count: Number(stats.term_count || 0),
+                    label: 'Thuật ngữ',
+                    icon: 'fa-tags',
+                    tone: 'term',
+                    meta: function(item) { return item.category || item.detail || ''; }
+                }
+            ];
+            const pendingCount = Number(stats.pending_change_count || 0);
+            pending.innerText = pendingCount
+                ? '• ' + pendingCount + ' đề xuất cần duyệt'
+                : '• Đã ghi nhận trong Book Bible';
+
+            container.innerHTML = groups.map(function(group) {
+                const items = Array.isArray(stats[group.key]) ? stats[group.key] : [];
+                const itemMarkup = items.length
+                    ? '<ul class="chapter-extraction-list">' + items.map(function(item) {
+                        const meta = group.meta(item);
+                        return '<li>' +
+                            '<strong title="' + escapeHtml(item.vi_name || '') + '">' + escapeHtml(item.vi_name || '—') + '</strong>' +
+                            (meta ? '<small class="chapter-extraction-meta">' + escapeHtml(meta) + '</small>' : '') +
+                            '</li>';
+                    }).join('') + '</ul>'
+                    : '<div class="chapter-extraction-empty">Không phát hiện trong chương này</div>';
+                return '<article class="chapter-extraction-card ' + group.tone + '">' +
+                    '<div class="chapter-extraction-card-title"><span><i class="fa-solid ' + group.icon + '"></i> ' + group.label + '</span><strong class="chapter-extraction-count">' + group.count + '</strong></div>' +
+                    itemMarkup +
+                    '</article>';
+            }).join('');
         }
 
         function renderRetranslateDiffView() {
@@ -3620,6 +3811,7 @@
             document.getElementById('diff-prev-text').value = currentRetranslateData.prevText || '(Chưa có bản dịch trước đó)';
             document.getElementById('diff-new-text').value = currentRetranslateData.newText || '';
             document.getElementById('diff-orig-text').value = currentRetranslateData.originalText || '';
+            renderChapterExtractionStats(currentRetranslateData.extractionStats);
 
             // Switch to Diff view
             document.getElementById('retranslate-loading-view').style.display = 'none';

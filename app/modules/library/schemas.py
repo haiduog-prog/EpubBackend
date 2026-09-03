@@ -38,6 +38,29 @@ class ChapterItem(BaseModel):
     review_error: Optional[str] = None
 
 
+class ChapterExtractionItem(BaseModel):
+    """Một thực thể Book Bible được trích xuất và gắn với chapter."""
+
+    original_name: str
+    vi_name: str
+    detail: str = ""
+    category: str = ""
+
+
+class ChapterExtractionStats(BaseModel):
+    """Thống kê entity được trích xuất trong một chapter."""
+
+    novel_id: str
+    chapter_index: int
+    character_count: int = 0
+    place_count: int = 0
+    term_count: int = 0
+    pending_change_count: int = 0
+    characters: List[ChapterExtractionItem] = Field(default_factory=list)
+    places: List[ChapterExtractionItem] = Field(default_factory=list)
+    terms: List[ChapterExtractionItem] = Field(default_factory=list)
+
+
 
 class NovelCreateRequest(BaseModel):
     title: str = Field(..., description="Tên truyện (tiếng Việt)")

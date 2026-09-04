@@ -29,6 +29,9 @@ $env:DATABASE_URL = "sqlite:///./data/local_db.sqlite3"
 $env:STORAGE_PROVIDER = "local"
 $env:STRUCTURED_STORAGE_BACKEND = "postgres"
 $env:STRUCTURED_STORAGE_READ_SOURCE = "postgres"
+$env:GOOGLE_DRIVE_SYNC_ENABLED = "true"
+$env:GOOGLE_DRIVE_SYNC_FOLDER_ID = "1DhlKSSi768LGzIgpFxlqrMm97OM5X_4K"
+$env:GOOGLE_DRIVE_CREDENTIALS_FILE = "$ProjectRoot\google-credentials.json"
 
 # 4. Uu tien dung virtual environment (.venv) neu co
 $PythonExe = "python"

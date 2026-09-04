@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
 # Load .env file automatically
-load_dotenv()
+load_dotenv(override=True)
 
 
 class Settings(BaseModel):
@@ -45,6 +45,18 @@ class Settings(BaseModel):
     )
     supabase_storage_bucket: str = Field(default_factory=lambda: os.getenv("SUPABASE_STORAGE_BUCKET", "novels"))
     supabase_storage_public_url: str = Field(default_factory=lambda: os.getenv("SUPABASE_STORAGE_PUBLIC_URL", ""))
+    # Google Drive API sync. Credentials stay on the backend; Android only
+    # calls the authenticated sync endpoints.
+    google_drive_sync_enabled: bool = Field(
+        default_factory=lambda: os.getenv("GOOGLE_DRIVE_SYNC_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
+    )
+    google_drive_sync_folder_id: str = Field(default_factory=lambda: os.getenv("GOOGLE_DRIVE_SYNC_FOLDER_ID", ""))
+    google_drive_project_root: str = Field(default_factory=lambda: os.getenv("GOOGLE_DRIVE_PROJECT_ROOT", ""))
+    google_drive_credentials_file: str = Field(default_factory=lambda: os.getenv("GOOGLE_DRIVE_CREDENTIALS_FILE", ""))
+    google_drive_credentials_json: str = Field(default_factory=lambda: os.getenv("GOOGLE_DRIVE_CREDENTIALS_JSON", ""))
+    google_drive_refresh_token: str = Field(default_factory=lambda: os.getenv("GOOGLE_DRIVE_REFRESH_TOKEN", ""))
+    google_drive_client_id: str = Field(default_factory=lambda: os.getenv("GOOGLE_DRIVE_CLIENT_ID", ""))
+    google_drive_client_secret: str = Field(default_factory=lambda: os.getenv("GOOGLE_DRIVE_CLIENT_SECRET", ""))
 
     # Cloudflare R2 Storage Configuration (S3-Compatible Free 10GB Storage)
     cloudflare_account_id: str = Field(default_factory=lambda: os.getenv("CLOUDFLARE_ACCOUNT_ID", ""))

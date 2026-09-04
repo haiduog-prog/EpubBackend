@@ -17,3 +17,6 @@ sqlalchemy>=2.0.0
 psycopg[binary]>=3.2.0
 alembic>=1.13.0
 PyJWT[crypto]>=2.9.0
+google-api-python-client>=2.160.0
+google-auth>=2.37.0
+google-auth-oauthlib>=1.2.0

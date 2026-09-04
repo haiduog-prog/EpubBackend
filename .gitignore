@@ -17,6 +17,11 @@ data/*.sqlite3
 data/*.sqlite3-wal
 data/*.sqlite3-shm
 serviceAccountKey.json
+*credentials*.json
+client_secret*.json
+google-credentials.json
+.google_drive_sync*.json
+*.syncing
 *.epub
 *.txt
 !.gitignore

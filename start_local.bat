@@ -26,6 +26,9 @@ set "DATABASE_URL=sqlite:///./data/local_db.sqlite3"
 set "STORAGE_PROVIDER=local"
 set "STRUCTURED_STORAGE_BACKEND=postgres"
 set "STRUCTURED_STORAGE_READ_SOURCE=postgres"
+set "GOOGLE_DRIVE_SYNC_ENABLED=true"
+set "GOOGLE_DRIVE_SYNC_FOLDER_ID=1DhlKSSi768LGzIgpFxlqrMm97OM5X_4K"
+set "GOOGLE_DRIVE_CREDENTIALS_FILE=%~dp0google-credentials.json"
 
 :: 4. Uu tien dung virtual environment (.venv) neu co
 set "PYTHON_EXE=python"

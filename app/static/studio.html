@@ -1015,7 +1015,57 @@
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
-  </style>
+      /* Google Drive Sync Center */
+    .sync-view-layout { width: 100%; height: 100%; overflow-y: auto; padding: 28px clamp(20px, 4vw, 56px) 48px; background: radial-gradient(circle at 78% 12%, rgba(56,189,248,.09), transparent 32%), linear-gradient(145deg, rgba(12,16,23,.96), rgba(6,8,13,.98)); }
+    .sync-shell { max-width: 1180px; margin: 0 auto; }
+    .sync-hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; padding: 8px 0 24px; }
+    .sync-eyebrow { color: var(--accent-cyan); font: 11px var(--font-code); letter-spacing: .14em; text-transform: uppercase; margin-bottom: 10px; }
+    .sync-title { font-size: clamp(25px, 3vw, 36px); letter-spacing: -.05em; line-height: 1.05; font-weight: 800; }
+    .sync-subtitle { color: var(--text-muted); max-width: 630px; margin-top: 10px; font-size: 13px; }
+    .sync-hero-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .sync-panel { background: linear-gradient(145deg, rgba(18,25,38,.88), rgba(10,14,22,.78)); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); box-shadow: var(--shadow-subtle); }
+    .sync-status-panel { display: grid; grid-template-columns: minmax(240px,1.1fr) minmax(280px,1fr); gap: 24px; padding: 22px; margin-bottom: 16px; }
+    .sync-status-main { display: flex; align-items: center; gap: 18px; }
+    .sync-status-orb { width: 68px; height: 68px; flex: 0 0 68px; display: grid; place-items: center; border-radius: 50%; border: 1px solid rgba(56,189,248,.45); background: radial-gradient(circle, rgba(56,189,248,.28), rgba(56,189,248,.04) 65%); color: var(--accent-cyan); box-shadow: 0 0 28px rgba(56,189,248,.15); transition: var(--transition); }
+    .sync-status-orb[data-status="SYNCED"], .sync-status-orb[data-status="READY"] { color: var(--accent-emerald); border-color: rgba(16,185,129,.45); background: radial-gradient(circle, rgba(16,185,129,.25), rgba(16,185,129,.04) 65%); }
+    .sync-status-orb[data-status="CONFLICT"], .sync-status-orb[data-status="ERROR"] { color: var(--accent-rose); border-color: rgba(244,63,94,.5); background: radial-gradient(circle, rgba(244,63,94,.25), rgba(244,63,94,.04) 65%); }
+    .sync-status-orb[data-status="DISABLED"], .sync-status-orb[data-status="AUTH_REQUIRED"] { color: var(--accent-amber); border-color: rgba(245,158,11,.45); background: radial-gradient(circle, rgba(245,158,11,.2), rgba(245,158,11,.04) 65%); }
+    .sync-status-label { font: 700 20px var(--font-code); letter-spacing: -.04em; }
+    .sync-status-message { color: var(--text-muted); font-size: 12px; margin-top: 4px; }
+    .sync-last-run { color: var(--text-faint); font: 11px var(--font-code); margin-top: 8px; }
+    .sync-summary-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; }
+    .sync-stat { padding: 12px; background: rgba(0,0,0,.18); border: 1px solid rgba(255,255,255,.06); border-radius: var(--radius-md); }
+    .sync-stat-value { display: block; color: var(--text-main); font: 700 20px var(--font-code); }
+    .sync-stat-label { display: block; color: var(--text-muted); font-size: 10px; margin-top: 4px; white-space: nowrap; }
+    .sync-workspace { display: grid; grid-template-columns: minmax(0,1.4fr) minmax(280px,.8fr); gap: 16px; }
+    .sync-card-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--border-subtle); }
+    .sync-card-title { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; }
+    .sync-card-title svg { color: var(--accent-cyan); }
+    .sync-card-body { padding: 18px; }
+    .sync-action-list { display: grid; gap: 10px; }
+    .sync-action-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 14px; border: 1px solid rgba(255,255,255,.07); border-radius: var(--radius-md); background: rgba(0,0,0,.14); }
+    .sync-action-copy strong { display: block; font-size: 13px; }
+    .sync-action-copy span { display: block; color: var(--text-muted); font-size: 11px; margin-top: 3px; }
+    .sync-options { display: grid; gap: 9px; margin-top: 16px; padding-top: 15px; border-top: 1px solid var(--border-subtle); }
+    .sync-check-label { display: flex; align-items: flex-start; gap: 9px; color: var(--text-secondary); font-size: 11px; cursor: pointer; }
+    .sync-check-label input { accent-color: var(--accent-cyan); margin-top: 2px; }
+    .sync-danger-note { color: #fda4af; }
+    .sync-progress-wrap { display: none; margin-top: 16px; }
+    .sync-progress-wrap.active { display: block; }
+    .sync-progress-track { height: 5px; overflow: hidden; border-radius: 99px; background: rgba(255,255,255,.08); }
+    .sync-progress-bar { width: 35%; height: 100%; border-radius: 99px; background: linear-gradient(90deg,var(--accent-cyan),var(--accent-emerald)); animation: syncProgress 1.2s ease-in-out infinite; }
+    @keyframes syncProgress { 0% { transform: translateX(-130%); } 100% { transform: translateX(330%); } }
+    .sync-progress-label { display: flex; justify-content: space-between; color: var(--text-muted); font-size: 11px; margin-bottom: 7px; }
+    .sync-log { min-height: 190px; max-height: 310px; overflow: auto; padding: 14px; background: #080b11; border-radius: 0 0 var(--radius-lg) var(--radius-lg); color: var(--text-muted); font: 11px/1.65 var(--font-code); white-space: pre-wrap; word-break: break-word; }
+    .sync-log[data-tone="error"] { color: #fda4af; }
+    .sync-log[data-tone="success"] { color: #86efac; }
+    .sync-help-list { display: grid; gap: 12px; }
+    .sync-help-item { display: flex; gap: 10px; color: var(--text-muted); font-size: 11px; }
+    .sync-help-index { color: var(--accent-cyan); font-family: var(--font-code); font-weight: 700; }
+    .sync-code { color: var(--text-secondary); font-family: var(--font-code); font-size: 10px; }
+    @media (max-width: 900px) { .sync-hero, .sync-status-panel { grid-template-columns: 1fr; display: grid; align-items: start; } .sync-hero-actions { justify-content: flex-start; } .sync-workspace { grid-template-columns: 1fr; } }
+    @media (max-width: 560px) { .sync-view-layout { padding: 18px 14px 32px; } .sync-status-panel { padding: 16px; } .sync-summary-grid { grid-template-columns: repeat(2,1fr); } .sync-action-row { align-items: flex-start; flex-direction: column; } }
+</style>
 </head>
 <body>
 
@@ -1041,18 +1091,22 @@
       </div>
 
       <!-- Navigation Tabs -->
-      <nav class="studio-tabs">
-        <button class="tab-btn active" onclick="switchView('tables')">
+      <nav class="studio-tabs" aria-label="Studio views">
+        <button class="tab-btn active" onclick="switchView('tables')" id="tab-tables" aria-controls="view-tables" aria-selected="true">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
           Table Studio
         </button>
-        <button class="tab-btn" onclick="switchView('storage')">
+        <button class="tab-btn" onclick="switchView('storage')" id="tab-storage" aria-controls="view-storage" aria-selected="false">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
           Storage Explorer
         </button>
-        <button class="tab-btn" onclick="switchView('sql')">
+        <button class="tab-btn" onclick="switchView('sql')" id="tab-sql" aria-controls="view-sql" aria-selected="false">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
           SQL Console
+        </button>
+        <button class="tab-btn" onclick="switchView('sync')" id="tab-sync" aria-controls="view-sync" aria-selected="false">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          Drive Sync
         </button>
       </nav>
 
@@ -1275,6 +1329,43 @@
         </div>
       </div>
     </div>
+
+    <!-- ====================================================================
+         4. GOOGLE DRIVE SYNC VIEW
+         ==================================================================== -->
+    <div id="view-sync" class="studio-view">
+      <div class="sync-view-layout">
+        <div class="sync-shell">
+          <div class="sync-hero">
+            <div>
+              <div class="sync-eyebrow">Local-first transport layer</div>
+              <h1 class="sync-title">Google Drive Sync</h1>
+              <p class="sync-subtitle">Đồng bộ tăng dần dữ liệu truyện qua Google Drive API. Kiểm tra trước, xác nhận conflict rõ ràng, rồi mới backup hoặc restore.</p>
+            </div>
+            <div class="sync-hero-actions">
+              <button class="btn-secondary" id="sync-check-top" onclick="runSyncAction('check')">↻ Kiểm tra Drive</button>
+              <button class="btn-primary" id="sync-backup-top" onclick="runSyncAction('backup')">↑ Backup lên Drive</button>
+            </div>
+          </div>
+
+          <section class="sync-panel sync-status-panel" id="sync-status-panel">
+            <div class="sync-status-main"><div class="sync-status-orb" id="sync-status-orb" data-status="READY"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/><circle cx="12" cy="12" r="5"/><path d="m8.5 8.5 7 7m0-7-7 7"/></svg></div><div><div class="sync-status-label" id="sync-status-label">READY</div><div class="sync-status-message" id="sync-status-message">Chưa có phiên đồng bộ trong Studio.</div><div class="sync-last-run" id="sync-last-run">--</div></div></div>
+            <div class="sync-summary-grid"><div class="sync-stat"><span class="sync-stat-value" id="sync-stat-upload">0</span><span class="sync-stat-label">Cần upload</span></div><div class="sync-stat"><span class="sync-stat-value" id="sync-stat-download">0</span><span class="sync-stat-label">Cần download</span></div><div class="sync-stat"><span class="sync-stat-value" id="sync-stat-conflict">0</span><span class="sync-stat-label">Conflict</span></div><div class="sync-stat"><span class="sync-stat-value" id="sync-stat-unchanged">0</span><span class="sync-stat-label">Không đổi</span></div></div>
+          </section>
+
+          <div class="sync-workspace">
+            <section class="sync-panel"><div class="sync-card-header"><div class="sync-card-title">◈ Thao tác đồng bộ</div><span class="sync-code">POST /api/v1/sync/*</span></div><div class="sync-card-body"><div class="sync-action-list">
+              <div class="sync-action-row"><div class="sync-action-copy"><strong>Kiểm tra thay đổi</strong><span>Đọc manifest và phân loại upload, download, conflict.</span></div><button class="btn-secondary" id="sync-check-button" onclick="runSyncAction('check')">Kiểm tra</button></div>
+              <div class="sync-action-row"><div class="sync-action-copy"><strong>Backup local lên Drive</strong><span>Chỉ đẩy file mới hoặc đã thay đổi; không tự ghi đè khi có conflict.</span></div><button class="btn-primary" id="sync-backup-button" onclick="runSyncAction('backup')">Backup</button></div>
+              <div class="sync-action-row"><div class="sync-action-copy"><strong>Restore từ Drive</strong><span>Tạo rollback local trước khi ghi đè dữ liệu.</span></div><button class="btn-secondary" id="sync-restore-button" onclick="runSyncAction('restore')">Restore</button></div>
+            </div><div class="sync-options"><label class="sync-check-label"><input type="checkbox" id="sync-allow-deletions" /> <span><strong>Cho phép áp dụng xóa</strong><br /><span class="sync-danger-note">Chỉ bật sau khi đã kiểm tra danh sách file bị xóa.</span></span></label><label class="sync-check-label"><input type="checkbox" id="sync-force-restore" /> <span><strong>Force restore</strong><br /><span class="sync-danger-note">Ghi đè local sau khi tạo rollback; luôn cần xác nhận.</span></span></label></div><div class="sync-progress-wrap" id="sync-progress-wrap"><div class="sync-progress-label"><span id="sync-progress-label">Đang làm việc với Google Drive...</span><span>đang xử lý</span></div><div class="sync-progress-track"><div class="sync-progress-bar"></div></div></div></div></section>
+            <aside class="sync-panel"><div class="sync-card-header"><div class="sync-card-title">ⓘ Quy trình an toàn</div></div><div class="sync-card-body"><div class="sync-help-list"><div class="sync-help-item"><span class="sync-help-index">01</span><span>Nhấn <b>Kiểm tra Drive</b> để xem thay đổi trước.</span></div><div class="sync-help-item"><span class="sync-help-index">02</span><span>Nếu có <b>DRIVE_PENDING</b>, restore trước khi backup.</span></div><div class="sync-help-item"><span class="sync-help-index">03</span><span>Conflict sẽ dừng thao tác, không tự chọn phiên bản.</span></div><div class="sync-help-item"><span class="sync-help-index">04</span><span><b>storage/cache</b> không nằm trong phạm vi đồng bộ.</span></div></div></div></aside>
+          </div>
+
+          <section class="sync-panel" style="margin-top: 16px;"><div class="sync-card-header"><div class="sync-card-title">⌁ Nhật ký phiên gần nhất</div><span class="sync-code">JSON response</span></div><pre class="sync-log" id="sync-log">Chưa có dữ liệu. Nhấn “Kiểm tra Drive” để bắt đầu.</pre></section>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- ====================================================================
@@ -1424,6 +1515,7 @@
       });
 
       await loadOverview();
+      await loadSyncStatus();
       await loadTablesList();
       await pollActiveJobs();
 
@@ -1447,14 +1539,22 @@
     // View Switcher
     // --------------------------------------------------------------------------
     function switchView(viewName) {
-      document.querySelectorAll(".studio-tabs .tab-btn").forEach(btn => btn.classList.remove("active"));
+      document.querySelectorAll(".studio-tabs .tab-btn").forEach(btn => {
+        btn.classList.remove("active");
+        btn.setAttribute("aria-selected", "false");
+      });
       document.querySelectorAll(".studio-view").forEach(view => view.classList.remove("active"));
 
       const targetBtn = document.querySelector(`.studio-tabs button[onclick*="${viewName}"]`);
-      if (targetBtn) targetBtn.classList.add("active");
+      if (targetBtn) {
+        targetBtn.classList.add("active");
+        targetBtn.setAttribute("aria-selected", "true");
+      }
 
       const targetView = document.getElementById(`view-${viewName}`);
       if (targetView) targetView.classList.add("active");
+
+      if (viewName === "sync") loadSyncStatus();
 
       if (viewName === "storage") {
         loadStoragePath("");
@@ -1462,6 +1562,115 @@
     }
 
     // --------------------------------------------------------------------------
+    // --------------------------------------------------------------------------
+    // Google Drive Sync Center
+    // --------------------------------------------------------------------------
+    let syncBusy = false;
+
+    const syncStatusMessages = {
+      READY: "Local và Drive chưa có thay đổi cần xử lý.",
+      CHANGES_PENDING: "Local có dữ liệu mới hoặc đã thay đổi, sẵn sàng backup.",
+      DRIVE_PENDING: "Drive có thay đổi mới hoặc file chưa ổn định; hãy kiểm tra/restore.",
+      SYNCED: "Phiên đồng bộ đã hoàn tất thành công.",
+      CONFLICT: "Hai phía cùng thay đổi; không tự ghi đè để bảo toàn dữ liệu.",
+      AUTH_REQUIRED: "Credential hoặc quyền truy cập Google Drive chưa sẵn sàng.",
+      DISABLED: "Google Drive sync đang tắt (GOOGLE_DRIVE_SYNC_ENABLED=false). Cần cấu hình biến môi trường để kích hoạt.",
+      ERROR: "Không thể hoàn tất thao tác đồng bộ. Xem nhật ký bên dưới."
+    };
+
+    function syncCount(data, key) {
+      if (typeof data?.[key] === "number") return data[key];
+      if (Array.isArray(data?.[key])) return data[key].length;
+      return Number(data?.counts?.[key] || 0);
+    }
+
+    function syncFormatTime(value) {
+      if (!value) return "Chưa có thời điểm cập nhật";
+      try { return `Cập nhật ${new Date(value).toLocaleString("vi-VN")}`; } catch (_) { return String(value); }
+    }
+
+    function renderSyncStatus(data = {}) {
+      const status = String(data.status || "READY").toUpperCase();
+      const orb = document.getElementById("sync-status-orb");
+      const label = document.getElementById("sync-status-label");
+      const message = document.getElementById("sync-status-message");
+      const lastRun = document.getElementById("sync-last-run");
+      if (!orb || !label || !message || !lastRun) return;
+      orb.dataset.status = status;
+      label.textContent = status;
+      message.textContent = data.message || data.detail?.message || syncStatusMessages[status] || "Trạng thái đồng bộ.";
+      lastRun.textContent = syncFormatTime(data.updated_at || data.detail?.updated_at);
+      document.getElementById("sync-stat-upload").textContent = syncCount(data, "upload") || syncCount(data, "uploaded");
+      document.getElementById("sync-stat-download").textContent = syncCount(data, "download") || syncCount(data, "downloaded");
+      document.getElementById("sync-stat-conflict").textContent = syncCount(data, "conflicts");
+      document.getElementById("sync-stat-unchanged").textContent = syncCount(data, "unchanged");
+    }
+
+    function setSyncLog(value, tone = "") {
+      const log = document.getElementById("sync-log");
+      if (!log) return;
+      log.dataset.tone = tone;
+      log.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+    }
+
+    function setSyncBusy(busy, label = "Đang làm việc với Google Drive...") {
+      syncBusy = busy;
+      document.querySelectorAll("#view-sync button").forEach(button => { button.disabled = busy; button.style.opacity = busy ? "0.6" : "1"; });
+      const progress = document.getElementById("sync-progress-wrap");
+      const progressLabel = document.getElementById("sync-progress-label");
+      if (progress) progress.classList.toggle("active", busy);
+      if (progressLabel) progressLabel.textContent = label;
+    }
+
+    async function loadSyncStatus() {
+      if (!document.getElementById("sync-status-panel")) return;
+      try {
+        const response = await studioFetch("/api/v1/sync/status");
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail?.message || data.detail || `HTTP ${response.status}`);
+        renderSyncStatus(data);
+        if (data.status && data.status !== "READY") setSyncLog(data);
+      } catch (error) {
+        renderSyncStatus({ status: "ERROR", message: error.message });
+        setSyncLog(`Không đọc được trạng thái sync.\n${error.message}`, "error");
+      }
+    }
+
+    async function runSyncAction(action) {
+      if (syncBusy) return;
+      const allowDeletions = document.getElementById("sync-allow-deletions")?.checked || false;
+      const force = document.getElementById("sync-force-restore")?.checked || false;
+      if (action === "restore" && force && !window.confirm("Force restore sẽ ghi đè dữ liệu local sau khi tạo rollback. Bạn có chắc muốn tiếp tục?")) return;
+      if (allowDeletions && action !== "check" && !window.confirm("Thao tác này có thể áp dụng xóa file. Bạn đã kiểm tra danh sách file bị xóa chưa?")) return;
+      setSyncBusy(true, action === "check" ? "Đang phân tích manifest..." : action === "backup" ? "Đang backup dữ liệu lên Drive..." : "Đang restore dữ liệu từ Drive...");
+      setSyncLog(`Bắt đầu ${action}...`);
+      try {
+        const options = { allow_deletions: allowDeletions, force: action === "restore" && force };
+        const response = await studioFetch(`/api/v1/sync/${action}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(action === "check" ? {} : options)
+        });
+        const data = await response.json().catch(() => ({}));
+        const payload = data.detail && typeof data.detail === "object" ? data.detail : data;
+        if (!response.ok) {
+          renderSyncStatus(payload);
+          setSyncLog(payload, "error");
+          showToast(payload.message || `Sync thất bại (HTTP ${response.status})`);
+          return;
+        }
+        renderSyncStatus(payload);
+        setSyncLog(payload, "success");
+        showToast(action === "check" ? "Đã kiểm tra trạng thái Drive" : action === "backup" ? "Backup thành công" : "Restore thành công");
+        if (action !== "check") loadOverview();
+      } catch (error) {
+        renderSyncStatus({ status: "ERROR", message: error.message });
+        setSyncLog(`Lỗi kết nối sync.\n${error.message}`, "error");
+        showToast("Không kết nối được API sync");
+      } finally {
+        setSyncBusy(false);
+      }
+    }
     // Overview HUD
     // --------------------------------------------------------------------------
     async function loadOverview() {

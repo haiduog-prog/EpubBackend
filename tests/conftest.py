@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import pytest
@@ -43,7 +44,7 @@ def _remove_new_tree_entries(root: Path, initial_paths: set[str], existed_before
 
 @pytest.fixture(scope="session", autouse=True)
 def cleanup_test_storage_after_success(request):
-    """Clean only storage entries created by a successful test session."""
+    """Clean storage and database entries created during the test session (even on failed tests)."""
     tracked_roots = (
         STORAGE_ROOT / "novels",
         STORAGE_ROOT / "test",
@@ -57,9 +58,26 @@ def cleanup_test_storage_after_success(request):
 
     yield
 
-    if getattr(request.session, "testsfailed", 0) == 0:
+    # Clean up test artifacts by default, even on failure (false),
+    # unless KEEP_TEST_ARTIFACTS_ON_FAILURE=1 is explicitly set for debugging.
+    keep_on_failure = os.getenv("KEEP_TEST_ARTIFACTS_ON_FAILURE", "false").lower() in {"1", "true", "yes"}
+    should_cleanup = not keep_on_failure or (getattr(request.session, "testsfailed", 0) == 0)
+
+    if should_cleanup:
         for root, (existed_before, initial_paths) in snapshots.items():
             _remove_new_tree_entries(root, initial_paths, existed_before)
+
+        # Database cleanup: purge test novels and jobs created during testing
+        try:
+            from app.db.session import db_session
+            from app.modules.library.persistence.legacy_models import NovelModel, ChapterModel, EpubBuildJobModel
+            with db_session() as session:
+                session.query(EpubBuildJobModel).filter(EpubBuildJobModel.novel_id.like("test-%")).delete(synchronize_session=False)
+                session.query(ChapterModel).filter(ChapterModel.novel_id.like("test-%")).delete(synchronize_session=False)
+                session.query(NovelModel).filter(NovelModel.novel_id.like("test-%")).delete(synchronize_session=False)
+                session.commit()
+        except Exception:
+            pass
 
 
 @pytest.fixture(autouse=True)

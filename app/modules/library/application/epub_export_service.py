@@ -76,7 +76,54 @@ class EpubExportService:
             and (not novel.is_structural_dirty or is_scoped_range)
         )
 
-        base_key = novel.current_epub_key or f"novels/{novel_id}/full.epub"
+        # Determine candidate base EPUB keys in priority order:
+        # 1. novel.current_epub_key
+        # 2. Canonical full.epub keys
+        # 3. Any existing revision files in exports/ sorted newest-to-oldest
+        base_candidates: List[str] = []
+        if novel.current_epub_key:
+            base_candidates.append(novel.current_epub_key)
+
+        base_candidates.extend([
+            f"novels/{novel_id}/full.epub",
+            f"{novel_id}/full.epub",
+        ])
+
+        def _rev_num(fn: str) -> int:
+            try:
+                base_fn = os.path.basename(fn)
+                m = re.match(r"^r(\d+)", base_fn)
+                if m:
+                    return int(m.group(1))
+            except Exception:
+                pass
+            return -1
+
+        exports_dir = os.path.join("storage", "novels", novel_id, "exports")
+        if os.path.exists(exports_dir):
+            try:
+                local_epubs = sorted(
+                    [f for f in os.listdir(exports_dir) if f.endswith(".epub")],
+                    key=_rev_num,
+                    reverse=True,
+                )
+                for f in local_epubs:
+                    cand = f"novels/{novel_id}/exports/{f}"
+                    if cand not in base_candidates:
+                        base_candidates.append(cand)
+            except Exception:
+                pass
+
+        try:
+            remote_epubs = storage_repo.list_files(f"novels/{novel_id}/exports/")
+            for rpath in sorted(remote_epubs, key=_rev_num, reverse=True):
+                if rpath not in base_candidates:
+                    base_candidates.append(rpath)
+        except Exception:
+            pass
+
+        base_key: Optional[str] = None
+        tmp_base_path: Optional[str] = None
         final_output_path: Optional[str] = None
         strategy = "full_rebuild"
         patched_count = 0
@@ -87,102 +134,136 @@ class EpubExportService:
 
         try:
             # Attempt FAST_PATCH if eligible
-            if use_fast_patch and storage_repo.file_exists(base_key):
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".epub") as tmp_base:
-                    tmp_base_path = tmp_base.name
-                created_temp_files.append(tmp_base_path)
+            if use_fast_patch:
+                for cand_key in base_candidates:
+                    try:
+                        if not storage_repo.file_exists(cand_key):
+                            continue
+                    except Exception as chk_err:
+                        logger.debug("Error checking base candidate '%s' on %s: %s", cand_key, novel_id, chk_err)
+                        continue
 
-                try:
-                    # Stream download base EPUB from storage to disk
-                    dl_success = storage_repo.download_file_stream(base_key, tmp_base_path)
-                    if dl_success and os.path.exists(tmp_base_path) and os.path.getsize(tmp_base_path) > 0:
-                        # Check layout standardization (requires ch_NNNN.xhtml)
-                        if EpubZipPatcher.is_layout_standardized(tmp_base_path):
-                            # Determine which chapters need patching
-                            chapters_to_patch = [
-                                ch for ch in novel.chapters
-                                if (not target_indexes or ch.chapter_index in target_indexes)
-                                and (ch.status == ChapterStatus.COMPLETED or ch.r2_translated_key)
-                            ]
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".epub") as tmp_candidate:
+                        candidate_tmp_path = tmp_candidate.name
+                    created_temp_files.append(candidate_tmp_path)
 
-                            total_patch = len(chapters_to_patch)
-                            chapter_payloads: Dict[int, Tuple[str, str]] = {}
-                            for idx_step, ch in enumerate(chapters_to_patch, start=1):
-                                if is_cancelled_callback and is_cancelled_callback():
-                                    raise EpubBuildCancelledException(f"Job '{job_id or novel_id}' đã bị hủy.")
-                                if progress_callback:
-                                    pct = int((idx_step / max(1, total_patch)) * 75)
-                                    progress_callback(
-                                        f"Đang tải nội dung Chương {ch.chapter_index}: {ch.chapter_title}...",
-                                        ch.chapter_index,
-                                        idx_step,
-                                        total_patch,
-                                        pct,
-                                    )
+                    try:
+                        dl_success = storage_repo.download_file_stream(cand_key, candidate_tmp_path)
+                        if dl_success and os.path.exists(candidate_tmp_path) and os.path.getsize(candidate_tmp_path) > 0:
+                            if EpubZipPatcher.is_layout_standardized(candidate_tmp_path):
+                                base_key = cand_key
+                                tmp_base_path = candidate_tmp_path
+                                logger.info("Selected standardized base EPUB '%s' for FAST_PATCH on %s", base_key, novel_id)
+                                break
+                            else:
+                                logger.info("Candidate '%s' for %s is not layout-standardized, trying next candidate", cand_key, novel_id)
+                    except Exception as dl_err:
+                        logger.warning("Failed testing candidate base '%s' for %s: %s", cand_key, novel_id, dl_err)
+
+                    # Not chosen, clean up candidate tmp file
+                    if candidate_tmp_path in created_temp_files:
+                        created_temp_files.remove(candidate_tmp_path)
+                    if os.path.exists(candidate_tmp_path):
+                        try:
+                            os.unlink(candidate_tmp_path)
+                        except Exception:
+                            pass
+
+                if base_key and tmp_base_path and os.path.exists(tmp_base_path):
+                    try:
+                        # Determine which chapters need patching
+                        chapters_to_patch = [
+                            ch for ch in novel.chapters
+                            if (not target_indexes or ch.chapter_index in target_indexes)
+                            and (ch.status == ChapterStatus.COMPLETED or ch.r2_translated_key or (target_indexes and ch.chapter_index in target_indexes))
+                        ]
+
+                        total_patch = len(chapters_to_patch)
+                        chapter_payloads: Dict[int, Tuple[str, str]] = {}
+                        for idx_step, ch in enumerate(chapters_to_patch, start=1):
+                            if is_cancelled_callback and is_cancelled_callback():
+                                raise EpubBuildCancelledException(f"Job '{job_id or novel_id}' đã bị hủy.")
+                            if progress_callback:
+                                pct = int((idx_step / max(1, total_patch)) * 75)
+                                progress_callback(
+                                    f"Đang tải nội dung Chương {ch.chapter_index}: {ch.chapter_title}...",
+                                    ch.chapter_index,
+                                    idx_step,
+                                    total_patch,
+                                    pct,
+                                )
+                            txt = self._legacy.get_chapter_content(
+                                novel_id,
+                                ch.chapter_index,
+                                version="translated",
+                                allow_epub_self_heal=False,
+                                is_cancelled_callback=is_cancelled_callback,
+                                novel_meta=novel,
+                            )
+                            if not txt:
                                 txt = self._legacy.get_chapter_content(
                                     novel_id,
                                     ch.chapter_index,
-                                    version="translated",
+                                    version="original",
                                     allow_epub_self_heal=False,
                                     is_cancelled_callback=is_cancelled_callback,
                                     novel_meta=novel,
                                 )
-                                if not txt:
-                                    txt = self._legacy.get_chapter_content(
-                                        novel_id,
-                                        ch.chapter_index,
-                                        version="original",
-                                        allow_epub_self_heal=False,
-                                        is_cancelled_callback=is_cancelled_callback,
-                                        novel_meta=novel,
-                                    )
-                                if txt:
-                                    chapter_payloads[ch.chapter_index] = (ch.chapter_title, txt)
+                            if txt:
+                                chapter_payloads[ch.chapter_index] = (ch.chapter_title, txt)
 
-                            if is_cancelled_callback and is_cancelled_callback():
-                                raise EpubBuildCancelledException(f"Job '{job_id or novel_id}' đã bị hủy.")
+                        if is_cancelled_callback and is_cancelled_callback():
+                            raise EpubBuildCancelledException(f"Job '{job_id or novel_id}' đã bị hủy.")
 
-                            if chapter_payloads:
-                                if progress_callback:
-                                    progress_callback(
-                                        f"Đang vá {len(chapter_payloads)} chương vào file EPUB...",
-                                        None,
-                                        len(chapter_payloads),
-                                        total_patch,
-                                        85,
-                                    )
-                                os.makedirs(os.path.join("storage", "outputs"), exist_ok=True)
-                                patched_out_path = os.path.join(
-                                    "storage",
-                                    "outputs",
-                                    f"{novel_id}_patch_r{(novel.built_revision or 0) + 1}_{artifact_token}.epub",
+                        if chapter_payloads:
+                            if progress_callback:
+                                progress_callback(
+                                    f"Đang vá {len(chapter_payloads)} chương vào file EPUB...",
+                                    None,
+                                    len(chapter_payloads),
+                                    total_patch,
+                                    85,
                                 )
-                                created_temp_files.append(patched_out_path)
-                                patched_count = EpubZipPatcher.patch_epub_streaming(
-                                    base_epub_path=tmp_base_path,
-                                    output_epub_path=patched_out_path,
-                                    chapter_payloads=chapter_payloads,
-                                )
-                                final_output_path = patched_out_path
-                                strategy = "fast_patch"
-                                logger.info("FAST_PATCH succeeded for novel %s (%d chapters)", novel_id, patched_count)
-                        else:
-                            logger.info("Base EPUB for %s is not layout-standardized, falling back to FULL_REBUILD", novel_id)
-                except EpubBuildCancelledException:
-                    raise
-                except Exception as exc:
-                    logger.warning("FAST_PATCH failed for novel %s, falling back to FULL_REBUILD: %s", novel_id, exc)
-                finally:
-                    if os.path.exists(tmp_base_path):
-                        try:
-                            os.unlink(tmp_base_path)
-                        except Exception:
-                            pass
+                            os.makedirs(os.path.join("storage", "outputs"), exist_ok=True)
+                            patched_out_path = os.path.join(
+                                "storage",
+                                "outputs",
+                                f"{novel_id}_patch_r{(novel.built_revision or 0) + 1}_{artifact_token}.epub",
+                            )
+                            created_temp_files.append(patched_out_path)
+                            patched_count = EpubZipPatcher.patch_epub_streaming(
+                                base_epub_path=tmp_base_path,
+                                output_epub_path=patched_out_path,
+                                chapter_payloads=chapter_payloads,
+                            )
+                            final_output_path = patched_out_path
+                            strategy = "fast_patch"
+                            logger.info("FAST_PATCH succeeded for novel %s (%d chapters)", novel_id, patched_count)
+                    except EpubBuildCancelledException:
+                        raise
+                    except Exception as exc:
+                        logger.warning("FAST_PATCH failed for novel %s, falling back to FULL_REBUILD: %s", novel_id, exc)
+                    finally:
+                        if os.path.exists(tmp_base_path):
+                            try:
+                                os.unlink(tmp_base_path)
+                            except Exception:
+                                pass
 
             # Fallback to FULL_REBUILD if FAST_PATCH was not applicable or failed
             # CRITICAL: Published EPUB artifact MUST contain all novel chapters (target_chapters=None)
             if not final_output_path or not os.path.exists(final_output_path):
-                logger.info("Executing FULL_REBUILD for novel %s", novel_id)
+                logger.info("Executing FULL_REBUILD for novel %s (use_fast_patch=%s, base_key=%s)", novel_id, use_fast_patch, base_key)
+                strategy = "full_rebuild"
+                if job_id:
+                    try:
+                        from app.db.session import db_session
+                        from app.modules.library.persistence.legacy_repository import LibraryRepository
+                        with db_session() as j_session:
+                            LibraryRepository.update_job_strategy(j_session, job_id, "full_rebuild")
+                            j_session.commit()
+                    except Exception as e:
+                        logger.debug("Failed to update job strategy to full_rebuild: %s", e)
                 final_output_path = self._legacy.export_full_epub(
                     novel_id,
                     force_rebuild=True,

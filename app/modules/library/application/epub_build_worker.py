@@ -229,6 +229,7 @@ async def run_epub_build_consumer() -> None:
                                         built_revision=built_rev,
                                         epub_key=result["epub_key"],
                                         worker_id=WORKER_ID,
+                                        strategy=result.get("strategy"),
                                     )
                                     comp_session.commit()
 

@@ -161,7 +161,8 @@ class LibraryRepository:
         model.cover_r2_key = meta.cover_url
         model.status = meta.status.value if isinstance(meta.status, NovelStatus) else str(meta.status)
         if meta.current_epub_key:
-            model.current_epub_key = meta.current_epub_key
+            if not model.current_epub_key or (meta.built_revision or 0) >= (model.built_revision or 0):
+                model.current_epub_key = meta.current_epub_key
         if meta.desired_revision:
             model.desired_revision = max(model.desired_revision or 0, meta.desired_revision)
         if meta.built_revision:
@@ -217,7 +218,16 @@ class LibraryRepository:
             ch_model.reviewer_model = ch.reviewer_model
             ch_model.reviewed_at = datetime.fromisoformat(ch.reviewed_at) if ch.reviewed_at else None
             ch_model.review_error = ch.review_error
-            ch_model.updated_at = now
+            if ch.updated_at:
+                try:
+                    dt = datetime.fromisoformat(ch.updated_at)
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    ch_model.updated_at = dt
+                except Exception:
+                    ch_model.updated_at = ch_model.updated_at or now
+            elif not ch_model.updated_at:
+                ch_model.updated_at = now
 
         session.flush()
         model.total_chapters = len(model.chapters or [])
@@ -463,7 +473,22 @@ class LibraryRepository:
             novel = session.execute(stmt_novel).scalar_one_or_none()
 
         if not novel:
-            raise ValueError(f"Không tìm thấy bộ truyện '{novel_id}'")
+            from app.modules.library.application.facade import library_service
+            meta = library_service.get_novel(novel_id)
+            if meta:
+                novel = NovelModel(
+                    novel_id=meta.novel_id,
+                    title=meta.title,
+                    author=meta.author,
+                    status=meta.status.value if hasattr(meta.status, "value") else str(meta.status),
+                    current_epub_key=meta.current_epub_key,
+                    built_revision=meta.built_revision or 0,
+                    desired_revision=meta.built_revision or 0,
+                )
+                session.add(novel)
+                session.flush()
+            else:
+                raise ValueError(f"Không tìm thấy bộ truyện '{novel_id}'")
 
         if is_structural:
             novel.is_structural_dirty = True
@@ -507,12 +532,36 @@ class LibraryRepository:
             f"{novel_id}/full.epub",
         ]
         found_base_key = novel.current_epub_key
+        if found_base_key and not storage_repo.file_exists(found_base_key):
+            found_base_key = None
+
         if not found_base_key:
             for cand in legacy_candidates:
                 if storage_repo.file_exists(cand):
                     found_base_key = cand
                     novel.current_epub_key = cand
                     break
+
+        if not found_base_key:
+            try:
+                import re
+                def _rev_num(fn: str) -> int:
+                    try:
+                        m = re.match(r"^r(\d+)", os.path.basename(fn))
+                        if m:
+                            return int(m.group(1))
+                    except Exception:
+                        pass
+                    return -1
+                exports_files = storage_repo.list_files(f"novels/{novel_id}/exports/")
+                sorted_exports = sorted(exports_files, key=_rev_num, reverse=True)
+                for cand in sorted_exports:
+                    if storage_repo.file_exists(cand):
+                        found_base_key = cand
+                        novel.current_epub_key = cand
+                        break
+            except Exception:
+                pass
 
         has_existing_base = bool(found_base_key)
         is_scoped_range = bool(dirty_indexes and not force_rebuild)
@@ -678,6 +727,7 @@ class LibraryRepository:
         built_revision: int,
         epub_key: str,
         worker_id: Optional[str] = None,
+        strategy: Optional[str] = None,
     ) -> bool:
         now = datetime.now(timezone.utc)
         job = session.get(EpubBuildJobModel, job_id)
@@ -692,6 +742,8 @@ class LibraryRepository:
         job.status = "completed"
         job.built_revision = built_revision
         job.epub_key = epub_key
+        if strategy:
+            job.strategy = strategy
         job.completed_at = now
         session.flush()
 
@@ -858,6 +910,7 @@ class LibraryRepository:
         processed_chapters: Optional[int] = None,
         total_chapters: Optional[int] = None,
         progress_percentage: Optional[int] = None,
+        strategy: Optional[str] = None,
     ) -> bool:
         job = session.get(EpubBuildJobModel, job_id)
         if not job or job.status in ("completed", "failed", "cancelled"):
@@ -873,7 +926,18 @@ class LibraryRepository:
             job.total_chapters = total_chapters
         if progress_percentage is not None:
             job.progress_percentage = max(0, min(100, progress_percentage))
+        if strategy is not None:
+            job.strategy = strategy
 
+        session.flush()
+        return True
+
+    @classmethod
+    def update_job_strategy(cls, session: Session, job_id: str, strategy: str) -> bool:
+        job = session.get(EpubBuildJobModel, job_id)
+        if not job or job.status in ("completed", "failed", "cancelled"):
+            return False
+        job.strategy = strategy
         session.flush()
         return True
 

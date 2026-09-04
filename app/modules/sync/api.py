@@ -66,3 +66,90 @@ def backup_sync(options: SyncOptions = SyncOptions()):
 @router.post("/restore")
 def restore_sync(options: SyncOptions = SyncOptions()):
     return _run(lambda: google_drive_sync_service.restore(options.allow_deletions, options.force))
+
+
+# ==============================================================================
+# OFFLINE SYNC PACKAGE (ZIP EXPORT & IMPORT FOR HOME MACHINE)
+# ==============================================================================
+import os
+import shutil
+import tempfile
+from fastapi import BackgroundTasks, File, UploadFile
+from fastapi.responses import FileResponse
+from app.modules.sync.sync_package_service import SyncPackageService
+
+
+def _cleanup_temp_file(filepath: str) -> None:
+    try:
+        if os.path.exists(filepath):
+            os.unlink(filepath)
+        parent = os.path.dirname(filepath)
+        if os.path.exists(parent) and "epub_sync_export_" in os.path.basename(parent):
+            shutil.rmtree(parent, ignore_errors=True)
+    except Exception:
+        pass
+
+
+@router.get("/estimate")
+def get_sync_estimate_endpoint():
+    """Returns estimated counts and byte sizes of database and storage for export."""
+    try:
+        return SyncPackageService.get_sync_estimate()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Lỗi khi tính toán dung lượng: {exc}") from exc
+
+
+@router.get("/export-package")
+def export_sync_package_endpoint(
+    background_tasks: BackgroundTasks,
+    include_db: bool = True,
+    include_storage: bool = True,
+):
+    """Generates and downloads a complete offline sync package (.zip) for home machine sync."""
+    try:
+        zip_path = SyncPackageService.export_sync_package(
+            include_db=include_db,
+            include_storage=include_storage,
+        )
+        filename = os.path.basename(zip_path)
+        background_tasks.add_task(_cleanup_temp_file, zip_path)
+        return FileResponse(
+            path=zip_path,
+            filename=filename,
+            media_type="application/zip",
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Lỗi khi đóng gói dữ liệu: {exc}") from exc
+
+
+@router.post("/import-package")
+async def import_sync_package_endpoint(
+    file: UploadFile = File(...),
+    restore_to_postgres: bool = True,
+):
+    """Unpacks an uploaded sync package (.zip) into the project's data/ and storage/."""
+    if not file.filename.endswith(".zip"):
+        raise HTTPException(status_code=400, detail="Vui lòng tải lên tệp nén định dạng .zip")
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
+        temp_zip_path = tmp.name
+
+    try:
+        with open(temp_zip_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        result = SyncPackageService.import_sync_package(
+            temp_zip_path,
+            restore_to_postgres_if_active=restore_to_postgres,
+        )
+        return result
+    except ValueError as val_err:
+        raise HTTPException(status_code=400, detail=str(val_err)) from val_err
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Lỗi khi giải nén và nạp dữ liệu: {exc}") from exc
+    finally:
+        if os.path.exists(temp_zip_path):
+            try:
+                os.unlink(temp_zip_path)
+            except Exception:
+                pass

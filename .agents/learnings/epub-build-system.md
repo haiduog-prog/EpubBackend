@@ -101,6 +101,20 @@
 - **Fix**: Trong `mark_dirty_and_enqueue_job`, kiểm tra `has_existing_base = novel.current_epub_key or storage_repo.file_exists(...)`. Nếu có `full.epub`, khởi tạo `current_epub_key` và chọn `fast_patch`.
 - **Files liên quan**: `app/modules/library/persistence/legacy_repository.py`
 
+### FAST_PATCH Bị Ép FULL_REBUILD Do Candidate Base Bị Stale/404
+- **Ngày**: 2026-09-04
+- **Vấn đề**: Khi dịch hoặc cập nhật một vài chương, worker chạy `FAST_PATCH` nhưng thực tế duyệt toàn bộ 3.727 chương (mất nhiều thời gian thay vì vài giây).
+- **Root cause**:
+  1. `base_key = novel.current_epub_key or f"novels/{novel_id}/full.epub"`. Khi `novel.current_epub_key` trỏ tới revision cũ đã bị retention policy dọn dẹp trên Cloud Storage (404), toán tử `or` không bao giờ evaluate fallback `full.epub` vì chuỗi `current_epub_key` không rỗng.
+  2. `storage_repo.file_exists(base_key)` trả về `False`, khiến service âm thầm fallback sang `export_full_epub(force_rebuild=True, target_chapters=None)`.
+  3. Khi fallback, DB job strategy vẫn giữ nguyên `fast_patch`, khiến UI hiển thị badge `FAST_PATCH` nhưng thanh tiến trình quét toàn bộ các chương.
+- **Fix**:
+  1. Service giải quyết ứng viên theo thứ tự ưu tiên: `novel.current_epub_key` -> canonical `novels/{id}/full.epub`, `{id}/full.epub` -> các file export revision gần nhất trong `exports/`.
+  2. Với mỗi ứng viên, kiểm tra tồn tại và xác minh chuẩn hóa bố cục `EpubZipPatcher.is_layout_standardized()`.
+  3. Nếu buộc phải fallback `FULL_REBUILD`, cập nhật ngay `job.strategy = "full_rebuild"` vào DB để UI phản ánh chính xác.
+  4. Bảo vệ `LibraryRepository.save_novel` không ghi đè `current_epub_key` bằng metadata cũ hơn `built_revision`.
+- **Files liên quan**: `app/modules/library/application/epub_export_service.py`, `app/modules/library/persistence/legacy_repository.py`, `app/modules/library/application/epub_build_worker.py`
+
 ### UI Luôn Gửi force_rebuild: true Khi Xuất Theo Dải Chương
 - **Ngày**: 2026-09-02
 - **Vấn đề**: Người dùng nhập range `151-151` trên modal Xuất EPUB nhưng server vẫn rebuild toàn bộ.

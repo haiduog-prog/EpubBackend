@@ -1,5 +1,6 @@
 ---
-description: Quy trình thực thi task coding với brainstorming, execution và lưu learnings tự động
+name: plan
+description: Quy trình 3 pha thực thi task coding với brainstorming, execution và lưu learnings tự động
 ---
 
 # Task Execute Workflow
@@ -25,6 +26,7 @@ Trước khi code bất kỳ thứ gì, AI **PHẢI** thực hiện quy trình b
 ### Bước 1.2: Gọi Brainstorming Skill
 
 Mở và đọc file skill brainstorming tại một trong các đường dẫn sau:
+- `.agents/skills/brainstorming/SKILL.md`
 - `/Users/apple/.cursor/skills/skills/brainstorming/SKILL.md`
 - `/Users/apple/.gemini/skills/brainstorming/SKILL.md`
 

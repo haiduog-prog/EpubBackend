@@ -1,8 +1,9 @@
 ---
-description: Lưu learnings từ conversation hiện tại vào .agents/learnings/ theo chủ đề
+name: ai-learning
+description: Lưu learnings từ conversation hiện tại vào .agents/learnings/ theo chủ đề và cấu trúc 4 khía cạnh Architecture, Bugs, How-to, Patterns.
 ---
 
-# AI Learning Workflow
+# AI Learning
 
 Trích xuất kiến thức từ conversation hiện tại và lưu vào **1 file duy nhất theo tên feature/chức năng**, tổng hợp cả 4 khía cạnh: Architecture, Bugs, How-to, Patterns.
 
@@ -120,7 +121,7 @@ AI quét toàn bộ conversation và phân loại thông tin có giá trị tái
 ## Bước 4: Báo kết quả
 
 ```
-✅ Đã lưu learnings vào: .agent/learnings/[feature-name].md
+✅ Đã lưu learnings vào: .agents/learnings/[feature-name].md
    - Architecture: X entries
    - Bugs & Solutions: X entries
    - How-To: X entries

@@ -954,6 +954,91 @@
             accent-color: #6366f1;
             cursor: pointer;
         }
+
+        /* Offline Sync Package Modal */
+        .sync-modal-tabs {
+            display: flex;
+            gap: 0.5rem;
+            border-bottom: 1px solid var(--card-border);
+            padding-bottom: 0.75rem;
+            margin-bottom: 1.25rem;
+        }
+        .sync-tab-btn {
+            background: transparent;
+            border: 1px solid transparent;
+            color: var(--text-sub);
+            padding: 0.6rem 1.1rem;
+            border-radius: 8px;
+            font-size: 0.88rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .sync-tab-btn:hover {
+            color: var(--text-main);
+            background: rgba(255, 255, 255, 0.05);
+        }
+        .sync-tab-btn.active {
+            color: #fff;
+            background: rgba(99, 102, 241, 0.2);
+            border-color: rgba(99, 102, 241, 0.5);
+            box-shadow: 0 0 12px rgba(99, 102, 241, 0.25);
+        }
+        .sync-stat-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 0.75rem;
+            margin: 1rem 0;
+        }
+        .sync-stat-card {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--card-border);
+            border-radius: 10px;
+            padding: 0.85rem 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.3rem;
+            transition: transform 0.2s ease, border-color 0.2s ease;
+        }
+        .sync-stat-card:hover {
+            border-color: rgba(99, 102, 241, 0.35);
+            transform: translateY(-1px);
+        }
+        .sync-stat-title {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-sub);
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+        .sync-stat-val {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #f1f5f9;
+        }
+        .sync-stat-sub {
+            font-size: 0.75rem;
+            color: var(--text-sub);
+        }
+        .sync-dropzone {
+            border: 2px dashed rgba(99, 102, 241, 0.4);
+            background: rgba(15, 23, 42, 0.5);
+            border-radius: 12px;
+            padding: 2rem 1.25rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .sync-dropzone:hover, .sync-dropzone.dragover {
+            border-color: #818cf8;
+            background: rgba(99, 102, 241, 0.12);
+            transform: translateY(-2px);
+        }
     </style>
 </head>
 <body>
@@ -993,6 +1078,9 @@
         <a href="/studio" target="_blank" class="btn" style="text-decoration:none; background:linear-gradient(135deg, #0ea5e9, #10b981); margin-left:auto; display:inline-flex; align-items:center; gap:0.5rem; box-shadow:0 0 16px rgba(16,185,129,0.3);" title="Mở EpubBackend Studio (Quản lý Database & Storage)">
             <i class="fa-solid fa-cubes"></i> Studio (DB & Storage)
         </a>
+        <button id="btn-sync-package" class="btn" onclick="openSyncModal()" type="button" style="background:linear-gradient(135deg, #6366f1, #8b5cf6); display:inline-flex; align-items:center; gap:0.5rem; box-shadow:0 0 16px rgba(139,92,246,0.35); font-weight:600;" title="Xuất / Nhập gói dữ liệu đồng bộ với máy ở nhà">
+            <i class="fa-solid fa-file-zipper"></i> Đồng Bộ Máy Ở Nhà
+        </button>
         <button id="logout-button" class="btn btn-secondary" type="button">Đăng xuất</button>
         <span class="badge"><i class="fa-solid fa-microchip"></i> Auto Quota Fallback</span>
     </header>
@@ -1151,9 +1239,30 @@
                         <i class="fa-solid fa-rotate"></i> Làm mới Dữ liệu
                     </button>
                 </div>
-                <p style="color: var(--text-sub); font-size: 0.88rem; margin-bottom: 1.5rem;">
+                <p style="color: var(--text-sub); font-size: 0.88rem; margin-bottom: 1.25rem;">
                     Kiểm tra trực quan các Job dịch file (.epub/.txt) và các bộ từ điển Book Bible đã được lưu trữ trong Backend.
                 </p>
+
+                <!-- Offline Sync Quick Action Banner -->
+                <div style="background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(139, 92, 246, 0.08)); border: 1px solid rgba(139, 92, 246, 0.35); border-radius: 12px; padding: 1.1rem 1.35rem; margin-bottom: 1.75rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+                    <div style="display: flex; align-items: center; gap: 0.9rem;">
+                        <div style="width: 46px; height: 46px; border-radius: 12px; background: linear-gradient(135deg, #6366f1, #8b5cf6); display: flex; align-items: center; justify-content: center; font-size: 1.25rem; color: #fff; box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4); flex-shrink: 0;">
+                            <i class="fa-solid fa-file-zipper"></i>
+                        </div>
+                        <div>
+                            <div style="font-weight: 700; font-size: 0.98rem; color: #fff; margin-bottom: 0.2rem;">Đồng Bộ Dữ Liệu Ngoại Tuyến (Máy Nhà ⇄ Công Ty)</div>
+                            <div style="font-size: 0.82rem; color: var(--text-sub);">Đóng gói trọn vẹn Database SQLite (kèm toàn bộ chương đã dịch từ PostgreSQL) và thư mục Storage thành file ZIP để đồng bộ 100% offline.</div>
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 0.6rem; flex-wrap: wrap;">
+                        <button class="btn" onclick="openSyncModal('export')" style="background: linear-gradient(135deg, #6366f1, #8b5cf6); padding: 0.5rem 1.1rem; font-size: 0.85rem; font-weight: 600; box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);">
+                            <i class="fa-solid fa-download"></i> Xuất Gói ZIP
+                        </button>
+                        <button class="btn btn-secondary" onclick="openSyncModal('import')" style="padding: 0.5rem 1.1rem; font-size: 0.85rem; font-weight: 600;">
+                            <i class="fa-solid fa-upload"></i> Nhập Gói ZIP
+                        </button>
+                    </div>
+                </div>
 
                 <!-- Section: Novels in Database -->
                 <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem; margin-bottom:0.8rem;">
@@ -1582,7 +1691,7 @@
                         <button type="button" class="btn btn-secondary" onclick="document.getElementById('add-chapter-file').click()" style="padding:0.4rem 0.75rem; font-size:0.78rem;">
                             <i class="fa-solid fa-file-lines"></i> <span id="add-chapter-file-label">Chọn File TXT</span>
                         </button>
-                        <button type="submit" class="btn" style="padding:0.4rem 0.9rem; font-size:0.82rem;">
+                        <button type="submit" id="btn-submit-add-chapter" class="btn" style="padding:0.4rem 0.9rem; font-size:0.82rem;">
                             <i class="fa-solid fa-upload"></i> + Thêm Chương
                         </button>
                     </form>
@@ -1601,6 +1710,10 @@
 
                     <!-- Quick Selection Tools & API Key widget -->
                     <div style="display:flex; align-items:center; gap:0.4rem; flex-wrap:wrap; font-size:0.8rem;">
+                        <div style="position:relative; display:inline-flex; align-items:center;">
+                            <input type="text" id="chapter-search-input" placeholder="Tìm chương..." oninput="onChapterSearchInput(this.value)" style="background:rgba(15,23,42,0.8); border:1px solid var(--card-border); color:#fff; padding:0.25rem 0.5rem 0.25rem 1.6rem; border-radius:6px; font-size:0.75rem; width:115px; outline:none;">
+                            <i class="fa-solid fa-magnifying-glass" style="position:absolute; left:0.5rem; font-size:0.7rem; color:var(--text-sub); pointer-events:none;"></i>
+                        </div>
                         <button type="button" class="btn btn-secondary" onclick="selectAllChapters()" style="padding:0.3rem 0.6rem; font-size:0.78rem;" title="Chọn toàn bộ các chương trong truyện">
                             <i class="fa-solid fa-check-double"></i> Tất cả
                         </button>
@@ -1651,6 +1764,38 @@
                             <tr><td colspan="7" style="padding:1.5rem; text-align:center; color:var(--text-sub);">Chưa có chương nào</td></tr>
                         </tbody>
                     </table>
+                </div>
+
+                <!-- Chapters Pagination & Filter Bar -->
+                <div id="chapters-pagination-bar" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; margin-top:0.35rem; padding:0.4rem 0.75rem; background:rgba(15,23,42,0.6); border:1px solid var(--card-border); border-radius:8px; font-size:0.8rem;">
+                    <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+                        <span style="color:var(--text-sub); font-size:0.75rem;">Hiển thị:</span>
+                        <span id="pagination-range-text" style="font-weight:600; color:#c7d2fe; font-size:0.78rem;">Chương 0 - 0 / 0</span>
+                        <div style="display:inline-flex; align-items:center; gap:0.3rem; margin-left:0.4rem;">
+                            <span style="color:var(--text-sub); font-size:0.75rem;">Xem:</span>
+                            <select id="select-chapter-page-size" onchange="changeChapterPageSize(this.value)" style="background:rgba(0,0,0,0.5); border:1px solid var(--card-border); color:#fff; padding:0.2rem 0.4rem; border-radius:4px; font-size:0.75rem; outline:none;">
+                                <option value="50" selected>50 / trang</option>
+                                <option value="100">100 / trang</option>
+                                <option value="200">200 / trang</option>
+                                <option value="500">500 / trang</option>
+                                <option value="all">Tất cả (Chậm)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:0.35rem; flex-wrap:wrap;">
+                        <div style="display:inline-flex; align-items:center; gap:0.25rem; margin-right:0.3rem;">
+                            <span style="color:var(--text-sub); font-size:0.75rem;">Đến chương:</span>
+                            <input type="number" id="jump-to-chapter-input" placeholder="Số..." min="1" style="width:52px; background:rgba(0,0,0,0.5); border:1px solid var(--card-border); color:#fff; padding:0.18rem 0.3rem; border-radius:4px; font-size:0.75rem; text-align:center; outline:none;" onkeydown="if(event.key==='Enter'){jumpToChapterNumber(this.value); event.preventDefault();}">
+                            <button type="button" class="btn btn-secondary" onclick="jumpToChapterNumber(document.getElementById('jump-to-chapter-input').value)" style="padding:0.18rem 0.45rem; font-size:0.72rem;">Đi</button>
+                        </div>
+                        <button type="button" class="btn btn-secondary" id="btn-chapter-page-first" onclick="goToChapterPage(1)" style="padding:0.2rem 0.45rem; font-size:0.75rem;" title="Trang đầu"><i class="fa-solid fa-angles-left"></i></button>
+                        <button type="button" class="btn btn-secondary" id="btn-chapter-page-prev" onclick="goToChapterPage(currentChapterPage - 1)" style="padding:0.2rem 0.45rem; font-size:0.75rem;" title="Trang trước"><i class="fa-solid fa-chevron-left"></i></button>
+                        <span style="color:#cbd5e1; font-weight:600; padding:0 0.3rem; font-size:0.78rem;">
+                            Trang <span id="chapter-current-page-display">1</span> / <span id="chapter-total-pages-display">1</span>
+                        </span>
+                        <button type="button" class="btn btn-secondary" id="btn-chapter-page-next" onclick="goToChapterPage(currentChapterPage + 1)" style="padding:0.2rem 0.45rem; font-size:0.75rem;" title="Trang tiếp"><i class="fa-solid fa-chevron-right"></i></button>
+                        <button type="button" class="btn btn-secondary" id="btn-chapter-page-last" onclick="goToChapterPage('last')" style="padding:0.2rem 0.45rem; font-size:0.75rem;" title="Trang cuối"><i class="fa-solid fa-angles-right"></i></button>
+                    </div>
                 </div>
 
                 <!-- Batch Action Bar (Visible when selectedCount > 0) -->
@@ -2273,6 +2418,151 @@
                     <button type="button" class="btn" onclick="saveAndApplyQuickApiKey()" style="background:linear-gradient(135deg, #6366f1, #8b5cf6); border:none; padding:0.5rem 1.25rem; font-size:0.85rem; font-weight:600; box-shadow:0 0 15px rgba(99,102,241,0.4);">
                         <i class="fa-solid fa-bolt"></i> ⚡ Lưu & Tiếp Tục Dịch
                     </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- MODAL: OFFLINE SYNC PACKAGE (EXPORT & IMPORT FOR HOME MACHINE) -->
+        <div id="modal-sync-package" class="modal">
+            <div class="modal-content" style="max-width:700px; padding:1.75rem; border:1px solid rgba(99,102,241,0.4); box-shadow:0 25px 60px rgba(0,0,0,0.85);">
+                <!-- Modal Header -->
+                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--card-border); padding-bottom:0.85rem;">
+                    <div style="display:flex; align-items:center; gap:0.75rem;">
+                        <div style="width:38px; height:38px; border-radius:10px; background:rgba(99,102,241,0.2); border:1px solid rgba(99,102,241,0.4); display:flex; align-items:center; justify-content:center;">
+                            <i class="fa-solid fa-file-zipper" style="color:#a5b4fc; font-size:1.15rem;"></i>
+                        </div>
+                        <div>
+                            <h3 style="font-size:1.15rem; font-weight:700; color:#fff; margin:0;">Đồng Bộ Dữ Liệu Máy Ở Nhà</h3>
+                            <div style="font-size:0.78rem; color:var(--text-sub);">Đóng gói & phục hồi toàn bộ Database + Storage thành file ZIP ngoại tuyến</div>
+                        </div>
+                    </div>
+                    <button onclick="closeModal('modal-sync-package')" style="background:none; border:none; color:var(--text-sub); font-size:1.3rem; cursor:pointer;" title="Đóng"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+
+                <!-- Modal Tabs -->
+                <div class="sync-modal-tabs">
+                    <button id="sync-tab-export-btn" class="sync-tab-btn active" onclick="switchSyncTab('export')">
+                        <i class="fa-solid fa-download"></i> Xuất Gói ZIP (Export)
+                    </button>
+                    <button id="sync-tab-import-btn" class="sync-tab-btn" onclick="switchSyncTab('import')">
+                        <i class="fa-solid fa-upload"></i> Nhập Gói ZIP (Import)
+                    </button>
+                </div>
+
+                <!-- PANE 1: EXPORT -->
+                <div id="sync-pane-export" style="display:block;">
+                    <!-- Database Status Info -->
+                    <div style="background:rgba(15,23,42,0.6); border:1px solid var(--card-border); border-radius:10px; padding:0.85rem 1rem; margin-bottom:1rem; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem;">
+                        <div style="display:flex; align-items:center; gap:0.6rem;">
+                            <span style="font-size:0.82rem; color:var(--text-sub);">Nguồn dữ liệu hiện tại:</span>
+                            <span id="sync-db-type-badge" class="badge" style="background:rgba(99,102,241,0.25); color:#c7d2fe; border-color:rgba(99,102,241,0.5);">Đang kiểm tra...</span>
+                        </div>
+                        <button type="button" class="btn btn-secondary" onclick="loadSyncEstimate(true)" style="padding:0.25rem 0.6rem; font-size:0.75rem;" title="Làm mới thống kê dung lượng">
+                            <i id="btn-sync-refresh-estimate" class="fa-solid fa-rotate"></i> Cập nhật
+                        </button>
+                    </div>
+
+                    <!-- Stat Cards Grid -->
+                    <div class="sync-stat-grid">
+                        <div class="sync-stat-card">
+                            <div class="sync-stat-title"><i class="fa-solid fa-database" style="color:#818cf8;"></i> Cơ Sở Dữ Liệu</div>
+                            <div class="sync-stat-val"><span id="sync-stat-novels">1</span> <span style="font-size:0.8rem; font-weight:normal; color:var(--text-sub);">truyện</span></div>
+                            <div class="sync-stat-sub"><span id="sync-stat-chapters">3,727</span> chương (<b id="sync-stat-completed" style="color:#34d399;">585</b> đã dịch)</div>
+                        </div>
+                        <div class="sync-stat-card">
+                            <div class="sync-stat-title"><i class="fa-solid fa-folder-tree" style="color:#38bdf8;"></i> Kho Lưu Trữ (Storage)</div>
+                            <div class="sync-stat-val" id="sync-stat-storage-size">~203 MB</div>
+                            <div class="sync-stat-sub"><span id="sync-stat-storage-files">7,475</span> tệp (bản dịch, sách gốc)</div>
+                        </div>
+                        <div class="sync-stat-card">
+                            <div class="sync-stat-title"><i class="fa-solid fa-file-zipper" style="color:#fbbf24;"></i> File ZIP Dự Kiến</div>
+                            <div class="sync-stat-val" id="sync-stat-zip-size" style="color:#fbbf24;">~138 MB</div>
+                            <div class="sync-stat-sub">Nén Deflate (tiết kiệm ~35%)</div>
+                        </div>
+                    </div>
+
+                    <div style="background:rgba(99,102,241,0.08); border:1px solid rgba(99,102,241,0.25); border-radius:8px; padding:0.75rem 1rem; font-size:0.82rem; color:#cbd5e1; line-height:1.5; margin-bottom:1rem;">
+                        <i class="fa-solid fa-circle-info" style="color:#818cf8;"></i>
+                        Gói ZIP xuất ra sẽ tự động bao gồm <b>data/local_db.sqlite3</b> được chuyển đổi đầy đủ các chương từ PostgreSQL, kèm toàn bộ thư mục <b>storage/novels/</b> và <b>storage/uploads/</b>. Khi mang về máy ở nhà, chỉ cần chạy script khởi động là có thể đọc và dịch tiếp ngoại tuyến 100%!
+                    </div>
+
+                    <!-- Options -->
+                    <div style="display:flex; flex-direction:column; gap:0.5rem; margin-bottom:1.25rem;">
+                        <label style="display:flex; align-items:center; gap:0.5rem; font-size:0.85rem; color:#f1f5f9; cursor:pointer;">
+                            <input type="checkbox" id="sync-opt-include-db" checked style="accent-color:#6366f1; width:16px; height:16px;">
+                            Bao gồm Cơ sở dữ liệu SQLite (<code>data/local_db.sqlite3</code>)
+                        </label>
+                        <label style="display:flex; align-items:center; gap:0.5rem; font-size:0.85rem; color:#f1f5f9; cursor:pointer;">
+                            <input type="checkbox" id="sync-opt-include-storage" checked style="accent-color:#6366f1; width:16px; height:16px;">
+                            Bao gồm Kho tệp Storage (<code>storage/novels/</code> và <code>storage/uploads/</code>)
+                        </label>
+                    </div>
+
+                    <!-- Action Button & Loading -->
+                    <button type="button" id="btn-do-export-package" class="btn" onclick="triggerExportSyncPackage()" style="width:100%; padding:0.75rem; font-size:0.95rem; font-weight:700; background:linear-gradient(135deg, #6366f1, #8b5cf6); box-shadow:0 4px 18px rgba(99,102,241,0.4);">
+                        <i class="fa-solid fa-download"></i> Tải Về Gói Đồng Bộ Ngay (.ZIP)
+                    </button>
+
+                    <div id="sync-export-loading" style="display:none; text-align:center; padding:1.25rem; background:rgba(99,102,241,0.1); border-radius:10px; border:1px dashed rgba(99,102,241,0.35);">
+                        <div class="fbb-spinner" style="width:30px; height:30px; margin:0 auto 0.75rem; border-top-color:#818cf8;"></div>
+                        <div style="font-weight:700; color:#c7d2fe; font-size:0.95rem;">Đang sao chép cơ sở dữ liệu & nén file ZIP...</div>
+                        <div style="font-size:0.8rem; color:var(--text-sub); margin-top:0.35rem;">Quá trình mất khoảng 10-25 giây (nén ~7,400 tệp). File sẽ tự động tải về khi hoàn tất.</div>
+                    </div>
+                </div>
+
+                <!-- PANE 2: IMPORT -->
+                <div id="sync-pane-import" style="display:none;">
+                    <div style="background:rgba(15,23,42,0.6); border:1px solid var(--card-border); border-radius:10px; padding:0.85rem 1rem; margin-bottom:1rem; font-size:0.82rem; color:var(--text-sub); line-height:1.5;">
+                        <i class="fa-solid fa-house-laptop" style="color:#10b981;"></i>
+                        Sử dụng tính năng này tại máy ở nhà (hoặc khi mang bản dịch mới từ máy nhà về lại công ty). Tải lên file <b>.zip</b> đã xuất để tự động nạp vào cơ sở dữ liệu và thư mục lưu trữ.
+                    </div>
+
+                    <!-- Dropzone -->
+                    <input type="file" id="sync-import-file-input" accept=".zip" style="display:none;" onchange="handleSyncFileSelect(event)">
+                    <div id="sync-import-dropzone" class="sync-dropzone" onclick="document.getElementById('sync-import-file-input').click()">
+                        <i class="fa-solid fa-cloud-arrow-up" style="font-size:2.2rem; color:#818cf8; margin-bottom:0.6rem;"></i>
+                        <div style="font-size:0.95rem; font-weight:700; color:#fff;">Chọn hoặc kéo thả file ZIP vào đây</div>
+                        <div style="font-size:0.8rem; color:var(--text-sub); margin-top:0.25rem;">Hỗ trợ tệp <code>.zip</code> gói đồng bộ EpubBackend</div>
+                    </div>
+
+                    <!-- Selected File Display -->
+                    <div id="sync-selected-file-info" style="display:none; align-items:center; justify-content:space-between; background:rgba(30,41,59,0.7); border:1px solid rgba(99,102,241,0.3); border-radius:8px; padding:0.65rem 0.9rem; margin-top:0.85rem;">
+                        <div style="display:flex; align-items:center; gap:0.6rem; overflow:hidden;">
+                            <i class="fa-solid fa-file-zipper" style="color:#fbbf24; font-size:1.1rem;"></i>
+                            <div style="overflow:hidden;">
+                                <div id="sync-file-name" style="font-weight:600; font-size:0.85rem; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">filename.zip</div>
+                                <div id="sync-file-size" style="font-size:0.75rem; color:var(--text-sub);">0 MB</div>
+                            </div>
+                        </div>
+                        <button type="button" onclick="clearSyncImportFile()" style="background:none; border:none; color:var(--text-sub); cursor:pointer; font-size:0.9rem; padding:0.2rem;" title="Hủy chọn file">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+
+                    <!-- Import Option & Warning -->
+                    <div style="display:flex; flex-direction:column; gap:0.6rem; margin:1rem 0;">
+                        <label style="display:flex; align-items:center; gap:0.5rem; font-size:0.85rem; color:#f1f5f9; cursor:pointer;">
+                            <input type="checkbox" id="sync-opt-restore-pg" checked style="accent-color:#10b981; width:16px; height:16px;">
+                            Đồng bộ vào PostgreSQL nếu hệ thống đang kết nối PostgreSQL
+                        </label>
+                        <div style="background:rgba(245,158,11,0.1); border:1px solid rgba(245,158,11,0.3); border-radius:8px; padding:0.65rem 0.85rem; font-size:0.8rem; color:#fde68a; display:flex; gap:0.5rem; align-items:flex-start;">
+                            <i class="fa-solid fa-triangle-exclamation" style="margin-top:0.15rem; color:#fbbf24;"></i>
+                            <span>Lưu ý: Dữ liệu từ file ZIP sẽ ghi đè lên các tệp trong <code>storage/</code> và cập nhật các bản ghi trong cơ sở dữ liệu. Hãy đảm bảo file ZIP là bản mới nhất.</span>
+                        </div>
+                    </div>
+
+                    <!-- Action Button & Loading -->
+                    <button type="button" id="btn-do-import-package" class="btn" onclick="triggerImportSyncPackage()" disabled style="width:100%; padding:0.75rem; font-size:0.95rem; font-weight:700; background:linear-gradient(135deg, #10b981, #059669); box-shadow:0 4px 18px rgba(16,185,129,0.35);">
+                        <i class="fa-solid fa-file-import"></i> Bắt Đầu Nạp Dữ Liệu Gói ZIP
+                    </button>
+
+                    <div id="sync-import-loading" style="display:none; text-align:center; padding:1.25rem; background:rgba(16,185,129,0.1); border-radius:10px; border:1px dashed rgba(16,185,129,0.35);">
+                        <div class="fbb-spinner" style="width:30px; height:30px; margin:0 auto 0.75rem; border-top-color:#34d399;"></div>
+                        <div style="font-weight:700; color:#a7f3d0; font-size:0.95rem;">Đang tải lên và giải nén dữ liệu...</div>
+                        <div style="font-size:0.8rem; color:var(--text-sub); margin-top:0.35rem;">Quá trình giải nén và cập nhật database có thể mất 10-30 giây. Vui lòng chờ.</div>
+                    </div>
+
+                    <div id="sync-import-result" style="display:none; margin-top:1rem;"></div>
                 </div>
             </div>
         </div>
@@ -3456,74 +3746,18 @@
                 const detailApiKeyInput = document.getElementById('detail-api-key-input');
                 if (detailApiKeyInput) detailApiKeyInput.value = getActiveApiKey();
 
-                // Render Chapters Table
-                if (novel.chapters.length === 0) {
-                    document.getElementById('detail-chapters-tbody').innerHTML = '<tr><td colspan="7" style="padding:1.5rem; text-align:center; color:var(--text-sub);">Chưa có chương nào trong kho. Hãy thêm chương mới ở khung phía trên!</td></tr>';
+                // Reset search & pagination when opening new novel (keep current page if force refreshing same novel)
+                if (forceRefresh && currentChapterPage) {
+                    // retain currentChapterPage
                 } else {
-                    document.getElementById('detail-chapters-tbody').innerHTML = novel.chapters.map(ch => {
-                        let statusBadge = '<span style="color:#94a3b8;"><i class="fa-regular fa-clock"></i> Chưa dịch</span>';
-                        if (ch.status === 'completed') statusBadge = '<span style="color:#10b981; font-weight:600;"><i class="fa-solid fa-circle-check"></i> Đã dịch</span>';
-                        else if (ch.status === 'needs_review') statusBadge = '<span style="color:#f59e0b; font-weight:600;" title="Bản dịch đang ở draft, cần duyệt"><i class="fa-solid fa-eye"></i> Cần duyệt</span>';
-                        else if (ch.status === 'translating') statusBadge = '<span style="color:#f59e0b; font-weight:600;"><i class="fa-solid fa-spinner spinner"></i> Đang dịch...</span>';
-                        else if (ch.status === 'failed') statusBadge = '<span style="color:#ef4444; font-weight:600;"><i class="fa-solid fa-triangle-exclamation"></i> Lỗi</span>';
-
-                        const reviewIssues = Array.isArray(ch.review_issues) ? ch.review_issues : [];
-                        if (reviewIssues.length > 0) {
-                            const issueSummary = reviewIssues
-                                .map(issue => issue.reason || issue.issue || 'Lỗi review')
-                                .join(' | ');
-                            statusBadge += ` <span style="color:#fbbf24; font-size:0.75rem;" title="${escapeHtml(issueSummary)}">(${reviewIssues.length} lỗi review)</span>`;
-                        }
-
-                        const translateBtn = ch.status === 'needs_review'
-                            ? `<button class="btn btn-secondary chapter-review-btn" data-novel-id="${escapeHtml(novelId)}" data-chapter-index="${ch.chapter_index}" style="padding:0.25rem 0.6rem; font-size:0.75rem; color:#fbbf24; border-color:rgba(251,191,36,0.45);"><i class="fa-solid fa-eye"></i> Duyệt draft</button>`
-                            : ch.status === 'completed'
-                                ? `<button class="btn btn-secondary chapter-translate-btn" data-novel-id="${escapeHtml(novelId)}" data-chapter-index="${ch.chapter_index}" style="padding:0.25rem 0.6rem; font-size:0.75rem;"><i class="fa-solid fa-rotate-right"></i> Dịch lại</button>`
-                                : `<button class="btn chapter-translate-btn" data-novel-id="${escapeHtml(novelId)}" data-chapter-index="${ch.chapter_index}" style="padding:0.25rem 0.6rem; font-size:0.75rem;"><i class="fa-solid fa-bolt"></i> Dịch ngay</button>`;
-                        const isChecked = selectedChapterIndexes.has(ch.chapter_index);
-                        const formattedDate = (ch.status === 'completed' && ch.updated_at)
-                            ? `<span style="font-size:0.78rem; color:#cbd5e1; white-space:nowrap;" title="${escapeHtml(ch.updated_at || '')}"><i class="fa-regular fa-calendar-check" style="color:#818cf8; margin-right:3px;"></i>${formatDateFriendly(ch.updated_at)}</span>`
-                            : `<span style="font-size:0.75rem; color:#64748b;">--</span>`;
-
-                        return `<tr style="border-bottom:1px solid rgba(255,255,255,0.05); ${isChecked ? 'background:rgba(99,102,241,0.08);' : ''}">
-                            <td style="padding:0.6rem; text-align:center;">
-                                <input type="checkbox" class="chapter-row-checkbox" data-chapter-index="${ch.chapter_index}" ${isChecked ? 'checked' : ''} onclick="onChapterCheckboxChanged(${ch.chapter_index}, this.checked, event)">
-                            </td>
-                            <td style="padding:0.6rem; font-weight:600; color:#c7d2fe;">#${ch.chapter_index}</td>
-                            <td style="padding:0.6rem; font-weight:600;">${escapeHtml(ch.chapter_title)}</td>
-                            <td style="padding:0.6rem; color:var(--text-sub);">${ch.word_count} từ</td>
-                            <td style="padding:0.6rem;">${statusBadge}</td>
-                            <td style="padding:0.6rem;">${formattedDate}</td>
-                            <td style="padding:0.6rem; text-align:right; display:flex; gap:0.4rem; justify-content:flex-end;">
-                                <button class="btn btn-secondary chapter-reader-btn" data-novel-id="${escapeHtml(novelId)}" data-chapter-index="${ch.chapter_index}" style="padding:0.25rem 0.6rem; font-size:0.75rem;">
-                                    <i class="fa-solid fa-eye"></i> Đọc
-                                </button>
-                                ${translateBtn}
-                            </td>
-                        </tr>`;
-                    }).join('');
-                    const chaptersBody = document.getElementById('detail-chapters-tbody');
-                    chaptersBody.querySelectorAll('.chapter-reader-btn').forEach(button => {
-                        button.addEventListener('click', () => openChapterReader(
-                            button.dataset.novelId || '',
-                            Number(button.dataset.chapterIndex)
-                        ));
-                    });
-                    chaptersBody.querySelectorAll('.chapter-translate-btn').forEach(button => {
-                        button.addEventListener('click', () => triggerTranslateChapter(
-                            button.dataset.novelId || '',
-                            Number(button.dataset.chapterIndex)
-                        ));
-                    });
-                    chaptersBody.querySelectorAll('.chapter-review-btn').forEach(button => {
-                        button.addEventListener('click', () => openChapterDraftReview(
-                            button.dataset.novelId || '',
-                            Number(button.dataset.chapterIndex)
-                        ));
-                    });
+                    currentChapterPage = 1;
                 }
+                chapterFilterSearch = '';
+                const searchInp = document.getElementById('chapter-search-input');
+                if (searchInp) searchInp.value = '';
 
-                updateSelectedChaptersUI();
+                // Fast Paginated Chapter Rendering with Event Delegation
+                renderNovelChaptersTable();
 
                 // Load Book Bible characters
                 loadNovelBible(novelId);
@@ -3532,6 +3766,232 @@
                 alert("Lỗi: " + err.message);
                 closeModal('modal-novel-detail');
             }
+        }
+
+        // ==========================================
+        // FAST PAGINATED CHAPTER RENDERING & CONTROLS
+        // ==========================================
+        let chapterPageSize = 50;
+        let currentChapterPage = 1;
+        let chapterFilterSearch = '';
+        let isChaptersDelegationAttached = false;
+
+        function ensureChaptersTableDelegation() {
+            if (isChaptersDelegationAttached) return;
+            const chaptersBody = document.getElementById('detail-chapters-tbody');
+            if (!chaptersBody) return;
+            isChaptersDelegationAttached = true;
+
+            chaptersBody.addEventListener('click', (e) => {
+                const readerBtn = e.target.closest('.chapter-reader-btn');
+                if (readerBtn) {
+                    openChapterReader(readerBtn.dataset.novelId || '', Number(readerBtn.dataset.chapterIndex));
+                    return;
+                }
+                const transBtn = e.target.closest('.chapter-translate-btn');
+                if (transBtn) {
+                    triggerTranslateChapter(transBtn.dataset.novelId || '', Number(transBtn.dataset.chapterIndex));
+                    return;
+                }
+                const reviewBtn = e.target.closest('.chapter-review-btn');
+                if (reviewBtn) {
+                    openChapterDraftReview(reviewBtn.dataset.novelId || '', Number(reviewBtn.dataset.chapterIndex));
+                    return;
+                }
+            });
+
+            chaptersBody.addEventListener('change', (e) => {
+                const cb = e.target.closest('.chapter-row-checkbox');
+                if (cb) {
+                    onChapterCheckboxChanged(Number(cb.dataset.chapterIndex), cb.checked, e);
+                }
+            });
+        }
+
+        function getFilteredChapters() {
+            if (!currentNovelData || !currentNovelData.chapters) return [];
+            let list = currentNovelData.chapters;
+            if (chapterFilterSearch) {
+                const q = chapterFilterSearch.toLowerCase().trim();
+                list = list.filter(ch =>
+                    String(ch.chapter_index).includes(q) ||
+                    (ch.chapter_title && ch.chapter_title.toLowerCase().includes(q))
+                );
+            }
+            return list;
+        }
+
+        function renderNovelChaptersTable() {
+            const tbody = document.getElementById('detail-chapters-tbody');
+            if (!tbody || !currentNovelData) return;
+
+            ensureChaptersTableDelegation();
+
+            const filtered = getFilteredChapters();
+            const totalCount = filtered.length;
+
+            const countSpan = document.getElementById('detail-chapter-count');
+            if (countSpan) countSpan.innerText = currentNovelData.chapters ? currentNovelData.chapters.length : 0;
+
+            if (totalCount === 0) {
+                if (chapterFilterSearch) {
+                    tbody.innerHTML = '<tr><td colspan="7" style="padding:1.5rem; text-align:center; color:var(--text-sub);">Không tìm thấy chương nào khớp với từ khóa tìm kiếm.</td></tr>';
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="7" style="padding:1.5rem; text-align:center; color:var(--text-sub);">Chưa có chương nào trong kho. Hãy thêm chương mới ở khung phía trên!</td></tr>';
+                }
+                updateChapterPaginationUI(0, 0, 0, 1);
+                updateSelectedChaptersUI();
+                return;
+            }
+
+            let pageSize = chapterPageSize === 'all' ? totalCount : Number(chapterPageSize);
+            if (!pageSize || isNaN(pageSize) || pageSize <= 0) pageSize = 50;
+
+            const totalPages = Math.ceil(totalCount / pageSize) || 1;
+            if (currentChapterPage > totalPages) currentChapterPage = totalPages;
+            if (currentChapterPage < 1) currentChapterPage = 1;
+
+            const startIndex = (currentChapterPage - 1) * pageSize;
+            const endIndex = Math.min(startIndex + pageSize, totalCount);
+            const pageChapters = filtered.slice(startIndex, endIndex);
+
+            const novelId = currentNovelData.novel_id;
+
+            tbody.innerHTML = pageChapters.map(ch => {
+                let statusBadge = '<span style="color:#94a3b8;"><i class="fa-regular fa-clock"></i> Chưa dịch</span>';
+                if (ch.status === 'completed') statusBadge = '<span style="color:#10b981; font-weight:600;"><i class="fa-solid fa-circle-check"></i> Đã dịch</span>';
+                else if (ch.status === 'needs_review') statusBadge = '<span style="color:#f59e0b; font-weight:600;" title="Bản dịch đang ở draft, cần duyệt"><i class="fa-solid fa-eye"></i> Cần duyệt</span>';
+                else if (ch.status === 'translating') statusBadge = '<span style="color:#f59e0b; font-weight:600;"><i class="fa-solid fa-spinner spinner"></i> Đang dịch...</span>';
+                else if (ch.status === 'failed') statusBadge = '<span style="color:#ef4444; font-weight:600;"><i class="fa-solid fa-triangle-exclamation"></i> Lỗi</span>';
+
+                const reviewIssues = Array.isArray(ch.review_issues) ? ch.review_issues : [];
+                if (reviewIssues.length > 0) {
+                    const issueSummary = reviewIssues
+                        .map(issue => issue.reason || issue.issue || 'Lỗi review')
+                        .join(' | ');
+                    statusBadge += ` <span style="color:#fbbf24; font-size:0.75rem;" title="${escapeHtml(issueSummary)}">(${reviewIssues.length} lỗi review)</span>`;
+                }
+
+                const translateBtn = ch.status === 'needs_review'
+                    ? `<button class="btn btn-secondary chapter-review-btn" data-novel-id="${escapeHtml(novelId)}" data-chapter-index="${ch.chapter_index}" style="padding:0.25rem 0.6rem; font-size:0.75rem; color:#fbbf24; border-color:rgba(251,191,36,0.45);"><i class="fa-solid fa-eye"></i> Duyệt draft</button>`
+                    : ch.status === 'completed'
+                        ? `<button class="btn btn-secondary chapter-translate-btn" data-novel-id="${escapeHtml(novelId)}" data-chapter-index="${ch.chapter_index}" style="padding:0.25rem 0.6rem; font-size:0.75rem;"><i class="fa-solid fa-rotate-right"></i> Dịch lại</button>`
+                        : `<button class="btn chapter-translate-btn" data-novel-id="${escapeHtml(novelId)}" data-chapter-index="${ch.chapter_index}" style="padding:0.25rem 0.6rem; font-size:0.75rem;"><i class="fa-solid fa-bolt"></i> Dịch ngay</button>`;
+                const isChecked = selectedChapterIndexes.has(ch.chapter_index);
+                const formattedDate = (ch.status === 'completed' && ch.updated_at)
+                    ? `<span style="font-size:0.78rem; color:#cbd5e1; white-space:nowrap;" title="${escapeHtml(ch.updated_at || '')}"><i class="fa-regular fa-calendar-check" style="color:#818cf8; margin-right:3px;"></i>${formatDateFriendly(ch.updated_at)}</span>`
+                    : `<span style="font-size:0.75rem; color:#64748b;">--</span>`;
+
+                return `<tr style="border-bottom:1px solid rgba(255,255,255,0.05); ${isChecked ? 'background:rgba(99,102,241,0.08);' : ''}">
+                    <td style="padding:0.6rem; text-align:center;">
+                        <input type="checkbox" class="chapter-row-checkbox" data-chapter-index="${ch.chapter_index}" ${isChecked ? 'checked' : ''}>
+                    </td>
+                    <td style="padding:0.6rem; font-weight:600; color:#c7d2fe;">#${ch.chapter_index}</td>
+                    <td style="padding:0.6rem; font-weight:600;">${escapeHtml(ch.chapter_title)}</td>
+                    <td style="padding:0.6rem; color:var(--text-sub);">${ch.word_count} từ</td>
+                    <td style="padding:0.6rem;">${statusBadge}</td>
+                    <td style="padding:0.6rem;">${formattedDate}</td>
+                    <td style="padding:0.6rem; text-align:right; display:flex; gap:0.4rem; justify-content:flex-end;">
+                        <button class="btn btn-secondary chapter-reader-btn" data-novel-id="${escapeHtml(novelId)}" data-chapter-index="${ch.chapter_index}" style="padding:0.25rem 0.6rem; font-size:0.75rem;">
+                            <i class="fa-solid fa-eye"></i> Đọc
+                        </button>
+                        ${translateBtn}
+                    </td>
+                </tr>`;
+            }).join('');
+
+            updateChapterPaginationUI(startIndex + 1, endIndex, totalCount, totalPages);
+            updateSelectedChaptersUI();
+        }
+
+        function updateChapterPaginationUI(from, to, total, totalPages = 1) {
+            const rangeText = document.getElementById('pagination-range-text');
+            if (rangeText) {
+                if (total === 0) {
+                    rangeText.innerText = '0 chương';
+                } else {
+                    rangeText.innerText = `Chương ${from} - ${to} / ${total}`;
+                }
+            }
+            const curDisplay = document.getElementById('chapter-current-page-display');
+            const totalDisplay = document.getElementById('chapter-total-pages-display');
+            if (curDisplay) curDisplay.innerText = total === 0 ? 0 : currentChapterPage;
+            if (totalDisplay) totalDisplay.innerText = total === 0 ? 0 : totalPages;
+
+            const btnFirst = document.getElementById('btn-chapter-page-first');
+            const btnPrev = document.getElementById('btn-chapter-page-prev');
+            const btnNext = document.getElementById('btn-chapter-page-next');
+            const btnLast = document.getElementById('btn-chapter-page-last');
+
+            const isFirst = currentChapterPage <= 1 || total === 0;
+            const isLast = currentChapterPage >= totalPages || total === 0;
+
+            if (btnFirst) btnFirst.disabled = isFirst;
+            if (btnPrev) btnPrev.disabled = isFirst;
+            if (btnNext) btnNext.disabled = isLast;
+            if (btnLast) btnLast.disabled = isLast;
+        }
+
+        function goToChapterPage(page) {
+            const filtered = getFilteredChapters();
+            const pageSize = chapterPageSize === 'all' ? filtered.length : Number(chapterPageSize);
+            const totalPages = Math.ceil(filtered.length / Math.max(1, pageSize)) || 1;
+
+            if (page === 'last') {
+                currentChapterPage = totalPages;
+            } else {
+                let p = Number(page);
+                if (isNaN(p)) p = 1;
+                currentChapterPage = Math.max(1, Math.min(p, totalPages));
+            }
+            renderNovelChaptersTable();
+            const tableContainer = document.getElementById('detail-chapters-tbody')?.parentElement?.parentElement;
+            if (tableContainer) tableContainer.scrollTop = 0;
+        }
+
+        function changeChapterPageSize(val) {
+            chapterPageSize = val;
+            currentChapterPage = 1;
+            renderNovelChaptersTable();
+        }
+
+        function jumpToChapterNumber(chNum) {
+            const num = parseInt(chNum, 10);
+            if (isNaN(num) || num <= 0) {
+                showToast("Vui lòng nhập số thứ tự chương hợp lệ!", "warning");
+                return;
+            }
+            const filtered = getFilteredChapters();
+            const idx = filtered.findIndex(ch => ch.chapter_index === num);
+            if (idx === -1) {
+                showToast(`Không tìm thấy chương #${num} trong danh sách hiện tại!`, "warning");
+                return;
+            }
+            const pageSize = chapterPageSize === 'all' ? filtered.length : Number(chapterPageSize);
+            currentChapterPage = Math.floor(idx / Math.max(1, pageSize)) + 1;
+            renderNovelChaptersTable();
+
+            setTimeout(() => {
+                const tbody = document.getElementById('detail-chapters-tbody');
+                if (tbody) {
+                    const row = tbody.querySelector(`[data-chapter-index="${num}"]`)?.closest('tr');
+                    if (row) {
+                        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        row.style.transition = 'background 0.3s ease';
+                        row.style.background = 'rgba(99,102,241,0.35)';
+                        setTimeout(() => {
+                            const isChecked = selectedChapterIndexes.has(num);
+                            row.style.background = isChecked ? 'rgba(99,102,241,0.08)' : '';
+                        }, 1500);
+                    }
+                }
+            }, 50);
+        }
+
+        function onChapterSearchInput(val) {
+            chapterFilterSearch = (val || '').trim();
+            currentChapterPage = 1;
+            renderNovelChaptersTable();
         }
 
         function toggleBibleCollapse() {
@@ -3729,18 +4189,24 @@
                 fd.append('chapter_title', title);
                 fd.append('content', text);
 
-                await sendAddChapterReq(fd);
+                await sendAddChapterReq(fd, idx);
             } else {
                 const fd = new FormData();
                 fd.append('chapter_index', idx);
                 fd.append('chapter_title', title);
                 fd.append('file', selectedChapterFile);
 
-                await sendAddChapterReq(fd);
+                await sendAddChapterReq(fd, idx);
             }
         }
 
-        async function sendAddChapterReq(formData) {
+        async function sendAddChapterReq(formData, chapterIndex = null) {
+            const btn = document.getElementById('btn-submit-add-chapter');
+            const origHtml = btn ? btn.innerHTML : '<i class="fa-solid fa-upload"></i> + Thêm Chương';
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fa-solid fa-spinner spinner"></i> Đang lưu vào DB...';
+            }
             try {
                 const res = await fetch(apiUrl(`/api/v1/library/novels/${encodeURIComponent(currentNovelId)}/chapters`), {
                     method: 'POST',
@@ -3753,9 +4219,23 @@
                 selectedChapterFile = null;
                 document.getElementById('add-chapter-file').value = '';
                 document.getElementById('add-chapter-file-label').innerText = 'Chọn File TXT';
-                openNovelDetail(currentNovelId);
+
+                // Invalidate API caches so local database changes reflect immediately!
+                apiCache.invalidatePattern('/api/v1/library/novels');
+                apiCache.invalidatePattern('/api/v1/admin/storage/summary');
+
+                showToast(`✓ Đã lưu thành công Chương ${chapterIndex ? '#' + chapterIndex : ''} vào database local!`, "success");
+
+                // Jump to last page to see newly added chapter
+                currentChapterPage = 999999;
+                await openNovelDetail(currentNovelId, true);
             } catch (err) {
                 alert("Lỗi: " + err.message);
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = origHtml;
+                }
             }
         }
 
@@ -4230,10 +4710,12 @@
 
                 const isReview = currentRetranslateData.mode === 'review';
                 showToast(isReview
-                    ? `✓ Đã duyệt và áp dụng draft cho Chương ${chapterIndex}!`
-                    : `✓ Đã áp dụng thành công bản dịch mới cho Chương ${chapterIndex}!`, "success");
+                    ? `✓ Đã duyệt và áp dụng draft vào database local cho Chương ${chapterIndex}!`
+                    : `✓ Đã cập nhật thành công bản dịch mới vào database local cho Chương ${chapterIndex}!`, "success");
                 cancelAndCloseRetranslateModal();
-                openNovelDetail(novelId);
+                apiCache.invalidatePattern('/api/v1/library/novels');
+                apiCache.invalidatePattern('/api/v1/admin/storage/summary');
+                await openNovelDetail(novelId, true);
 
             } catch (err) {
                 alert("Lỗi: " + err.message);
@@ -4316,15 +4798,18 @@
                 if (rebuildEnd && !rebuildEnd.value) rebuildEnd.placeholder = "Đến";
             }
 
-            // Sync individual checkboxes and highlight row
-            document.querySelectorAll('.chapter-row-checkbox').forEach(cb => {
-                const idx = Number(cb.dataset.chapterIndex);
-                cb.checked = selectedChapterIndexes.has(idx);
-                const tr = cb.closest('tr');
-                if (tr) {
-                    tr.style.background = cb.checked ? 'rgba(99,102,241,0.08)' : '';
-                }
-            });
+            // Sync individual checkboxes and highlight row only on visible rows
+            const tbody = document.getElementById('detail-chapters-tbody');
+            if (tbody) {
+                tbody.querySelectorAll('.chapter-row-checkbox').forEach(cb => {
+                    const idx = Number(cb.dataset.chapterIndex);
+                    cb.checked = selectedChapterIndexes.has(idx);
+                    const tr = cb.closest('tr');
+                    if (tr) {
+                        tr.style.background = cb.checked ? 'rgba(99,102,241,0.08)' : '';
+                    }
+                });
+            }
 
             // Sync master checkbox
             if (checkAll && currentNovelData && currentNovelData.chapters) {
@@ -4471,7 +4956,9 @@
             batchTranslateRunning = false;
             closeModal('modal-batch-translate-progress');
             if (currentNovelId) {
-                openNovelDetail(currentNovelId);
+                apiCache.invalidatePattern('/api/v1/library/novels');
+                apiCache.invalidatePattern('/api/v1/admin/storage/summary');
+                openNovelDetail(currentNovelId, true);
             }
         }
 
@@ -6473,6 +6960,254 @@
                 showToast(err.message, 'error');
             }
         };
+
+        // ====================================================================
+        // OFFLINE SYNC PACKAGE (EXPORT & IMPORT FOR HOME MACHINE)
+        // ====================================================================
+        window.openSyncModal = function(initialTab = 'export') {
+            switchSyncTab(initialTab);
+            openModal('modal-sync-package');
+            loadSyncEstimate();
+        };
+
+        window.switchSyncTab = function(tab) {
+            const exportPane = document.getElementById('sync-pane-export');
+            const importPane = document.getElementById('sync-pane-import');
+            const exportBtn = document.getElementById('sync-tab-export-btn');
+            const importBtn = document.getElementById('sync-tab-import-btn');
+
+            if (tab === 'export') {
+                if (exportPane) exportPane.style.display = 'block';
+                if (importPane) importPane.style.display = 'none';
+                if (exportBtn) exportBtn.classList.add('active');
+                if (importBtn) importBtn.classList.remove('active');
+            } else {
+                if (exportPane) exportPane.style.display = 'none';
+                if (importPane) importPane.style.display = 'block';
+                if (exportBtn) exportBtn.classList.remove('active');
+                if (importBtn) importBtn.classList.add('active');
+            }
+        };
+
+        window.loadSyncEstimate = async function(force = false) {
+            const refreshBtn = document.getElementById('btn-sync-refresh-estimate');
+            if (refreshBtn) refreshBtn.classList.add('fa-spin');
+
+            try {
+                const res = await fetch(apiUrl('/api/v1/sync/estimate'));
+                if (!res.ok) throw new Error('Không thể lấy thông tin ước tính');
+                const data = await res.json();
+
+                const dbBadge = document.getElementById('sync-db-type-badge');
+                if (dbBadge) {
+                    dbBadge.innerText = data.database_type === 'postgresql' ? 'PostgreSQL (Supabase)' : 'SQLite Local';
+                    dbBadge.style.color = data.database_type === 'postgresql' ? '#c7d2fe' : '#34d399';
+                }
+
+                const elNovels = document.getElementById('sync-stat-novels');
+                if (elNovels) elNovels.innerText = data.total_novels;
+
+                const elChapters = document.getElementById('sync-stat-chapters');
+                if (elChapters) elChapters.innerText = data.total_chapters.toLocaleString();
+
+                const elCompleted = document.getElementById('sync-stat-completed');
+                if (elCompleted) elCompleted.innerText = data.completed_chapters.toLocaleString();
+
+                const elDbSize = document.getElementById('sync-stat-db-size');
+                if (elDbSize) elDbSize.innerText = `${data.database_size_mb} MB`;
+
+                const elStorageFiles = document.getElementById('sync-stat-storage-files');
+                if (elStorageFiles) elStorageFiles.innerText = data.storage_files_count.toLocaleString();
+
+                const elStorageSize = document.getElementById('sync-stat-storage-size');
+                if (elStorageSize) elStorageSize.innerText = `~${data.storage_size_mb} MB`;
+
+                const elZipSize = document.getElementById('sync-stat-zip-size');
+                if (elZipSize) elZipSize.innerText = `~${data.estimated_zip_size_mb} MB`;
+            } catch (err) {
+                console.warn('Lỗi khi tải estimate:', err);
+            } finally {
+                if (refreshBtn) refreshBtn.classList.remove('fa-spin');
+            }
+        };
+
+        window.triggerExportSyncPackage = async function() {
+            const incDb = document.getElementById('sync-opt-include-db').checked;
+            const incStorage = document.getElementById('sync-opt-include-storage').checked;
+
+            if (!incDb && !incStorage) {
+                showToast('Vui lòng chọn ít nhất một thành phần để xuất!', 'error');
+                return;
+            }
+
+            const exportBtn = document.getElementById('btn-do-export-package');
+            const loadingDiv = document.getElementById('sync-export-loading');
+
+            if (exportBtn) exportBtn.style.display = 'none';
+            if (loadingDiv) loadingDiv.style.display = 'block';
+
+            try {
+                const url = apiUrl(`/api/v1/sync/export-package?include_db=${incDb}&include_storage=${incStorage}`);
+                const res = await fetch(url);
+                if (!res.ok) {
+                    let errorMsg = `HTTP ${res.status}`;
+                    try {
+                        const data = await res.json();
+                        if (data && data.detail) errorMsg = data.detail;
+                    } catch (_) {}
+                    throw new Error(errorMsg);
+                }
+
+                const blob = await res.blob();
+                const disposition = res.headers.get('content-disposition') || '';
+                let filename = 'epub_sync_package.zip';
+                const match = disposition.match(/filename="?([^";]+)"?/);
+                if (match && match[1]) filename = match[1];
+
+                const downloadUrl = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = downloadUrl;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(downloadUrl);
+
+                showToast('Đã tải xuống gói đồng bộ thành công!', 'success');
+            } catch (err) {
+                showToast(`Lỗi khi xuất gói: ${err.message}`, 'error');
+            } finally {
+                if (exportBtn) exportBtn.style.display = 'inline-flex';
+                if (loadingDiv) loadingDiv.style.display = 'none';
+            }
+        };
+
+        window.handleSyncFileSelect = function(event) {
+            const file = event.target.files && event.target.files[0];
+            updateSyncFileInputUI(file);
+        };
+
+        window.clearSyncImportFile = function() {
+            const fileInput = document.getElementById('sync-import-file-input');
+            if (fileInput) fileInput.value = '';
+            updateSyncFileInputUI(null);
+        };
+
+        function updateSyncFileInputUI(file) {
+            const infoDiv = document.getElementById('sync-selected-file-info');
+            const nameEl = document.getElementById('sync-file-name');
+            const sizeEl = document.getElementById('sync-file-size');
+            const importBtn = document.getElementById('btn-do-import-package');
+
+            if (file) {
+                if (infoDiv) infoDiv.style.display = 'flex';
+                if (nameEl) nameEl.innerText = file.name;
+                if (sizeEl) sizeEl.innerText = `${(file.size / (1024 * 1024)).toFixed(2)} MB`;
+                if (importBtn) importBtn.disabled = false;
+            } else {
+                if (infoDiv) infoDiv.style.display = 'none';
+                if (importBtn) importBtn.disabled = true;
+            }
+        }
+
+        window.triggerImportSyncPackage = async function() {
+            const fileInput = document.getElementById('sync-import-file-input');
+            if (!fileInput.files || !fileInput.files[0]) {
+                showToast('Vui lòng chọn tệp ZIP để nạp!', 'error');
+                return;
+            }
+
+            const file = fileInput.files[0];
+            const restorePg = document.getElementById('sync-opt-restore-pg').checked;
+
+            if (!confirm(`Bạn có chắc chắn muốn nạp gói đồng bộ "${file.name}"?\nDữ liệu trong máy này sẽ được cập nhật đè từ tệp nén.`)) {
+                return;
+            }
+
+            const importBtn = document.getElementById('btn-do-import-package');
+            const loadingDiv = document.getElementById('sync-import-loading');
+            const resultDiv = document.getElementById('sync-import-result');
+
+            if (importBtn) importBtn.style.display = 'none';
+            if (loadingDiv) loadingDiv.style.display = 'block';
+            if (resultDiv) resultDiv.style.display = 'none';
+
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+
+                const url = apiUrl(`/api/v1/sync/import-package?restore_to_postgres=${restorePg}`);
+                const res = await fetch(url, {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (!res.ok) {
+                    let errorMsg = `HTTP ${res.status}`;
+                    try {
+                        const data = await res.json();
+                        if (data && data.detail) errorMsg = data.detail;
+                    } catch (_) {}
+                    throw new Error(errorMsg);
+                }
+
+                const data = await res.json();
+                showToast('Đồng bộ dữ liệu thành công!', 'success');
+
+                if (resultDiv) {
+                    resultDiv.style.display = 'block';
+                    resultDiv.innerHTML = `
+                        <div style="background:rgba(16,185,129,0.15); border:1px solid rgba(16,185,129,0.4); border-radius:10px; padding:1rem; color:#a7f3d0; font-size:0.88rem;">
+                            <div style="font-weight:700; margin-bottom:0.4rem;"><i class="fa-solid fa-circle-check"></i> Đã nạp dữ liệu thành công!</div>
+                            <div>• SQLite: ${data.sqlite_db_restored ? 'Đã cập nhật data/local_db.sqlite3' : 'Bỏ qua'}</div>
+                            <div>• Storage: Đã giải nén ${data.storage_files_restored || 0} tệp</div>
+                            ${data.postgres_upsert_stats ? `<div>• PostgreSQL: Đã nạp ${data.postgres_upsert_stats.novels || 0} truyện, ${data.postgres_upsert_stats.chapters || 0} chương</div>` : ''}
+                        </div>
+                    `;
+                }
+
+                if (typeof apiCache !== 'undefined' && apiCache.clear) apiCache.clear();
+                if (typeof loadLibraryNovels === 'function') loadLibraryNovels(true);
+                if (typeof loadDatabaseSummary === 'function') loadDatabaseSummary(true);
+            } catch (err) {
+                showToast(`Lỗi khi nạp dữ liệu: ${err.message}`, 'error');
+            } finally {
+                if (importBtn) importBtn.style.display = 'inline-flex';
+                if (loadingDiv) loadingDiv.style.display = 'none';
+            }
+        };
+
+        // Initialize drag & drop for dropzone
+        window.addEventListener('DOMContentLoaded', () => {
+            const dropzone = document.getElementById('sync-import-dropzone');
+            if (dropzone) {
+                ['dragenter', 'dragover'].forEach(name => {
+                    dropzone.addEventListener(name, (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        dropzone.classList.add('dragover');
+                    });
+                });
+                ['dragleave', 'drop'].forEach(name => {
+                    dropzone.addEventListener(name, (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        dropzone.classList.remove('dragover');
+                    });
+                });
+                dropzone.addEventListener('drop', (e) => {
+                    const dt = e.dataTransfer;
+                    const files = dt.files;
+                    if (files && files.length > 0) {
+                        const fileInput = document.getElementById('sync-import-file-input');
+                        if (fileInput) {
+                            fileInput.files = files;
+                            updateSyncFileInputUI(files[0]);
+                        }
+                    }
+                });
+            }
+        });
 
         // Start background polling when window loads (checks once, stops if no active jobs)
         window.addEventListener('DOMContentLoaded', () => {

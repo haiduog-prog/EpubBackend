@@ -808,3 +808,128 @@ def test_cancellation_cleans_up_local_and_cloud_artifacts():
     assert artifacts_after - artifacts_before == set()
     # A cancelled build must never promote/overwrite the legacy mutable alias.
     assert storage_repo.get_bytes(legacy_alias_key) == legacy_alias_before
+
+
+def test_candidate_base_fallback_when_current_key_missing_or_stale():
+    """Verify FAST_PATCH falls back to full.epub or export revisions when novel.current_epub_key is missing or stale."""
+    import uuid
+    test_novel_id = f"test-fallback-base-{uuid.uuid4().hex[:8]}"
+    library_service.create_novel(
+        NovelCreateRequest(
+            title="Test Fallback Base Novel",
+            novel_id=test_novel_id,
+        )
+    )
+    library_service.add_or_update_chapter(
+        novel_id=test_novel_id,
+        chapter_index=1,
+        chapter_title="Chương 1",
+        content="Nội dung chương 1",
+    )
+    library_service.add_or_update_chapter(
+        novel_id=test_novel_id,
+        chapter_index=2,
+        chapter_title="Chương 2",
+        content="Nội dung chương 2",
+    )
+
+    # Create a valid standardized base EPUB and place it at canonical full.epub
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".epub") as tmp_base:
+        tmp_base_path = tmp_base.name
+    try:
+        _create_sample_base_epub(tmp_base_path, chapter_count=2, non_standard=False)
+        storage_repo.upload_file_stream(tmp_base_path, f"novels/{test_novel_id}/full.epub")
+    finally:
+        if os.path.exists(tmp_base_path):
+            os.unlink(tmp_base_path)
+
+    # Purposely point current_epub_key to a non-existent deleted artifact
+    stale_key = f"novels/{test_novel_id}/exports/r1-deleted-uuid.epub"
+    with db_session() as session:
+        nov = session.get(NovelModel, test_novel_id)
+        if not nov:
+            nov = NovelModel(
+                novel_id=test_novel_id,
+                title="Test Fallback Base Novel",
+                status="ongoing",
+            )
+            session.add(nov)
+        nov.current_epub_key = stale_key
+        nov.built_revision = 1
+        nov.is_structural_dirty = False
+        session.commit()
+
+    assert storage_repo.file_exists(stale_key) is False
+    assert storage_repo.file_exists(f"novels/{test_novel_id}/full.epub") is True
+
+    # Run build_and_publish_epub with dirty chapter 1
+    result = library_service.export_service.build_and_publish_epub(
+        novel_id=test_novel_id,
+        dirty_chapters=[1],
+        force_rebuild=False,
+    )
+
+    assert result["strategy"] == "fast_patch", f"Expected fast_patch but got {result['strategy']}"
+    assert result["patched_chapters_count"] == 1
+    assert result["built_revision"] >= 1
+    assert storage_repo.file_exists(result["epub_key"]) is True
+
+
+def test_fallback_to_full_rebuild_updates_job_strategy():
+    """Verify that when FAST_PATCH cannot be performed, fallback updates job.strategy in DB to full_rebuild."""
+    import uuid
+    test_novel_id = f"test-job-strategy-{uuid.uuid4().hex[:8]}"
+    library_service.create_novel(
+        NovelCreateRequest(
+            title="Test Job Strategy Fallback Novel",
+            novel_id=test_novel_id,
+        )
+    )
+    library_service.add_or_update_chapter(
+        novel_id=test_novel_id,
+        chapter_index=1,
+        chapter_title="Chương 1",
+        content="Nội dung chương 1",
+    )
+
+    # Ensure no base EPUB exists anywhere
+    storage_repo.delete_file(f"novels/{test_novel_id}/full.epub")
+    test_job_id = uuid.uuid4().hex
+    with db_session() as session:
+        nov = session.get(NovelModel, test_novel_id)
+        if not nov:
+            nov = NovelModel(
+                novel_id=test_novel_id,
+                title="Test Job Strategy Fallback Novel",
+                status="ongoing",
+            )
+            session.add(nov)
+        nov.current_epub_key = None
+        session.commit()
+
+        # Create a job with strategy="fast_patch"
+        job = EpubBuildJobModel(
+            job_id=test_job_id,
+            novel_id=test_novel_id,
+            strategy="fast_patch",
+            status="processing",
+            target_revision=1,
+            dirty_chapters={"1": 1},
+        )
+        session.add(job)
+        session.commit()
+
+    # Call build_and_publish_epub with this job_id
+    result = library_service.export_service.build_and_publish_epub(
+        novel_id=test_novel_id,
+        job_id=test_job_id,
+        dirty_chapters=[1],
+        force_rebuild=False,
+    )
+
+    assert result["strategy"] == "full_rebuild"
+
+    # Verify job strategy was updated in DB
+    with db_session() as session:
+        updated_job = session.get(EpubBuildJobModel, test_job_id)
+        assert updated_job.strategy == "full_rebuild"

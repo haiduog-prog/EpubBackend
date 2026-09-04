@@ -1,4 +1,5 @@
 ---
+name: human-learning
 description: Tạo file giải thích chi tiết dạng "coffee talk" để developer hiểu sâu task vừa thực hiện
 ---
 

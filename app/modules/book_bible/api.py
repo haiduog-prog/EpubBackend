@@ -99,8 +99,12 @@ def import_book_bible_json(
 ):
     payload["novel_id"] = novel_id
     migrated = migrate_book_bible_to_v3(payload)
-    migrated.bible_revision += 1
-    storage_repo.save_bible(novel_id, migrated)
+    existing = storage_repo.get_bible(novel_id)
+    migrated.bible_revision = max(
+        migrated.bible_revision, existing.bible_revision if existing else 0
+    ) + 1
+    migrated = LegacyBookBibleService.ensure_timeline(migrated)
+    migrated = storage_repo.save_bible(novel_id, migrated, replace=True)
     return migrated
 
 
@@ -152,7 +156,7 @@ def upsert_term(
         bible_v3.terms.append(term)
 
     bible_v3.bible_revision += 1
-    storage_repo.save_bible(novel_id, bible_v3)
+    bible_v3 = storage_repo.save_bible(novel_id, bible_v3)
     return bible_v3
 
 
@@ -206,7 +210,7 @@ def upsert_character(
         bible_v3.characters.append(character)
 
     bible_v3.bible_revision += 1
-    storage_repo.save_bible(novel_id, bible_v3)
+    bible_v3 = storage_repo.save_bible(novel_id, bible_v3)
     return bible_v3
 
 
@@ -236,7 +240,7 @@ def update_style_guide(
                 setattr(bible_v3.source_profile, k, v)
 
     bible_v3.bible_revision += 1
-    storage_repo.save_bible(novel_id, bible_v3)
+    bible_v3 = storage_repo.save_bible(novel_id, bible_v3)
     return bible_v3
 
 

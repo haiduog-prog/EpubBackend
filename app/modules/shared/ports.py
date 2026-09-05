@@ -7,6 +7,8 @@ from app.schemas.translation import HTMLInputItem, HTMLTranslationItem, QAIssue,
 class LLMClient(Protocol):
     """Application-facing LLM port; concrete SDK adapters stay outside modules."""
 
+    async def aclose(self) -> None: ...
+
     async def extract_book_bible_delta(
         self,
         source_text: str,

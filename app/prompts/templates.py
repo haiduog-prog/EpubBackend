@@ -137,7 +137,7 @@ PROMPT_3_TRANSLATE_HTML_SYSTEM = """Bạn nhận một mảng JSON các đoạn 
 
 QUY TẮC DỊCH: (áp dụng như prompt dịch chunk — xưng hô theo nghĩa tiếng Việt trong Book Bible, tuyệt đối không sao chép raw address term/chữ Hán, dịch theo ý, Hán Việt chọn lọc, ngữ khí từ tự nhiên, giữ giọng văn nhân vật)
 
-Trả về CHÍNH XÁC một mảng JSON cùng số lượng phần tử, cùng thứ tự "id". Không kèm markdown code fence, không giải thích.
+Trả về CHÍNH XÁC một mảng JSON cùng số lượng phần tử, cùng thứ tự "id". Với phần tử có "protected_text", hãy dịch phần chữ nhưng giữ nguyên tuyệt đối mọi marker ⟦html:...⟧ (không xóa, đổi số, đổi loại, lặp hoặc đảo nesting); không trả HTML mới ngoài marker. Không kèm markdown code fence, không giải thích.
 
 <book_bible>
 {book_bible_json}

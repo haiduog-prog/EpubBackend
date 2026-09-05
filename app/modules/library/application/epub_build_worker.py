@@ -160,6 +160,7 @@ async def run_epub_build_consumer() -> None:
                                             processed_chapters=processed,
                                             total_chapters=total,
                                             progress_percentage=pct,
+                                            lease_token=WORKER_ID,
                                         )
                                         p_session.commit()
                                 except Exception as p_err:
@@ -287,6 +288,7 @@ async def run_epub_build_consumer() -> None:
                                 session=fail_session,
                                 job_id=job_id,
                                 error_message=str(build_exc),
+                                lease_token=WORKER_ID,
                             )
                             fail_session.commit()
                     finally:

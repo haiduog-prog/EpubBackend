@@ -73,6 +73,8 @@ class ChapterModel(Base):
     reviewer_model: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     review_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Optimistic concurrency token for chapter-only writes.
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

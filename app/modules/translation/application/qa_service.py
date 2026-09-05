@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import inspect
 import re
+import unicodedata
 from typing import List, Optional
 
 from app.modules.shared.ports import LLMClient
@@ -30,6 +31,12 @@ class QAService:
     def __init__(self, llm_client: Optional[LLMClient] = None):
         self.llm_client = llm_client
 
+    @staticmethod
+    def _normalize_term_label(value: str) -> str:
+        """Normalize Book Bible labels before comparing source and canonical names."""
+        normalized = unicodedata.normalize("NFKC", value or "")
+        return " ".join(normalized.casefold().split())
+
     def fast_rule_check(
         self,
         original_text: str,
@@ -37,6 +44,11 @@ class QAService:
         book_bible: BookBible,
     ) -> List[QAIssue]:
         issues: List[QAIssue] = []
+        if original_text.strip() and not translated_text.strip():
+            return [QAIssue(
+                issue="Bản dịch rỗng dù có nội dung gốc",
+                found="<empty>", expected="Bản dịch đầy đủ", location="",
+            )]
         original_lower = original_text.lower()
         translated_lower = translated_text.lower()
         seen = set()
@@ -63,8 +75,8 @@ class QAService:
 
         # 2. Original character name leakage
         for character in book_bible.characters:
-            original_name = (character.original_name or "").lower()
-            vi_name = (character.vi_name or "").lower()
+            original_name = self._normalize_term_label(character.original_name)
+            vi_name = self._normalize_term_label(character.vi_name)
             if original_name and original_name in original_lower and original_name in translated_lower:
                 if original_name != vi_name:
                     position = translated_lower.find(original_name)
@@ -106,8 +118,8 @@ class QAService:
 
         # 4. Original term leakage
         for term in book_bible.terms:
-            original_name = (term.original_name or "").lower()
-            vi_name = (term.vi_name or "").lower()
+            original_name = self._normalize_term_label(term.original_name)
+            vi_name = self._normalize_term_label(term.vi_name)
             if original_name and original_name in original_lower and original_name in translated_lower:
                 if original_name != vi_name:
                     position = translated_lower.find(original_name)
@@ -378,7 +390,9 @@ class QAService:
                 corrected_text = result
             else:
                 return TranslationQualityResult(translated_text=translated_text, report=report)
-        except (NotImplementedError, TypeError):
+        except Exception:
+            # A failed/partial correction must never replace the complete
+            # translation that already passed through the first QA step.
             return TranslationQualityResult(translated_text=translated_text, report=report)
 
         corrected_text = (corrected_text or translated_text).strip()

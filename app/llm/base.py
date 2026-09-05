@@ -1,13 +1,32 @@
 from abc import ABC, abstractmethod
+import inspect
+import logging
 from typing import List, Optional
 from app.schemas.book_bible import BookBible, BookBibleDelta
 from app.schemas.translation import HTMLInputItem, HTMLTranslationItem, QAIssue, QAReport, SemanticReviewReport
+
+
+async def close_llm_client(client, *, logger: Optional[logging.Logger] = None, context: str = "LLM client") -> None:
+    """Best-effort, idempotent provider cleanup that never masks a work error."""
+    close = getattr(client, "aclose", None) if client is not None else None
+    if not callable(close):
+        return
+    try:
+        result = close()
+        if inspect.isawaitable(result):
+            await result
+    except Exception as exc:
+        (logger or logging.getLogger(__name__)).warning("Failed to close %s: %s", context, exc)
 
 
 class BaseLLMClient(ABC):
     """
     Abstract Interface cho tất cả các LLM Providers (Anthropic, Gemini, etc.)
     """
+
+    async def aclose(self) -> None:
+        """Release provider resources; adapters may override this."""
+        return None
 
     @abstractmethod
     async def extract_book_bible_delta(

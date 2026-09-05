@@ -76,6 +76,8 @@ import shutil
 import tempfile
 from fastapi import BackgroundTasks, File, UploadFile
 from fastapi.responses import FileResponse
+from starlette.concurrency import run_in_threadpool
+from app.config import settings
 from app.modules.sync.sync_package_service import SyncPackageService
 
 
@@ -128,7 +130,7 @@ async def import_sync_package_endpoint(
     restore_to_postgres: bool = True,
 ):
     """Unpacks an uploaded sync package (.zip) into the project's data/ and storage/."""
-    if not file.filename.endswith(".zip"):
+    if not file.filename or not file.filename.lower().endswith(".zip"):
         raise HTTPException(status_code=400, detail="Vui lòng tải lên tệp nén định dạng .zip")
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
@@ -136,13 +138,27 @@ async def import_sync_package_endpoint(
 
     try:
         with open(temp_zip_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+            total = 0
+            while chunk := await file.read(1024 * 1024):
+                total += len(chunk)
+                if total > settings.max_sync_package_upload_bytes:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=(
+                            "Sync package vượt quá giới hạn "
+                            f"{settings.max_sync_package_upload_bytes // (1024 * 1024)} MB."
+                        ),
+                    )
+                buffer.write(chunk)
 
-        result = SyncPackageService.import_sync_package(
+        result = await run_in_threadpool(
+            SyncPackageService.import_sync_package,
             temp_zip_path,
             restore_to_postgres_if_active=restore_to_postgres,
         )
         return result
+    except HTTPException:
+        raise
     except ValueError as val_err:
         raise HTTPException(status_code=400, detail=str(val_err)) from val_err
     except Exception as exc:

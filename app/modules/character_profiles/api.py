@@ -15,6 +15,7 @@ from app.api.dependencies import require_write_access
 from app.config import settings
 from app.infrastructure.jobs import limited_background_work
 from app.llm import create_llm_client
+from app.llm.base import close_llm_client
 from app.schemas.character_profile import (
     ApproveAllRequest,
     BookListItem,
@@ -157,8 +158,11 @@ async def _run_raw_extraction(
             return
         known_names = profile_service.known_names_index(submission.book_id)
         llm_client = create_llm_client(provider="gemini", api_key=api_key, model=model)
-        delta = await llm_client.extract_book_bible_delta(content, known_names)
-        profile_service.process_legacy_delta(submission_id, delta)
+        try:
+            delta = await llm_client.extract_book_bible_delta(content, known_names)
+            profile_service.process_legacy_delta(submission_id, delta)
+        finally:
+            await close_llm_client(llm_client, context=f"profile extraction {submission_id}")
     except Exception as exc:
         profile_service.fail_submission(submission_id, "extraction_failed", str(exc))
 

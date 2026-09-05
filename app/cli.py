@@ -6,6 +6,7 @@ import sys
 import asyncio
 import argparse
 from app.llm import create_llm_client
+from app.llm.base import close_llm_client
 from app.modules.translation.application.facade import TranslationPipelineService
 from app.schemas.translation import InputType
 
@@ -62,7 +63,10 @@ def main():
         print(f"Sá»‘ lÆ°á»£ng nhÃ¢n váº­t trong Book Bible: {len(bible.characters)}")
         print(f"Sá»‘ lÆ°á»£ng thuáº­t ngá»¯: {len(bible.terms)}")
 
-    asyncio.run(run())
+    try:
+        asyncio.run(run())
+    finally:
+        asyncio.run(close_llm_client(llm_client, context="CLI translation"))
 
 
 if __name__ == "__main__":

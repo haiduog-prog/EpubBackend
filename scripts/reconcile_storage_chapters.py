@@ -103,6 +103,8 @@ def reconcile_novel_storage(novel_id: str, apply: bool = False) -> dict:
             ch_model = existing_db_chapters.get(idx)
             has_trans = bool(trans_file and trans_file.stat().st_size > 50)
             has_draft = bool(draft_file and draft_file.stat().st_size > 50)
+            original_key = f"novels/{novel_id}/original/{orig_file.name}" if orig_file else None
+            translated_key = f"novels/{novel_id}/translated/{trans_file.name}" if has_trans else None
 
             # Determine quality gate status
             target_status = ChapterStatus.NOT_TRANSLATED.value
@@ -148,18 +150,34 @@ def reconcile_novel_storage(novel_id: str, apply: bool = False) -> dict:
                         word_count=word_count,
                         original_text_preview=orig_text[:200] if orig_text else None,
                         translated_text_preview=active_text[:200] if active_text else None,
+                        original_r2_key=original_key,
+                        translated_r2_key=translated_key,
                     )
                     ch_model.novel = novel
                     session.add(ch_model)
             else:
-                # Chapter exists in DB: check if status needs updating
+                # Keep storage keys in sync even when the current DB status is
+                # already acceptable. The UI and build pipeline use these keys
+                # as a durable marker for the corresponding chapter version.
+                if original_key and not ch_model.original_r2_key:
+                    ch_model.original_r2_key = original_key
+                if translated_key:
+                    ch_model.translated_r2_key = translated_key
+
+                # Chapter exists in DB: check if status needs updating.
                 if target_status == ChapterStatus.COMPLETED.value and ch_model.status != ChapterStatus.COMPLETED.value:
                     stats["status_updated_to_completed"] += 1
                     if apply:
                         ch_model.status = ChapterStatus.COMPLETED.value
                         ch_model.word_count = word_count
                         ch_model.translated_text_preview = trans_text[:200] if trans_text else None
-                elif target_status == ChapterStatus.NEEDS_REVIEW.value and ch_model.status != ChapterStatus.NEEDS_REVIEW.value:
+                elif (
+                    target_status == ChapterStatus.NEEDS_REVIEW.value
+                    and ch_model.status not in {
+                        ChapterStatus.NEEDS_REVIEW.value,
+                        ChapterStatus.COMPLETED.value,
+                    }
+                ):
                     stats["status_flagged_needs_review"] += 1
                     if apply:
                         ch_model.status = ChapterStatus.NEEDS_REVIEW.value
@@ -173,7 +191,7 @@ def reconcile_novel_storage(novel_id: str, apply: bool = False) -> dict:
                 1 for c in novel.chapters if c.status == ChapterStatus.COMPLETED.value
             )
             session.commit()
-            print(f"[✓] Successfully applied reconcile changes! DB now has {novel.total_chapters} total chapters ({novel.translated_chapters} completed).")
+            print(f"[ok] Successfully applied reconcile changes! DB now has {novel.total_chapters} total chapters ({novel.translated_chapters} completed).")
         else:
             print(
                 f"[i] Dry-run complete. Would insert {stats['inserted_to_db']} chapters, "

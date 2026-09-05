@@ -1,4 +1,6 @@
 import asyncio
+import hashlib
+import inspect
 import json
 import logging
 import re
@@ -32,8 +34,10 @@ from app.llm.errors import (
 logger = logging.getLogger("EpubBackend.GeminiProvider")
 
 # Global Circuit Breaker for temporarily failing/unavailable models
-# Maps model_name -> expiration_timestamp (float)
-_GLOBAL_MODEL_COOLDOWNS: Dict[str, float] = {}
+# Maps (credential fingerprint, model_name) -> expiration timestamp.  The
+# string fallback exists only for old unit tests that construct the provider
+# with ``__new__`` and have no credential fingerprint.
+_GLOBAL_MODEL_COOLDOWNS: Dict[Any, float] = {}
 COOLDOWN_DURATION_SECONDS = 60.0  # Short local circuit-breaker window; 429 may override it.
 FAST_CANDIDATE_TIMEOUT_SECONDS = 45.0  # Avoid treating normal model latency as an outage.
 
@@ -51,6 +55,10 @@ def _parse_model_pool(raw_pool: Any) -> List[str]:
         if model_name and model_name not in result:
             result.append(model_name)
     return result
+
+
+def _credential_fingerprint(api_key: str) -> str:
+    return hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:16]
 
 
 def _parse_retry_after(details: Any) -> Optional[float]:
@@ -209,6 +217,7 @@ class GeminiProvider(BaseLLMClient):
             raise ValueError("Chưa cấu hình Gemini API Key. Vui lòng tạo Key tại https://aistudio.google.com/app/apikey")
         
         self.api_key = raw_key.strip()
+        self.credential_fingerprint = _credential_fingerprint(self.api_key)
         self.default_model = model or settings.default_gemini_model
         self.model_pool = _parse_model_pool(getattr(settings, "gemini_model_pool", ""))
         if not self.model_pool:
@@ -229,9 +238,20 @@ class GeminiProvider(BaseLLMClient):
         self.client = genai.Client(api_key=self.api_key, http_options=http_options)
         self.working_model: Optional[str] = None
         self.failed_models: Set[str] = set()
+        self._closed = False
 
     async def aclose(self) -> None:
-        await self.client.aio.aclose()
+        if getattr(self, "_closed", False):
+            return
+        self._closed = True
+        try:
+            close = getattr(getattr(getattr(self, "client", None), "aio", None), "aclose", None)
+            if callable(close):
+                result = close()
+                if inspect.isawaitable(result):
+                    await result
+        except Exception as exc:
+            logger.warning("Failed to close Gemini client: %s", exc)
 
     async def _call_with_fallback(
         self,
@@ -260,8 +280,21 @@ class GeminiProvider(BaseLLMClient):
 
         now = time.time()
         # Filter out models currently in active global cooldown
+        def cooldown_key(m: str):
+            fingerprint = getattr(self, "credential_fingerprint", None)
+            return (fingerprint, m) if fingerprint else m
+
+        def cooldown_until(m: str) -> float:
+            key = cooldown_key(m)
+            value = _GLOBAL_MODEL_COOLDOWNS.get(key)
+            # Compatibility for legacy in-process entries created before the
+            # credential-scoped key was introduced.
+            if value is None and isinstance(key, tuple):
+                value = _GLOBAL_MODEL_COOLDOWNS.get(m)
+            return float(value or 0.0)
+
         def is_cooldown(m: str) -> bool:
-            return now < _GLOBAL_MODEL_COOLDOWNS.get(m, 0.0)
+            return now < cooldown_until(m)
 
         # The pool is configurable because model access differs by project/key.
         ordered_pool = list(getattr(self, "model_pool", []) or [])
@@ -274,14 +307,14 @@ class GeminiProvider(BaseLLMClient):
         # 1. If preferred model requested and not on cooldown/failed
         if target_model and target_model not in failed_models:
             if is_cooldown(target_model):
-                cooldown_expiries.append(_GLOBAL_MODEL_COOLDOWNS[target_model])
+                cooldown_expiries.append(cooldown_until(target_model))
             else:
                 candidates.append(target_model)
         # 2. If working_model known and not on cooldown/failed
         working_model = getattr(self, "working_model", None)
         if working_model and working_model not in candidates and working_model not in failed_models:
             if is_cooldown(working_model):
-                cooldown_expiries.append(_GLOBAL_MODEL_COOLDOWNS[working_model])
+                cooldown_expiries.append(cooldown_until(working_model))
             else:
                 candidates.append(working_model)
         # 3. Add other active candidates not on cooldown
@@ -289,7 +322,7 @@ class GeminiProvider(BaseLLMClient):
             if m in candidates or m in failed_models:
                 continue
             if is_cooldown(m):
-                cooldown_expiries.append(_GLOBAL_MODEL_COOLDOWNS[m])
+                cooldown_expiries.append(cooldown_until(m))
             else:
                 candidates.append(m)
 
@@ -332,7 +365,7 @@ class GeminiProvider(BaseLLMClient):
                 )
                 self.working_model = candidate_model
                 # Successful call clears cooldown for this model
-                _GLOBAL_MODEL_COOLDOWNS.pop(candidate_model, None)
+                _GLOBAL_MODEL_COOLDOWNS.pop(cooldown_key(candidate_model), None)
                 return response
             except asyncio.TimeoutError:
                 timeout_seconds = float(getattr(self, "candidate_timeout_seconds", FAST_CANDIDATE_TIMEOUT_SECONDS))
@@ -350,7 +383,7 @@ class GeminiProvider(BaseLLMClient):
                     timeout_seconds,
                     float(getattr(self, "cooldown_duration_seconds", COOLDOWN_DURATION_SECONDS)),
                 )
-                _GLOBAL_MODEL_COOLDOWNS[candidate_model] = time.time() + float(
+                _GLOBAL_MODEL_COOLDOWNS[cooldown_key(candidate_model)] = time.time() + float(
                     getattr(self, "cooldown_duration_seconds", COOLDOWN_DURATION_SECONDS)
                 )
                 continue
@@ -372,9 +405,9 @@ class GeminiProvider(BaseLLMClient):
                         # stop immediately and cooldown this request's pool.
                         expiry = time.time() + max(1.0, retry_after)
                         for pool_model in candidates:
-                            _GLOBAL_MODEL_COOLDOWNS[pool_model] = expiry
+                            _GLOBAL_MODEL_COOLDOWNS[cooldown_key(pool_model)] = expiry
                         raise _with_attempts(error, attempts)
-                    _GLOBAL_MODEL_COOLDOWNS[candidate_model] = time.time() + max(1.0, retry_after)
+                    _GLOBAL_MODEL_COOLDOWNS[cooldown_key(candidate_model)] = time.time() + max(1.0, retry_after)
                     continue
                 raise _with_attempts(error, attempts)
 
@@ -407,7 +440,7 @@ class GeminiProvider(BaseLLMClient):
                 ),
                 preferred_model=model
             )
-            raw_text = getattr(response, "text", "") or "{}"
+            raw_text = self._translation_text(response)
             json_text = _clean_json_str(raw_text)
             return BookBibleDelta.model_validate_json(json_text)
         except Exception as err:
@@ -419,6 +452,22 @@ class GeminiProvider(BaseLLMClient):
                 operation="extract_book_bible_delta",
                 details=str(err),
             ) from err
+
+    @staticmethod
+    def _translation_text(response) -> str:
+        candidates = getattr(response, "candidates", None) or []
+        for candidate in candidates:
+            raw_reason = getattr(candidate, "finish_reason", None)
+            reason = getattr(raw_reason, "name", None) or getattr(raw_reason, "value", raw_reason)
+            if reason and str(reason).split(".")[-1] != "STOP":
+                raise GeminiProviderError(
+                    f"Bản dịch chưa hoàn tất (finish_reason={reason}). Hãy chia nhỏ nội dung và dịch lại.",
+                    status="INCOMPLETE_TRANSLATION",
+                )
+        text = (getattr(response, "text", None) or "").strip()
+        if not text:
+            raise GeminiProviderError("Gemini trả về bản dịch rỗng.", status="EMPTY_TRANSLATION")
+        return text
 
     async def translate_prose_chunk(
         self,
@@ -443,7 +492,7 @@ class GeminiProvider(BaseLLMClient):
             ),
             preferred_model=model
         )
-        return response.text.strip()
+        return self._translation_text(response)
 
     async def correct_translation_terms(
         self,
@@ -466,7 +515,7 @@ class GeminiProvider(BaseLLMClient):
             ),
             preferred_model=model,
         )
-        return (getattr(response, "text", "") or translated_text).strip()
+        return self._translation_text(response)
 
     async def translate_html_json(
         self,
@@ -492,25 +541,34 @@ class GeminiProvider(BaseLLMClient):
                 ),
                 preferred_model=model
             )
-            raw_text = getattr(response, "text", "") or "{}"
+            raw_text = self._translation_text(response)
             json_text = _clean_json_str(raw_text)
             parsed_data = HTMLTranslationOutput.model_validate_json(json_text)
         except Exception as err:
             if isinstance(err, GeminiProviderError):
                 raise
-            logger.warning("HTML translation JSON parse failed (%s), falling back to input text.", err)
-            parsed_data = HTMLTranslationOutput(translations=[HTMLTranslationItem(id=item.id, text_vi=item.text) for item in input_items])
+            raise StructuredOutputError(
+                "HTML translation JSON output không hợp lệ.",
+                operation="translate_html_json",
+                details=str(err),
+            ) from err
 
         raw_translations = parsed_data.translations
         out_map = {item.id: item.text_vi for item in raw_translations}
         aligned_translations: List[HTMLTranslationItem] = []
 
-        for item in input_items:
-            if item.id in out_map and out_map[item.id].strip():
-                aligned_translations.append(HTMLTranslationItem(id=item.id, text_vi=out_map[item.id]))
-            else:
-                logger.warning(f"Gemini LLM skipped HTML ID '{item.id}'. Falling back to original text.")
-                aligned_translations.append(HTMLTranslationItem(id=item.id, text_vi=item.text))
+        expected_ids = [item.id for item in input_items]
+        if set(out_map) != set(expected_ids) or len(out_map) != len(expected_ids) or any(
+            not out_map[item_id].strip() for item_id in expected_ids
+        ):
+            raise StructuredOutputError(
+                "HTML translation output thiếu hoặc trùng node ID.",
+                operation="translate_html_json",
+                details={"expected_ids": expected_ids, "actual_ids": list(out_map)},
+            )
+        aligned_translations = [
+            HTMLTranslationItem(id=item_id, text_vi=out_map[item_id]) for item_id in expected_ids
+        ]
 
         return aligned_translations
 
@@ -535,14 +593,17 @@ class GeminiProvider(BaseLLMClient):
                 ),
                 preferred_model=model
             )
-            raw_text = getattr(response, "text", "") or "{}"
+            raw_text = self._translation_text(response)
             json_text = _clean_json_str(raw_text)
             return QAReport.model_validate_json(json_text)
         except Exception as qa_err:
             if isinstance(qa_err, GeminiProviderError):
                 raise
-            logger.warning("QA check parse failed (%s), returning default consistent QAReport", qa_err)
-            return QAReport(is_consistent=True, issues=[])
+            raise StructuredOutputError(
+                "QA output không hợp lệ.",
+                operation="qa_check_chunk",
+                details=str(qa_err),
+            ) from qa_err
 
     async def semantic_review_chapter(
         self,
@@ -567,7 +628,7 @@ class GeminiProvider(BaseLLMClient):
                 preferred_model=reviewer_model,
                 allow_fallback=False,
             )
-            raw_text = getattr(response, "text", "") or "{}"
+            raw_text = self._translation_text(response)
             return SemanticReviewReport.model_validate_json(_clean_json_str(raw_text))
         except Exception as err:
             if isinstance(err, GeminiProviderError):

@@ -737,10 +737,13 @@ class CharacterProfileService:
 
         # 2. Hydrate from Local Disk (scanning storage/novels/ and legacy data/)
         try:
-            root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+            root_dir = Path(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
+            configured_storage_root = Path(settings.local_storage_root)
+            if not configured_storage_root.is_absolute():
+                configured_storage_root = root_dir / configured_storage_root
             local_json_files = []
 
-            storage_novels_dir = os.path.join(root_dir, "storage", "novels")
+            storage_novels_dir = configured_storage_root / "novels"
             if os.path.exists(storage_novels_dir):
                 for root, _, files in os.walk(storage_novels_dir):
                     if "profile" in root:
@@ -748,7 +751,7 @@ class CharacterProfileService:
                             if fn.endswith(".json"):
                                 local_json_files.append(os.path.join(root, fn))
 
-            legacy_data_dir = os.path.join(root_dir, "data")
+            legacy_data_dir = configured_storage_root.parent / "data"
             if os.path.exists(legacy_data_dir):
                 for root, _, files in os.walk(legacy_data_dir):
                     for fn in files:
@@ -2508,10 +2511,8 @@ class CharacterProfileService:
             # 3. Persist to local disk cache (only if legacy or dual)
             if settings.structured_storage_backend in ("legacy", "dual"):
                 try:
-                    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
                     base_dir = os.path.join(
-                        project_root,
-                        "storage",
+                        settings.local_storage_root,
                         "novels",
                         safe_novel_folder,
                         "profile",

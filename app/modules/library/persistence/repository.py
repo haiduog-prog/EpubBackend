@@ -1,3 +1,3 @@
-from app.modules.library.persistence.legacy_repository import LibraryRepository
+from app.modules.library.persistence.legacy_repository import ChapterRevisionConflictError, LibraryRepository
 
-__all__ = ["LibraryRepository"]
+__all__ = ["LibraryRepository", "ChapterRevisionConflictError"]

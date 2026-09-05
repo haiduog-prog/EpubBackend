@@ -698,6 +698,43 @@ async def test_translate_chapter_fallback_when_original_is_empty(monkeypatch):
     service.delete_novel(novel_id)
 
 
+@pytest.mark.asyncio
+async def test_translate_chapter_can_defer_epub_build(monkeypatch):
+    from unittest.mock import AsyncMock, MagicMock
+    from app.schemas.book_bible import BookBibleDelta
+
+    mock_llm = MagicMock()
+    mock_llm.extract_book_bible_delta = AsyncMock(return_value=BookBibleDelta())
+    mock_llm.translate_prose_chunk = AsyncMock(return_value="Bản dịch hàng loạt không build EPUB ngay.")
+    monkeypatch.setattr("app.modules.library.legacy_service.create_llm_client", lambda **kwargs: mock_llm)
+
+    service = LibraryService()
+    novel_id = f"translate-defer-build-{uuid.uuid4().hex[:6]}"
+    service.create_novel(NovelCreateRequest(title="Truyện Dịch Hàng Loạt", novel_id=novel_id))
+    service.add_or_update_chapter(
+        novel_id=novel_id,
+        chapter_index=1,
+        chapter_title="Chương 1: Hàng loạt",
+        content="Nội dung gốc của chương dịch hàng loạt.",
+    )
+
+    dirty_calls = []
+    monkeypatch.setattr(
+        service._legacy,
+        "mark_dirty",
+        lambda *args, **kwargs: dirty_calls.append((args, kwargs)),
+    )
+
+    try:
+        chapter = await service.translate_chapter(novel_id, 1, defer_epub_build=True)
+
+        assert chapter.status == ChapterStatus.COMPLETED
+        assert dirty_calls == []
+        assert "Bản dịch hàng loạt" in service.get_chapter_content(novel_id, 1, version="translated")
+    finally:
+        service.delete_novel(novel_id)
+
+
 def test_chapter_extraction_stats_are_scoped_to_chapter(monkeypatch):
     service = LibraryService()
     novel_id = f"chapter-stats-{uuid.uuid4().hex[:8]}"
@@ -760,7 +797,7 @@ def test_chapter_extraction_stats_are_scoped_to_chapter(monkeypatch):
         service.delete_novel(novel_id)
 
 
-def test_get_chapter_content_self_healing_from_full_epub():
+def test_get_chapter_content_reads_full_epub_without_recache():
     from app.infrastructure.storage.facade import storage_repo
 
     service = LibraryService()
@@ -778,15 +815,48 @@ def test_get_chapter_content_self_healing_from_full_epub():
     storage_repo.delete_file(txt_key)
     assert storage_repo.get_bytes(txt_key) is None
 
-    # Requesting chapter content should trigger on-demand extraction from full.epub
+    # Requesting chapter content may read from full.epub, but must not recache it
+    # into translated/ because the EPUB's source language is not provable here.
     content = service.get_chapter_content(novel_id, 1, version="translated")
     assert content is not None
     assert "Nội dung chương 1 này sẽ được phục hồi" in content
 
-    # Verify that the txt file was re-cached into storage
-    assert storage_repo.get_bytes(txt_key) is not None
+    # Verify that the read-only fallback did not recreate the missing txt file.
+    assert storage_repo.get_bytes(txt_key) is None
 
     service.delete_novel(novel_id)
+
+
+def test_get_chapter_content_fallback_does_not_copy_original_to_translated():
+    from app.infrastructure.storage.facade import storage_repo
+
+    service = LibraryService()
+    novel_id = f"test-read-only-fallback-{uuid.uuid4().hex[:6]}"
+
+    try:
+        service.create_novel(NovelCreateRequest(title="Read-only fallback", novel_id=novel_id))
+        service.add_or_update_chapter(
+            novel_id=novel_id,
+            chapter_index=1,
+            chapter_title="Chương 1",
+            content="Nội dung gốc không được sao chép sang bản dịch.",
+        )
+
+        meta = service.get_novel(novel_id)
+        assert meta is not None
+        meta.chapters[0].status = ChapterStatus.COMPLETED
+        meta.translated_chapters = 1
+        service._save_metadata(meta)
+
+        translated_key = service._chapter_key(novel_id, 1, is_translated=True)
+        assert storage_repo.get_bytes(translated_key) is None
+
+        content = service.get_chapter_content(novel_id, 1, version="translated")
+
+        assert content == "Nội dung gốc không được sao chép sang bản dịch."
+        assert storage_repo.get_bytes(translated_key) is None
+    finally:
+        service.delete_novel(novel_id)
 
 
 @pytest.mark.asyncio
@@ -827,6 +897,8 @@ async def test_translate_chapter_preview_mode(monkeypatch):
     assert preview_res.previous_translated_text == "Bản dịch cũ ban đầu."
     assert preview_res.new_translated_text == "Bản dịch thử nghiệm xem trước không ghi đè."
     assert preview_res.word_count > 0
+    assert preview_res.qa_status == "passed"
+    assert preview_res.qa_issues == []
 
     # Ensure storage and metadata were NOT overwritten
     assert service.get_chapter_content(novel_id, 1, version="translated") == "Bản dịch cũ ban đầu."
@@ -844,6 +916,77 @@ async def test_translate_chapter_preview_mode(monkeypatch):
     assert service.get_chapter_content(novel_id, 1, version="translated") == "Bản dịch mới đã được người dùng chấp thuận."
 
     service.delete_novel(novel_id)
+
+
+@pytest.mark.asyncio
+async def test_translate_chapter_preview_reports_qa_issues(monkeypatch):
+    class MockLLM:
+        async def extract_book_bible_delta(self, *args, **kwargs):
+            return {}
+
+        async def translate_prose_chunk(self, *args, **kwargs):
+            return "Chương 1: Kiểm tra\n\ntwo người đang đứng trước cửa."
+
+    monkeypatch.setattr("app.modules.library.legacy_service.create_llm_client", lambda **kwargs: MockLLM())
+
+    service = LibraryService()
+    novel_id = f"test-preview-qa-{uuid.uuid4().hex[:6]}"
+    service.create_novel(NovelCreateRequest(title="Truyện Test Preview QA", novel_id=novel_id))
+    service.add_or_update_chapter(
+        novel_id=novel_id,
+        chapter_index=1,
+        chapter_title="Chương 1: Kiểm tra",
+        content="Hai người đang đứng trước cửa.",
+    )
+
+    try:
+        preview_res = await service.translate_chapter(novel_id, 1, preview_only=True)
+
+        assert preview_res.qa_status == "needs_review"
+        assert preview_res.qa_reason
+        assert any(issue.found == "two" for issue in preview_res.qa_issues)
+        assert all(issue.replacement == "" for issue in preview_res.qa_issues if issue.found == "two")
+    finally:
+        service.delete_novel(novel_id)
+
+
+def test_apply_chapter_translation_rechecks_qa_before_writing():
+    from app.infrastructure.storage.facade import storage_repo
+
+    service = LibraryService()
+    novel_id = f"test-apply-qa-{uuid.uuid4().hex[:6]}"
+    service.create_novel(NovelCreateRequest(title="Truyện Test Apply QA", novel_id=novel_id))
+    service.add_or_update_chapter(
+        novel_id=novel_id,
+        chapter_index=1,
+        chapter_title="Chương 1: Kiểm tra",
+        content="Hai người đang đứng trước cửa.",
+    )
+
+    translated_key = service._chapter_key(novel_id, 1, is_translated=True)
+    try:
+        with pytest.raises(ValueError, match="QA còn 1 lỗi"):
+            service.apply_chapter_translation(
+                novel_id=novel_id,
+                chapter_index=1,
+                content="two người đang đứng trước cửa.",
+            )
+
+        assert storage_repo.get_bytes(translated_key) is None
+        chapter = service.get_novel(novel_id).chapters[0]
+        assert chapter.status == ChapterStatus.NOT_TRANSLATED
+
+        overridden = service.apply_chapter_translation(
+            novel_id=novel_id,
+            chapter_index=1,
+            content="two người đang đứng trước cửa.",
+            allow_qa_warnings=True,
+        )
+
+        assert overridden.status == ChapterStatus.COMPLETED
+        assert storage_repo.get_bytes(translated_key).decode("utf-8") == "two người đang đứng trước cửa."
+    finally:
+        service.delete_novel(novel_id)
 
 
 

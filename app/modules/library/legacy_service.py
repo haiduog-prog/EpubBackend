@@ -1,4 +1,5 @@
 import gc
+import inspect
 import io
 import json
 import logging
@@ -20,8 +21,10 @@ from app.config import settings
 from app.infrastructure.storage.facade import storage_repo
 from app.db.session import db_session
 from app.parsers.epub_parser import extract_cover_from_epub, read_epub_safe
-from app.parsers.text_sanitizer import clean_raw_text, extract_chapter_title_prefix, reattach_chapter_title
-from app.modules.library.persistence.repository import LibraryRepository
+from app.parsers.text_sanitizer import (
+    clean_raw_text, extract_chapter_title_prefix, prepare_chapter_translation, reattach_chapter_title,
+)
+from app.modules.library.persistence.repository import ChapterRevisionConflictError, LibraryRepository
 from app.modules.book_bible.persistence.repository import BookBibleRepository
 from app.llm.factory import create_llm_client
 from app.schemas.book_bible import BookBible
@@ -94,6 +97,76 @@ def parse_chapter_index_from_title(title: str) -> Optional[int]:
         except ValueError:
             pass
     return None
+
+
+_GENERIC_QA_EXPECTATIONS = {
+    "tiếng việt",
+    "thuật ngữ tiếng việt chuẩn",
+    "<loại bỏ watermark>",
+    "không xuất hiện mẫu bị cấm",
+}
+
+
+def _suggest_draft_replacement(found: str, expected: str, issue: str = "") -> str:
+    """Return only a concrete, safe replacement for an actionable QA card."""
+    found_lower = (found or "").lower()
+    replacement = (expected or "").strip()
+
+    if "chúng em" in found_lower:
+        replacement = "chúng đệ"
+    elif "bọn em" in found_lower or "tụi em" in found_lower:
+        replacement = "bọn đệ"
+    elif found_lower in {"anh ấy", "anh ta"}:
+        replacement = "hắn"
+    elif found_lower in {"cô ấy", "cô ta"}:
+        replacement = "nàng"
+    elif found_lower == "anh":
+        replacement = "huynh"
+    elif found_lower == "em":
+        replacement = "muội"
+    elif found_lower == "đông đảo anh em":
+        replacement = "đông đảo huynh đệ"
+    elif "ra ra" in found_lower:
+        replacement = "ra"
+    elif "lên lên" in found_lower:
+        replacement = "lên"
+    elif "lại lại" in found_lower:
+        replacement = "lại"
+    elif found_lower == "haizz":
+        replacement = "Than ôi"
+    elif "read.st" in found_lower:
+        replacement = ""
+
+    if replacement.casefold() in _GENERIC_QA_EXPECTATIONS:
+        return ""
+    if replacement.startswith("Chương [") or replacement.startswith("Chương [Số]"):
+        return ""
+    return replacement
+
+
+def _qa_issue_to_draft_issue(issue: Any) -> ChapterDraftIssue:
+    found = getattr(issue, "found", "") or ""
+    expected = getattr(issue, "expected", "") or ""
+    reason = getattr(issue, "issue", "") or "Phát hiện lỗi QA"
+    return ChapterDraftIssue(
+        issue=reason,
+        found=found,
+        replacement=_suggest_draft_replacement(found, expected, reason),
+        location=getattr(issue, "location", "") or "",
+        severity="warning",
+    )
+
+
+def _semantic_issue_to_draft_issue(issue: Dict[str, Any]) -> ChapterDraftIssue:
+    found = str(issue.get("old_text") or issue.get("found") or "")
+    replacement = str(issue.get("replacement") or "")
+    return ChapterDraftIssue(
+        issue=str(issue.get("reason") or "Phát hiện lỗi semantic"),
+        found=found,
+        replacement=replacement,
+        location=str(issue.get("location") or ""),
+        severity="warning",
+    )
 
 
 class LegacyLibraryService:
@@ -322,7 +395,7 @@ class LegacyLibraryService:
             meta.status = req.status
 
         meta.updated_at = datetime.now(timezone.utc).isoformat()
-        self._save_metadata(meta)
+        self._save_metadata(meta, include_chapters=False)
         self._cache[novel_id] = meta
         self.mark_dirty(novel_id, is_structural=True)
         return meta
@@ -360,7 +433,7 @@ class LegacyLibraryService:
         try:
             storage_repo.local_provider.delete_file(self._novel_meta_key(novel_id))
             from pathlib import Path
-            local_novel_dir = Path(settings.storage_local_root) / "novels" / novel_id
+            local_novel_dir = Path(settings.local_storage_root) / "novels" / novel_id
             if local_novel_dir.is_dir():
                 import shutil
                 shutil.rmtree(local_novel_dir, ignore_errors=True)
@@ -442,7 +515,7 @@ class LegacyLibraryService:
         meta.translated_chapters = sum(1 for c in meta.chapters if c.status == ChapterStatus.COMPLETED)
         meta.updated_at = datetime.now(timezone.utc).isoformat()
 
-        self._save_metadata(meta)
+        self._save_chapter_state(meta, chapter_item)
         self._cache[novel_id] = meta
         if existing_item:
             self.mark_dirty(novel_id, dirty_indexes=[chapter_index], is_structural=False)
@@ -476,9 +549,13 @@ class LegacyLibraryService:
         is_translated: bool = True,
     ) -> Dict[int, str]:
         """
-        On-demand self-healing: Nếu storage thiếu các file txt chương (ch_*.txt),
-        tải file full.epub từ storage, trích xuất lại toàn bộ các chương, lưu vào storage
-        và trả về dict {chapter_index: full_text}.
+        Read-only fallback: Nếu storage thiếu các file txt chương (ch_*.txt),
+        tải file full.epub từ storage, trích xuất lại toàn bộ các chương và trả về
+        dict {chapter_index: full_text}.
+
+        Không ghi các chương đã extract trở lại storage. ``full.epub`` không mang
+        metadata đáng tin cậy cho biết nó là bản gốc hay bản dịch, vì vậy việc ghi
+        theo ``is_translated`` có thể đưa nội dung sai phiên bản vào translated/.
         """
         meta = self.get_novel(novel_id)
         epub_candidates = []
@@ -509,14 +586,9 @@ class LegacyLibraryService:
                     return {}
                 canonical_chapters = self._assign_canonical_chapter_indices(raw_sections, start_chapter_index=1)
                 result_map: Dict[int, str] = {}
-                folder = "translated" if is_translated else "original"
 
                 for actual_index, ch_title, full_text in canonical_chapters:
                     result_map[actual_index] = full_text
-                    # Save to storage only if missing, to avoid overwriting existing/updated chapters
-                    ch_key = f"novels/{novel_id}/{folder}/ch_{actual_index:04d}.txt"
-                    if not storage_repo.file_exists(ch_key):
-                        self._save_raw_file(ch_key, full_text.encode("utf-8"), content_type="text/plain; charset=utf-8")
 
                 return result_map
             finally:
@@ -553,7 +625,21 @@ class LegacyLibraryService:
             return None
 
         is_trans = (version.lower() == "translated")
-        key = self._chapter_key(novel_id, chapter_index, is_translated=is_trans)
+        meta = novel_meta if novel_meta is not None else self.get_novel(novel_id)
+        chapter = (
+            next((c for c in meta.chapters if c.chapter_index == chapter_index), None)
+            if meta
+            else None
+        )
+        # New translations may use a provider-specific/versioned key.  Read
+        # the committed pointer first and retain the deterministic key as a
+        # compatibility fallback for older metadata and imported novels.
+        committed_key = (
+            (chapter.r2_translated_key or "").strip()
+            if is_trans and chapter
+            else ((chapter.r2_original_key or "").strip() if chapter else "")
+        )
+        key = committed_key or self._chapter_key(novel_id, chapter_index, is_translated=is_trans)
 
         data_bytes = storage_repo.get_bytes(key)
         if data_bytes is not None:
@@ -562,15 +648,13 @@ class LegacyLibraryService:
             except Exception:
                 return data_bytes.decode("latin1", errors="ignore")
 
-        # Self-healing is intentionally opt-in for rebuilds. A missing blob must
-        # not make every export worker download/extract the entire EPUB.
+        # Read-only fallback is intentionally opt-in for rebuilds. A missing blob
+        # must not make every export worker download/extract the entire EPUB.
         if not allow_epub_self_heal:
             return None
 
         # If requesting translated version, check if the chapter has actually been completed or translated
-        meta = novel_meta if novel_meta is not None else self.get_novel(novel_id)
         if is_trans:
-            chapter = next((c for c in meta.chapters if c.chapter_index == chapter_index), None) if meta else None
             if chapter and chapter.status != ChapterStatus.COMPLETED and not chapter.r2_translated_key:
                 return None
 
@@ -587,7 +671,6 @@ class LegacyLibraryService:
                     content = other_bytes.decode("utf-8")
                 except Exception:
                     content = other_bytes.decode("latin1", errors="ignore")
-                self._save_raw_file(key, content.encode("utf-8"), content_type="text/plain; charset=utf-8")
                 return content
 
         return None
@@ -647,44 +730,7 @@ class LegacyLibraryService:
 
         issues: List[ChapterDraftIssue] = []
         for q in qa_issues:
-            found = q.found or ""
-            replacement = q.expected or ""
-            found_lower = found.lower()
-            # Gợi ý sửa cụ thể cho xưng hô
-            if "chúng em" in found_lower:
-                replacement = "chúng đệ"
-            elif "bọn em" in found_lower or "tụi em" in found_lower:
-                replacement = "bọn đệ"
-            elif found_lower in {"anh ấy", "anh ta"}:
-                replacement = "hắn"
-            elif found_lower in {"cô ấy", "cô ta"}:
-                replacement = "nàng"
-            elif found_lower == "anh":
-                replacement = "huynh"
-            elif found_lower == "em":
-                replacement = "muội"
-            elif found_lower == "đông đảo anh em":
-                replacement = "đông đảo huynh đệ"
-            elif "ra ra" in found_lower:
-                replacement = "ra"
-            elif "lên lên" in found_lower:
-                replacement = "lên"
-            elif "lại lại" in found_lower:
-                replacement = "lại"
-            elif found_lower == "haizz":
-                replacement = "Than ôi"
-            elif "read.st" in found_lower:
-                replacement = ""
-
-            issues.append(
-                ChapterDraftIssue(
-                    issue=q.issue,
-                    found=found,
-                    replacement=replacement,
-                    location=q.location or "",
-                    severity="error" if getattr(q, "severity", None) == "error" else "warning",
-                )
-            )
+            issues.append(_qa_issue_to_draft_issue(q))
 
         # Hợp nhất các issue lưu trong chapter model nếu có
         if chapter and getattr(chapter, "review_issues", None):
@@ -887,6 +933,7 @@ class LegacyLibraryService:
         api_key: Optional[str] = None,
         model: Optional[str] = None,
         preview_only: bool = False,
+        defer_epub_build: bool = False,
     ) -> Union[ChapterItem, ChapterTranslatePreviewResponse]:
         meta = self.get_novel(novel_id)
         if not meta:
@@ -919,8 +966,9 @@ class LegacyLibraryService:
 
         if not preview_only:
             chapter.status = ChapterStatus.TRANSLATING
-            self._save_metadata(meta)
+            self._save_chapter_state(meta, chapter)
 
+        llm_client = None
         try:
             # Khởi tạo LLM và pipeline
             llm_client = create_llm_client(provider=provider, api_key=api_key, model=model)
@@ -941,8 +989,7 @@ class LegacyLibraryService:
 
             # Làm sạch watermark và trích xuất tiêu đề chương
             cleaned_orig = clean_raw_text(orig_content)
-            title_prefix, body_orig = extract_chapter_title_prefix(cleaned_orig)
-            work_orig = body_orig if body_orig else cleaned_orig
+            title_prefix, work_orig = prepare_chapter_translation(cleaned_orig)
 
             # Dịch nội dung chương (dùng work_orig để dịch phần thân, sau đó gắn lại tiêu đề chuẩn)
             effective_bible = AddressRuleResolver.apply(bible, chapter_index=chapter_index)
@@ -1008,6 +1055,33 @@ class LegacyLibraryService:
                 }
                 for issue in terminology_issues
             )
+            preview_issues: List[ChapterDraftIssue] = []
+            preview_issue_keys = set()
+
+            def add_preview_issue(issue: ChapterDraftIssue) -> None:
+                key = (issue.issue, issue.found, issue.replacement)
+                if key not in preview_issue_keys:
+                    preview_issue_keys.add(key)
+                    preview_issues.append(issue)
+
+            for issue in terminology_issues:
+                add_preview_issue(_qa_issue_to_draft_issue(issue))
+            for issue in semantic_issues:
+                add_preview_issue(_semantic_issue_to_draft_issue(issue))
+
+            qa_reason = None
+            if terminology_issues:
+                qa_reason = terminology_issues[0].issue
+            elif semantic_issues:
+                qa_reason = semantic_issues[0].get("reason") or "Bản dịch cần rà soát semantic."
+            elif semantic_error:
+                qa_reason = semantic_error
+            elif not scan_result.complete:
+                qa_reason = "Book Bible scan chưa hoàn tất"
+            elif semantic_status == "needs_review":
+                qa_reason = "Bản dịch cần rà soát semantic."
+            qa_status = "needs_review" if qa_reason else "passed"
+
             chapter_review_status = (
                 "needs_review"
                 if (review_issues or not scan_result.complete)
@@ -1039,7 +1113,7 @@ class LegacyLibraryService:
                     f"draft_key={draft_key}"
                 )
                 chapter.updated_at = datetime.now(timezone.utc).isoformat()
-                self._save_metadata(meta)
+                self._save_chapter_state(meta, chapter)
                 return chapter
             if preview_only:
                 return ChapterTranslatePreviewResponse(
@@ -1052,31 +1126,32 @@ class LegacyLibraryService:
                     word_count=len(translated_text.split()),
                     model=model,
                     provider=provider,
+                    qa_status=qa_status,
+                    qa_reason=qa_reason,
+                    qa_issues=preview_issues,
                 )
 
-            # Lưu bản dịch lên R2 / Supabase
-            trans_key = self._chapter_key(novel_id, chapter_index, is_translated=True)
-            trans_url = self._save_raw_file(trans_key, translated_text.encode("utf-8"), content_type="text/plain; charset=utf-8")
-
-            chapter.status = ChapterStatus.COMPLETED
-            chapter.r2_translated_key = trans_key
-            chapter.r2_translated_url = trans_url
-            chapter.translated_text_preview = (translated_text[:150] + "...") if len(translated_text) > 150 else translated_text
-            chapter.updated_at = datetime.now(timezone.utc).isoformat()
-
-            meta.translated_chapters = sum(1 for c in meta.chapters if c.status == ChapterStatus.COMPLETED)
-            meta.updated_at = datetime.now(timezone.utc).isoformat()
-            self._save_metadata(meta)
+            self._persist_completed_translation(meta, chapter, translated_text)
             self._cache[novel_id] = meta
-            self.mark_dirty(novel_id, dirty_indexes=[chapter_index], is_structural=False)
+            # A batch translation must not start a build after every completed
+            # chapter. The batch coordinator may enqueue one consolidated build
+            # after the whole queue finishes.
+            if not defer_epub_build:
+                self.mark_dirty(novel_id, dirty_indexes=[chapter_index], is_structural=False)
             return chapter
 
         except Exception as exc:
             logger.error("Lỗi khi dịch chương %d: %s", chapter_index, exc)
             if not preview_only:
                 chapter.status = ChapterStatus.FAILED
-                self._save_metadata(meta)
+                # Do not let a failed/stale worker overwrite a newer chapter.
+                try:
+                    self._save_chapter_state(meta, chapter)
+                except Exception as persist_error:
+                    logger.warning("Không thể lưu trạng thái lỗi chương %d: %s", chapter_index, persist_error)
             raise
+        finally:
+            await self._close_llm_client(llm_client, context=f"chapter translation {novel_id}/{chapter_index}")
 
     def mark_dirty(
         self,
@@ -1105,6 +1180,7 @@ class LegacyLibraryService:
         novel_id: str,
         chapter_index: int,
         content: str,
+        allow_qa_warnings: bool = False,
     ) -> ChapterItem:
         if not content or not content.strip():
             raise ValueError("Nội dung bản dịch không được để trống.")
@@ -1117,20 +1193,48 @@ class LegacyLibraryService:
         if not chapter:
             raise ValueError(f"Không tìm thấy chương {chapter_index} của truyện '{novel_id}'")
 
-        trans_key = self._chapter_key(novel_id, chapter_index, is_translated=True)
-        trans_url = self._save_raw_file(trans_key, content.encode("utf-8"), content_type="text/plain; charset=utf-8")
+        original_content = self.get_chapter_content(
+            novel_id,
+            chapter_index,
+            version="original",
+            allow_epub_self_heal=False,
+        )
+        if not original_content or not original_content.strip():
+            raise ValueError("Không thể áp dụng bản dịch khi chưa có nội dung gốc để kiểm tra QA.")
+
+        bible = storage_repo.get_bible(novel_id) or BookBible(novel_id=novel_id)
+        effective_bible = AddressRuleResolver.apply(bible, chapter_index=chapter_index)
+        filtered_bible = BookBibleService.filter_bible_for_text(effective_bible, original_content)
+        qa_issues = QAService(None).fast_rule_check(original_content, content, filtered_bible)
+        for issue in TerminologyConsistencyService.check_translation(
+            original_content,
+            content,
+            effective_bible,
+        ):
+            if not any(
+                existing.issue == issue.issue and existing.found == issue.found
+                for existing in qa_issues
+            ):
+                qa_issues.append(issue)
+        if qa_issues and not allow_qa_warnings:
+            reasons = "; ".join(issue.issue for issue in qa_issues[:3])
+            suffix = "" if len(qa_issues) <= 3 else f"; và {len(qa_issues) - 3} lỗi khác"
+            raise ValueError(
+                f"Không thể áp dụng bản dịch: QA còn {len(qa_issues)} lỗi. {reasons}{suffix}"
+            )
+        if qa_issues and allow_qa_warnings:
+            logger.warning(
+                "Applying chapter %s/%s with explicit QA warning override: %s",
+                novel_id,
+                chapter_index,
+                "; ".join(issue.issue for issue in qa_issues[:3]),
+            )
 
         chapter.review_issues = []
-        chapter.status = ChapterStatus.COMPLETED
-        chapter.r2_translated_key = trans_key
-        chapter.r2_translated_url = trans_url
-        chapter.translated_text_preview = (content[:150] + "...") if len(content) > 150 else content
+        chapter.review_status = "passed"
+        chapter.review_error = None
         chapter.word_count = len(content.split())
-        chapter.updated_at = datetime.now(timezone.utc).isoformat()
-
-        meta.translated_chapters = sum(1 for c in meta.chapters if c.status == ChapterStatus.COMPLETED)
-        meta.updated_at = datetime.now(timezone.utc).isoformat()
-        self._save_metadata(meta)
+        self._persist_completed_translation(meta, chapter, content)
         self._cache[novel_id] = meta
         self.mark_dirty(novel_id, dirty_indexes=[chapter_index], is_structural=False)
         return chapter
@@ -1163,43 +1267,51 @@ class LegacyLibraryService:
         filtered_bible = BookBibleService.filter_bible_for_text(effective_bible, orig_content)
 
         llm_client = create_llm_client(provider=provider, api_key=api_key, model=model)
-        qa_service = QAService(llm_client)
+        try:
+            qa_service = QAService(llm_client)
 
-        rule_issues = qa_service.fast_rule_check(orig_content, trans_content, filtered_bible)
+            rule_issues = qa_service.fast_rule_check(orig_content, trans_content, filtered_bible)
 
-        reviewer_model = SemanticReviewService.resolve_reviewer_model(model or getattr(llm_client, "default_model", None))
-        review_result = await SemanticReviewService(llm_client).review_chapter(
-            source_text=orig_content,
-            translated_text=trans_content,
-            book_bible=filtered_bible,
-            model=reviewer_model,
-        )
+            reviewer_model = SemanticReviewService.resolve_reviewer_model(model or getattr(llm_client, "default_model", None))
+            review_result = await SemanticReviewService(llm_client).review_chapter(
+                source_text=orig_content,
+                translated_text=trans_content,
+                book_bible=filtered_bible,
+                model=reviewer_model,
+                apply_patches=False,
+            )
 
-        all_issues = list(review_result.issues)
-        all_issues.extend(
-            {
-                "old_text": i.found,
-                "replacement": i.expected,
-                "reason": i.issue,
-                "confidence": 1.0,
+            all_issues = list(review_result.issues)
+            all_issues.extend(
+                {
+                    "old_text": i.found,
+                    "replacement": i.expected,
+                    "reason": i.issue,
+                    "confidence": 1.0,
+                }
+                for i in rule_issues
+            )
+
+            chapter.review_status = (
+                "needs_review" if all_issues or review_result.error else review_result.status
+            )
+            chapter.review_error = review_result.error
+            chapter.review_issues = all_issues
+            chapter.reviewer_model = reviewer_model
+            chapter.reviewed_at = datetime.now(timezone.utc).isoformat()
+            self._save_chapter_state(meta, chapter)
+
+            return {
+                "novel_id": novel_id,
+                "chapter_index": chapter_index,
+                "review_status": chapter.review_status,
+                "issues": all_issues,
+                "passed": chapter.review_status == "passed",
+                "error": chapter.review_error,
+                "reviewer_model": reviewer_model,
             }
-            for i in rule_issues
-        )
-
-        chapter.review_status = "passed" if not all_issues else "needs_review"
-        chapter.review_issues = all_issues
-        chapter.reviewer_model = reviewer_model
-        chapter.reviewed_at = datetime.now(timezone.utc).isoformat()
-        self._save_metadata(meta)
-
-        return {
-            "novel_id": novel_id,
-            "chapter_index": chapter_index,
-            "review_status": chapter.review_status,
-            "issues": all_issues,
-            "passed": len(all_issues) == 0,
-            "reviewer_model": reviewer_model,
-        }
+        finally:
+            await self._close_llm_client(llm_client, context=f"chapter review {novel_id}/{chapter_index}")
 
 
     async def scan_characters_and_timeline(
@@ -1375,9 +1487,13 @@ class LegacyLibraryService:
             raise ValueError(f"Không tìm thấy bộ truyện '{novel_id}'")
 
         if not output_path:
-            os.makedirs(os.path.join("storage", "outputs"), exist_ok=True)
+            os.makedirs(os.path.join(settings.local_storage_root, "outputs"), exist_ok=True)
             # Mỗi request dùng file riêng để FileResponse không bị request kế tiếp ghi đè.
-            output_path = os.path.join("storage", "outputs", f"{slugify(novel_id)}_{uuid.uuid4().hex}_vi.epub")
+            output_path = os.path.join(
+                settings.local_storage_root,
+                "outputs",
+                f"{slugify(novel_id)}_{uuid.uuid4().hex}_vi.epub",
+            )
 
         # Parse target range if specified
         target_indexes = set()
@@ -2346,12 +2462,96 @@ class LegacyLibraryService:
     # ------------------------------------------------------------------
     # Storage Helpers
     # ------------------------------------------------------------------
-    def _save_metadata(self, meta: NovelMetadata) -> None:
+    @staticmethod
+    async def _close_llm_client(client: Any, *, context: str = "LLM client") -> None:
+        close_client = getattr(client, "aclose", None) if client is not None else None
+        if not callable(close_client):
+            return
+        try:
+            result = close_client()
+            if inspect.isawaitable(result):
+                await result
+        except Exception as close_err:
+            logger.warning("Failed to close %s: %s", context, close_err)
+
+    def _save_chapter_state(self, meta: NovelMetadata, chapter: ChapterItem) -> None:
+        """Persist one chapter without writing the caller's aggregate snapshot."""
+        novel_id = getattr(meta, "novel_id", None)
+        if not novel_id:
+            # Lightweight service doubles in regression tests may expose only
+            # ``chapters`` and a mocked aggregate saver.
+            fallback = getattr(self, "_save_metadata", None)
+            if callable(fallback):
+                fallback(meta)
+            return
+        if settings.structured_storage_backend in ("dual", "postgres"):
+            try:
+                with db_session() as session:
+                    persisted = LibraryRepository.save_chapter(
+                        session,
+                        novel_id,
+                        chapter,
+                        expected_revision=chapter.revision,
+                    )
+                    session.commit()
+                    chapter.revision = persisted.revision
+                    novel_after = LibraryRepository.get_novel(session, novel_id)
+                    if novel_after:
+                        meta.total_chapters = novel_after.total_chapters
+                        meta.translated_chapters = novel_after.translated_chapters
+            except ChapterRevisionConflictError:
+                # A stale worker must retry from a fresh chapter snapshot; do
+                # not mirror its rejected state to legacy storage or cache it.
+                raise
+            except Exception as exc:
+                if settings.structured_storage_backend == "postgres":
+                    raise
+                logger.warning("Failed to save chapter state in dual mode: %s", exc)
+
+        if settings.structured_storage_backend in ("legacy", "dual"):
+            key = self._novel_meta_key(novel_id)
+            # The legacy mirror is an aggregate JSON document.  Never write
+            # a caller's stale full snapshot after a chapter-only DB update:
+            # merge this chapter into the latest mirror and retain all other
+            # chapters that another worker may have just persisted.
+            mirror_meta = meta
+            stored_meta = storage_repo.local_provider.get_json(key)
+            if stored_meta:
+                try:
+                    mirror_meta = NovelMetadata.model_validate(stored_meta)
+                except Exception as exc:
+                    logger.warning("Legacy metadata mirror is invalid for %s: %s", novel_id, exc)
+            mirror_chapter = chapter.model_copy(deep=True)
+            chapter_by_index = {
+                item.chapter_index: item for item in mirror_meta.chapters
+            }
+            chapter_by_index[chapter.chapter_index] = mirror_chapter
+            mirror_meta.chapters = sorted(
+                chapter_by_index.values(),
+                key=lambda item: item.chapter_index,
+            )
+            mirror_meta.total_chapters = len(mirror_meta.chapters)
+            mirror_meta.translated_chapters = sum(
+                1 for item in mirror_meta.chapters if item.status == ChapterStatus.COMPLETED
+            )
+            mirror_meta.updated_at = meta.updated_at or datetime.now(timezone.utc).isoformat()
+            data = mirror_meta.model_dump(mode="json")
+            if storage_repo.is_blob_active:
+                storage_repo.upload_json(key, data)
+            storage_repo.local_provider.put_json(key, data)
+
+        self._cache[novel_id] = meta
+        self._summaries_cache = None
+
+    def _save_metadata(self, meta: NovelMetadata, *, include_chapters: bool = True) -> None:
         # 1. Save to Database if backend is dual or postgres
         if settings.structured_storage_backend in ("dual", "postgres"):
             try:
                 with db_session() as session:
-                    LibraryRepository.save_novel(session, meta)
+                    if include_chapters:
+                        LibraryRepository.save_novel(session, meta)
+                    else:
+                        LibraryRepository.save_novel_metadata(session, meta)
                     session.commit()
             except Exception as exc:
                 if settings.structured_storage_backend == "postgres":
@@ -2379,6 +2579,69 @@ class LegacyLibraryService:
         if local_url:
             return local_url
         raise ValueError("Không thể lưu file vào local storage.")
+
+    def _persist_completed_translation(
+        self,
+        meta: NovelMetadata,
+        chapter: ChapterItem,
+        content: str,
+    ) -> None:
+        """Claim the chapter revision before publishing its translation blob.
+
+        The old flow wrote the deterministic ``translated/ch_XXXX.txt`` key
+        and only then attempted the optimistic DB update.  A stale worker
+        could therefore overwrite the winner's file even though its DB write
+        was rejected.  The chapter lock keeps the local worker paths ordered;
+        the repository revision guard remains the source of truth for stale
+        sessions and other processes.
+        """
+        novel_id = meta.novel_id
+        chapter_key = self._chapter_key(novel_id, chapter.chapter_index, is_translated=True)
+        with self._get_novel_lock(novel_id):
+            previous_translation = (
+                chapter.r2_translated_key,
+                chapter.r2_translated_url,
+                chapter.translated_text_preview,
+            )
+            chapter.status = ChapterStatus.COMPLETED
+            chapter.r2_translated_key = chapter_key
+            chapter.translated_text_preview = (
+                (content[:150] + "...") if len(content) > 150 else content
+            )
+            chapter.updated_at = datetime.now(timezone.utc).isoformat()
+            meta.translated_chapters = sum(
+                1 for item in meta.chapters if item.status == ChapterStatus.COMPLETED
+            )
+            meta.updated_at = datetime.now(timezone.utc).isoformat()
+
+            # This conditional write is the publish claim.  A stale worker
+            # raises here and never touches the committed translation key.
+            self._save_chapter_state(meta, chapter)
+            try:
+                translated_url = self._save_raw_file(
+                    chapter_key,
+                    content.encode("utf-8"),
+                    content_type="text/plain; charset=utf-8",
+                )
+            except Exception as exc:
+                chapter.status = ChapterStatus.FAILED
+                (
+                    chapter.r2_translated_key,
+                    chapter.r2_translated_url,
+                    chapter.translated_text_preview,
+                ) = previous_translation
+                chapter.review_error = f"Không thể lưu file bản dịch: {exc}"
+                try:
+                    self._save_chapter_state(meta, chapter)
+                except Exception as persist_error:
+                    logger.warning(
+                        "Không thể lưu trạng thái lỗi sau khi ghi file bản dịch thất bại: %s",
+                        persist_error,
+                    )
+                raise
+
+            chapter.r2_translated_url = translated_url
+            self._save_chapter_state(meta, chapter)
 
     def _delete_raw_file(self, key: str) -> None:
         storage_repo.delete_file(key)

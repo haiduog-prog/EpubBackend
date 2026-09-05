@@ -32,8 +32,19 @@ class ChapterService:
     async def translate(self, novel_id: str, chapter_index: int, **kwargs) -> Any:
         return await self._legacy.translate_chapter(novel_id, chapter_index, **kwargs)
 
-    def apply_translation(self, novel_id: str, chapter_index: int, content: str) -> ChapterItem:
-        return self._legacy.apply_chapter_translation(novel_id, chapter_index, content)
+    def apply_translation(
+        self,
+        novel_id: str,
+        chapter_index: int,
+        content: str,
+        allow_qa_warnings: bool = False,
+    ) -> ChapterItem:
+        return self._legacy.apply_chapter_translation(
+            novel_id,
+            chapter_index,
+            content,
+            allow_qa_warnings=allow_qa_warnings,
+        )
 
     async def scan(self, novel_id: str, **kwargs) -> BookBible:
         return await self._legacy.scan_characters_and_timeline(novel_id, **kwargs)

@@ -61,9 +61,10 @@ class SemanticReviewService:
         translated_text: str,
         book_bible: BookBible,
         model: Optional[str] = None,
+        apply_patches: bool = True,
     ) -> SemanticReviewResult:
         if not settings.gemini_review_enabled:
-            return SemanticReviewResult(translated_text=translated_text, issues=[])
+            return SemanticReviewResult(translated_text=translated_text, issues=[], status="skipped")
 
         reviewer_model = (model or settings.gemini_review_model or "").strip()
         if not reviewer_model.strip():
@@ -123,6 +124,12 @@ class SemanticReviewService:
                 )
 
         patches = list(report.issues or [])
+        if not apply_patches:
+            return SemanticReviewResult(
+                translated_text=translated_text,
+                issues=[self._issue_dict(issue) for issue in patches],
+                status="needs_review" if patches else "passed",
+            )
         if len(patches) > settings.gemini_review_max_issues:
             return SemanticReviewResult(
                 translated_text=translated_text,

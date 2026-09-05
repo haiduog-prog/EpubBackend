@@ -123,6 +123,14 @@ def split_chapter_sections(text: str) -> List[Tuple[Optional[str], str]]:
     return sections
 
 
+def prepare_chapter_translation(text: str) -> Tuple[Optional[str], str]:
+    """Preserve Vietnamese headings; send untranslated CJK headings through AI and QA."""
+    title, body = extract_chapter_title_prefix(text)
+    if title and re.search(r"[\u3400-\u9fff\uf900-\ufaff]", title):
+        return None, text
+    return title, body or text
+
+
 def reattach_chapter_title(
     title_prefix: Optional[str],
     translated_body: str,

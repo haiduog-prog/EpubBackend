@@ -1,94 +1,132 @@
+"""Session-wide isolation for tests.
+
+Settings, the database engine and the storage facade are initialized at
+module-import time, so the temporary roots must be selected first.
+"""
+
+import hashlib
 import os
+import shutil
+import tempfile
+import uuid
 from pathlib import Path
-
-import pytest
-
-from app.config import settings
-from app.core.storage import storage_repo
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-STORAGE_ROOT = PROJECT_ROOT / "storage"
+TEST_ROOT = Path(tempfile.mkdtemp(prefix="epub-backend-pytest-"))
+TEST_STORAGE_ROOT = TEST_ROOT / "storage"
+TEST_DATABASE = TEST_ROOT / "data" / "local_db.sqlite3"
+
+# These assignments intentionally override accidental .env values in tests.
+os.environ["APP_ENV"] = "test"
+os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DATABASE.as_posix()}"
+os.environ["STORAGE_PROVIDER"] = "local"
+os.environ["LOCAL_STORAGE_ROOT"] = str(TEST_STORAGE_ROOT)
+os.environ["STRUCTURED_STORAGE_BACKEND"] = "dual"
+os.environ["STRUCTURED_STORAGE_READ_SOURCE"] = "legacy"
+os.environ["GOOGLE_DRIVE_SYNC_ENABLED"] = "false"
+
+import pytest
+
+from app.db.base import Base
+import app.db.session as db_session_module
+from app.db.session import engine
+from app.config import settings
+
+# Register every ORM model before collection imports app.main (which hydrates
+# the character-profile service at import time).
+from app.db.models import jobs, reader  # noqa: F401,E402
+from app.modules.book_bible.persistence import legacy_models as book_bible_models  # noqa: F401,E402
+from app.modules.character_profiles.persistence import legacy_models as profile_models  # noqa: F401,E402
+from app.modules.library.persistence import legacy_models as library_models  # noqa: F401,E402
+from app.core.storage import storage_repo
+
+TEST_STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
+Base.metadata.create_all(bind=engine)
 
 
-def _snapshot_tree(root: Path) -> set[str]:
-    if not root.is_dir():
-        return set()
-    return {path.relative_to(root).as_posix() for path in root.rglob("*")}
+STORAGE_ROOT = TEST_STORAGE_ROOT
 
 
-def _remove_new_tree_entries(root: Path, initial_paths: set[str], existed_before: bool) -> None:
-    """Remove only entries created after the current pytest session started."""
-    if not root.exists():
-        return
-    current_paths = sorted(root.rglob("*"), key=lambda path: len(path.parts), reverse=True)
-    for path in current_paths:
-        relative = path.relative_to(root).as_posix()
-        if relative in initial_paths:
-            continue
-        try:
-            if path.is_file() or path.is_symlink():
-                path.unlink()
-            elif path.is_dir():
-                path.rmdir()
-        except OSError:
-            # A directory containing a pre-existing entry is intentionally kept.
-            pass
-    # Disposable roots should not linger as empty folders after a green run.
-    if root.is_dir() and (not existed_before or root.name in {"test", "outputs", "data"}):
-        try:
-            root.rmdir()
-        except OSError:
-            pass
+def _snapshot_files(*roots: Path) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for root in roots:
+        if root.is_file():
+            paths = [root]
+        elif root.is_dir():
+            paths = [p for p in root.rglob("*") if p.is_file()]
+        else:
+            paths = []
+        for path in paths:
+            result[str(path.resolve())] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return result
+
+
+ORIGINAL_DATA_SNAPSHOT = _snapshot_files(
+    PROJECT_ROOT / "storage" / "novels",
+    PROJECT_ROOT / "storage" / "uploads",
+    PROJECT_ROOT / "data" / "local_db.sqlite3",
+)
 
 
 @pytest.fixture(scope="session", autouse=True)
-def cleanup_test_storage_after_success(request):
-    """Clean storage and database entries created during the test session (even on failed tests)."""
-    tracked_roots = (
-        STORAGE_ROOT / "novels",
-        STORAGE_ROOT / "test",
-        STORAGE_ROOT / "outputs",
-        STORAGE_ROOT / "data",
-    )
-    snapshots = {
-        root: (root.is_dir(), _snapshot_tree(root))
-        for root in tracked_roots
-    }
+def isolated_database_and_storage(request):
+    """Create schema in the unique session DB and clean only that root."""
 
+    TEST_STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
+    Base.metadata.create_all(bind=engine)
     yield
 
-    # Clean up test artifacts by default, even on failure (false),
-    # unless KEEP_TEST_ARTIFACTS_ON_FAILURE=1 is explicitly set for debugging.
+    assert _snapshot_files(
+        PROJECT_ROOT / "storage" / "novels",
+        PROJECT_ROOT / "storage" / "uploads",
+        PROJECT_ROOT / "data" / "local_db.sqlite3",
+    ) == ORIGINAL_DATA_SNAPSHOT, "Tests modified pre-existing production data"
+
     keep_on_failure = os.getenv("KEEP_TEST_ARTIFACTS_ON_FAILURE", "false").lower() in {"1", "true", "yes"}
-    should_cleanup = not keep_on_failure or (getattr(request.session, "testsfailed", 0) == 0)
-
-    if should_cleanup:
-        for root, (existed_before, initial_paths) in snapshots.items():
-            _remove_new_tree_entries(root, initial_paths, existed_before)
-
-        # Database cleanup: purge test novels and jobs created during testing
-        try:
-            from app.db.session import db_session
-            from app.modules.library.persistence.legacy_models import NovelModel, ChapterModel, EpubBuildJobModel
-            with db_session() as session:
-                session.query(EpubBuildJobModel).filter(EpubBuildJobModel.novel_id.like("test-%")).delete(synchronize_session=False)
-                session.query(ChapterModel).filter(ChapterModel.novel_id.like("test-%")).delete(synchronize_session=False)
-                session.query(NovelModel).filter(NovelModel.novel_id.like("test-%")).delete(synchronize_session=False)
-                session.commit()
-        except Exception:
-            pass
+    if not keep_on_failure or getattr(request.session, "testsfailed", 0) == 0:
+        engine.dispose()
+        shutil.rmtree(TEST_ROOT, ignore_errors=True)
 
 
 @pytest.fixture(autouse=True)
 def isolate_test_environment(monkeypatch):
-    orig_r2_enabled = storage_repo.r2_enabled
-    orig_r2_client = storage_repo.r2_client
+    # Some legacy tests deliberately call reset_db_engine() to exercise
+    # reconfiguration.  Give every test its own file and re-anchor the
+    # process-global session so one test cannot leak a dropped/invalid
+    # database into the next test.
+    test_token = uuid.uuid4().hex
+    test_database = TEST_ROOT / "databases" / f"{test_token}.sqlite3"
+    test_storage_root = TEST_ROOT / "storage" / test_token
+    test_database.parent.mkdir(parents=True, exist_ok=True)
+    test_storage_root.mkdir(parents=True, exist_ok=True)
+    test_db_url = f"sqlite:///{test_database.as_posix()}"
 
+    current_engine = db_session_module.engine
+    if current_engine is not engine:
+        current_engine.dispose()
+    db_session_module.reset_db_engine(test_db_url)
+    monkeypatch.setattr(settings, "database_url", test_db_url)
+    monkeypatch.setattr(settings, "storage_provider", "local")
+    monkeypatch.setattr(settings, "local_storage_root", str(test_storage_root))
+    monkeypatch.setattr(settings, "structured_storage_backend", "dual")
+    monkeypatch.setattr(settings, "structured_storage_read_source", "legacy")
+
+    Base.metadata.create_all(bind=db_session_module.engine)
+    original_provider = storage_repo.local_provider
+    original_r2_enabled = storage_repo.r2_enabled
+    original_r2_client = storage_repo.r2_client
+
+    from app.infrastructure.storage.legacy_storage import LocalStorageProvider
+
+    storage_repo.local_provider = LocalStorageProvider(str(test_storage_root))
     storage_repo.r2_enabled = False
     storage_repo.r2_client = None
-
     yield
 
-    storage_repo.r2_enabled = orig_r2_enabled
-    storage_repo.r2_client = orig_r2_client
+    current_engine = db_session_module.engine
+    if current_engine is not engine:
+        current_engine.dispose()
+    storage_repo.local_provider = original_provider
+    storage_repo.r2_enabled = original_r2_enabled
+    storage_repo.r2_client = original_r2_client

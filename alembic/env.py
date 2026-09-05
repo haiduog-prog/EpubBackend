@@ -21,8 +21,15 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 
+def configured_database_url() -> str:
+    configured_url = config.get_main_option("sqlalchemy.url")
+    if configured_url and not configured_url.startswith("driver://"):
+        return configured_url
+    return settings.database_url
+
+
 def run_migrations_offline() -> None:
-    url = get_engine_url(settings.database_url)
+    url = get_engine_url(configured_database_url())
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -35,7 +42,7 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    db_url = get_engine_url(settings.database_url)
+    db_url = get_engine_url(configured_database_url())
     configuration = config.get_section(config.config_ini_section, {})
     configuration["sqlalchemy.url"] = db_url
 

@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from app.infrastructure.storage.facade import storage_repo
 from app.llm import create_llm_client
+from app.llm.base import close_llm_client
 from app.schemas.book_bible import BookBible
 from app.schemas.translation import InputType, JobStatusEnum, QAIssue, TranslationJob
 from app.modules.book_bible.application.facade import BookBibleService
@@ -37,9 +38,7 @@ def _provider_job_error(error: GeminiProviderError) -> str:
         message += f" Thu lai sau khoang {max(1, ceil(error.retry_after_seconds))} giay."
     return message
 
-STORAGE_BASE_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "storage"
-)
+STORAGE_BASE_DIR = os.path.abspath(settings.local_storage_root)
 UPLOAD_DIR = os.path.join(STORAGE_BASE_DIR, "uploads")
 OUTPUT_DIR = os.path.join(STORAGE_BASE_DIR, "outputs")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -97,6 +96,7 @@ async def run_translation_background_job(
     storage_repo.save_job(job)
     last_persisted_progress = -1.0
     last_persisted_step = ""
+    llm_client = None
     try:
         llm_client = create_llm_client(provider=provider, api_key=api_key, model=model)
         pipeline = TranslationPipelineService(llm_client)
@@ -116,7 +116,12 @@ async def run_translation_background_job(
         def on_bible_updated(updated_bible: BookBible):
             storage_repo.save_bible(job_id, updated_bible)
 
-        bible = BookBible(novel_id=novel_id or "default")
+        bible_key = job.novel_id or job_id
+        existing_bible = storage_repo.get_bible(bible_key)
+        bible = (
+            existing_bible.model_copy(deep=True)
+            if existing_bible else BookBible(novel_id=job.novel_id or "default")
+        )
         if input_type == InputType.TXT:
             bible = await pipeline.translate_txt_file(
                 input_path=input_file_path,
@@ -163,6 +168,7 @@ async def run_translation_background_job(
         job.current_step = f"Loi: {exc}"
         storage_repo.save_job(job)
     finally:
+        await close_llm_client(llm_client, logger=logger, context=f"translation job {job_id}")
         _running_jobs.discard(job_id)
 
 
@@ -216,6 +222,7 @@ async def translate_text_direct_endpoint(
     prov = req.provider or x_provider or settings.default_provider
     mod = req.model or x_model
 
+    llm_client = None
     try:
         detected_novel_id = None
         if not req.novel_id:
@@ -256,7 +263,7 @@ async def translate_text_direct_endpoint(
                 chapter_id=req.chapter_id,
                 model=mod,
             )
-            storage_repo.save_bible(novel_key, updated_bible)
+            updated_bible = storage_repo.save_bible(novel_key, updated_bible)
             qa_issues = pipeline.last_quality_report.issues
             if not qa_issues:
                 direct_translation_cache.put(
@@ -318,6 +325,8 @@ async def translate_text_direct_endpoint(
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Loi khi dich AI: {exc}")
+    finally:
+        await close_llm_client(llm_client, logger=logger, context=f"direct translation {novel_key if 'novel_key' in locals() else 'unknown'}")
 
 @router.post("/file", response_model=TranslationJob)
 async def translate_file_endpoint(

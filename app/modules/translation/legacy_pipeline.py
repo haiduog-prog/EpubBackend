@@ -9,7 +9,7 @@ from app.parsers.epub_parser import EPUBParser
 from app.parsers.txt_chunker import TXTChunker
 from app.parsers.text_sanitizer import (
     clean_raw_text,
-    extract_chapter_title_prefix,
+    prepare_chapter_translation,
     reattach_chapter_title,
     split_chapter_sections,
 )
@@ -146,8 +146,7 @@ class LegacyTranslationPipelineService:
 
         # Proactively sanitize converter watermarks & separate chapter title
         cleaned_text = clean_raw_text(text)
-        title_prefix, body_text = extract_chapter_title_prefix(cleaned_text)
-        work_text = body_text if body_text else cleaned_text
+        title_prefix, work_text = prepare_chapter_translation(cleaned_text)
 
         bible = await self.extract_initial_book_bible(
             work_text,
@@ -223,10 +222,16 @@ class LegacyTranslationPipelineService:
         work_units = []
         titled_chapter = 0
         for section_index, (title, body) in enumerate(sections):
-            section_chunks = TXTChunker().chunk_text(body)
+            section_has_title = bool(title)
+            if title:
+                preserved_title, section_text = prepare_chapter_translation(f"{title}\n\n{body}")
+                title = preserved_title
+            else:
+                section_text = body
+            section_chunks = TXTChunker().chunk_text(section_text)
             if not section_chunks:
                 continue
-            if has_titles and title:
+            if has_titles and section_has_title:
                 section_chapter_index = chapter_index_offset + titled_chapter
                 titled_chapter += 1
             else:
@@ -400,16 +405,36 @@ class LegacyTranslationPipelineService:
                     html_kwargs["model"] = model
                 batch_translations = await self.llm_client.translate_html_json(**html_kwargs)
                 translations_by_id = {item.id: item for item in batch_translations}
+                expected_ids = {item.id for item in batch_items}
+                if set(translations_by_id) != expected_ids or len(batch_translations) != len(batch_items):
+                    raise StructuredOutputError(
+                        "HTML translation output không khớp tập node đầu vào.",
+                        operation="translate_epub_file",
+                    )
                 for source_item in batch_items:
-                    translation = translations_by_id.get(
-                        source_item.id,
-                        HTMLTranslationItem(id=source_item.id, text_vi=source_item.text),
+                    translation = translations_by_id.get(source_item.id)
+                    if translation is None or not translation.text_vi.strip():
+                        raise StructuredOutputError(
+                            f"HTML translation thiếu node {source_item.id}.",
+                            operation="translate_epub_file",
+                        )
+                    protected_translation, marker_tokens = HTMLMerger.protect_markers(
+                        translation.text_vi
                     )
                     checked = await self.qa_service.correct_and_recheck(
                         source_item.text,
-                        translation.text_vi,
+                        protected_translation,
                         filtered_bible,
                         model=model,
+                    )
+                    checked_text = HTMLMerger.restore_markers(
+                        checked.translated_text,
+                        marker_tokens,
+                    )
+                    checked = TranslationQualityResult(
+                        translated_text=checked_text,
+                        report=checked.report,
+                        correction_attempted=checked.correction_attempted,
                     )
                     self._record_quality_result(checked)
                     translations.append(

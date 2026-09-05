@@ -635,8 +635,8 @@ class R2StorageProvider(BaseStorageProvider):
 class LocalStorageProvider(BaseStorageProvider):
     """Fallback lưu trữ trên ổ đĩa cục bộ (thư mục storage/)."""
 
-    def __init__(self, base_dir: str = "storage"):
-        self.base_dir = base_dir
+    def __init__(self, base_dir: Optional[str] = None):
+        self.base_dir = base_dir if base_dir is not None else settings.local_storage_root
 
     @staticmethod
     def _safe_key(object_name: str, allow_empty: bool = False) -> str:
@@ -1214,11 +1214,11 @@ class StorageRepository:
     def _merge_full_bible(existing: Optional[BookBible], incoming: BookBible) -> BookBible:
         if existing is None:
             result = incoming.model_copy(deep=True)
+            result.bible_revision = max(1, result.bible_revision)
             return BookBibleService.ensure_timeline(result)
         target = existing.model_copy(deep=True)
         if target.novel_id == "default" and incoming.novel_id != "default":
             target.novel_id = incoming.novel_id
-        target = BookBibleService.merge_delta(target, StorageRepository._as_delta(incoming))
         observation_index = {
             item.observation_id: index
             for index, item in enumerate(target.address_observations)
@@ -1229,6 +1229,23 @@ class StorageRepository:
             else:
                 target.address_observations.append(item.model_copy(deep=True))
                 observation_index[item.observation_id] = len(target.address_observations) - 1
+        # Merge timeline metadata before materialized address terms, otherwise
+        # those terms can be mistaken for undated legacy observations.
+        target = BookBibleService.merge_delta(target, StorageRepository._as_delta(incoming))
+        target = BookBibleRepository._overlay_snapshot_entities(target, incoming)
+        # A full snapshot carries the caller's explicit style/source changes.
+        # Only overlay non-default values so a partial snapshot cannot reset a
+        # previously configured Book Bible.
+        default_style = type(incoming.style_guide)()
+        for field in type(incoming.style_guide).model_fields:
+            value = getattr(incoming.style_guide, field)
+            if value != getattr(default_style, field):
+                setattr(target.style_guide, field, value)
+        default_source = type(incoming.source_profile)()
+        for field in type(incoming.source_profile).model_fields:
+            value = getattr(incoming.source_profile, field)
+            if value != getattr(default_source, field):
+                setattr(target.source_profile, field, value)
         change_index = {item.change_id: index for index, item in enumerate(target.pending_changes)}
         for item in incoming.pending_changes:
             if item.change_id in change_index:
@@ -1237,10 +1254,10 @@ class StorageRepository:
                 target.pending_changes.append(item.model_copy(deep=True))
                 change_index[item.change_id] = len(target.pending_changes) - 1
         target.schema_version = max(target.schema_version, incoming.schema_version)
-        target.bible_revision = max(target.bible_revision, incoming.bible_revision)
+        target.bible_revision = max(target.bible_revision + 1, incoming.bible_revision)
         return BookBibleService.ensure_timeline(target)
 
-    def save_bible(self, job_id: str, bible: BookBible, *, replace: bool = False) -> None:
+    def save_bible(self, job_id: str, bible: BookBible, *, replace: bool = False) -> BookBible:
         if not hasattr(self, "_bibles"):
             self._bibles = {}
         started = time.perf_counter()
@@ -1265,7 +1282,6 @@ class StorageRepository:
                 if replace
                 else self._merge_full_bible(existing, bible)
             )
-            self._cache_bible(job_id, doc_key, merged)
             logger.info(
                 "[TIMING] stage=book_bible_merge_storage.end novel=%s elapsed_ms=%.1f "
                 "characters=%d observations=%d",
@@ -1279,13 +1295,16 @@ class StorageRepository:
             if settings.structured_storage_backend in ("dual", "postgres"):
                 try:
                     with db_session() as session:
-                        BookBibleRepository.save_book_bible(session, merged)
+                        merged = BookBibleRepository.save_book_bible(session, merged, replace=replace)
                         session.commit()
                 except Exception as exc:
                     if settings.structured_storage_backend == "postgres":
                         logger.error("Failed to persist Book Bible to Database in postgres mode: %s", exc)
                         raise exc
                     logger.warning("Failed to persist Book Bible to Database in dual mode: %s", exc)
+
+            # Publish the committed revision only after the transaction above.
+            self._cache_bible(job_id, doc_key, merged)
 
             # 2. Save to Blob Storage / Firestore if legacy or dual
             if settings.structured_storage_backend in ("legacy", "dual"):
@@ -1309,6 +1328,7 @@ class StorageRepository:
                 doc_key,
                 (time.perf_counter() - started) * 1000,
             )
+            return merged
 
     def merge_bible_delta(
         self,
@@ -1336,7 +1356,6 @@ class StorageRepository:
                 novel_id=default_novel_id or job_or_novel_id
             )
             merged = BookBibleService.merge_delta(target, delta)
-            self._cache_bible(job_or_novel_id, job_or_novel_id, merged)
 
             if settings.structured_storage_backend in ("dual", "postgres"):
                 try:
@@ -1348,6 +1367,8 @@ class StorageRepository:
                         logger.error("Failed to merge Book Bible delta in DB (postgres mode): %s", exc)
                         raise exc
                     logger.warning("Failed to merge Book Bible delta in DB (dual mode): %s", exc)
+
+            self._cache_bible(job_or_novel_id, job_or_novel_id, merged)
 
             if settings.structured_storage_backend in ("legacy", "dual"):
                 if self.is_blob_active:
@@ -1432,13 +1453,21 @@ class StorageRepository:
                             if character.vi_name and character.vi_name not in character.aliases:
                                 character.aliases.append(character.vi_name)
                             character.vi_name = change.proposed_value
+                            character.forbidden_variants = [
+                                variant for variant in character.forbidden_variants
+                                if BookBibleService._key(variant) != BookBibleService._key(change.proposed_value)
+                            ]
                     for term in bible.terms:
                         if term.original_name == change.target_id or getattr(term, "term_id", None) == change.target_id:
                             if term.vi_name and term.vi_name not in getattr(term, "aliases", []):
                                 term.aliases.append(term.vi_name)
                             term.vi_name = change.proposed_value
+                            term.forbidden_variants = [
+                                variant for variant in term.forbidden_variants
+                                if BookBibleService._key(variant) != BookBibleService._key(change.proposed_value)
+                            ]
             bible.bible_revision += 1
-            self.save_bible(novel_id, bible)
+            bible = self.save_bible(novel_id, bible)
             return bible
 
     def list_jobs(self) -> List[TranslationJob]:

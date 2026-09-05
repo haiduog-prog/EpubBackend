@@ -58,6 +58,8 @@ def _same(left: Optional[Dict[str, Any]], right: Optional[Dict[str, Any]]) -> bo
 
 
 def _safe_key(key: str) -> str:
+    if not isinstance(key, str) or "\\" in key:
+        raise GoogleDriveSyncError("ERROR", f"Sync key không hợp lệ: {key}")
     path = PurePosixPath(key)
     if not path.parts or any(part in {"", ".", ".."} for part in path.parts):
         raise GoogleDriveSyncError("ERROR", f"Sync key không hợp lệ: {key}")
@@ -101,6 +103,31 @@ def _metadata(path: Path, database: bool = False) -> Dict[str, Any]:
     if database:
         result["content_sha256"] = _sqlite_content_hash(path)
     return result
+
+
+def _copy_stable_file(source: Path, destination: Path, attempts: int = 3) -> Dict[str, Any]:
+    """Copy a file only when its bytes stay unchanged during the copy."""
+    last_error: Optional[Exception] = None
+    for _ in range(attempts):
+        try:
+            before = source.stat()
+            before_hash = _hash_file(source)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, destination)
+            after = source.stat()
+            after_hash = _hash_file(source)
+            if (
+                before.st_size == after.st_size
+                and before.st_mtime_ns == after.st_mtime_ns
+                and before_hash == after_hash
+                and _hash_file(destination) == before_hash
+            ):
+                return _metadata(destination)
+            destination.unlink(missing_ok=True)
+        except OSError as exc:
+            last_error = exc
+            destination.unlink(missing_ok=True)
+    raise GoogleDriveSyncError("ERROR", f"File thay đổi trong lúc tạo snapshot: {source}") from last_error
 
 
 def _write_json(path: Path, payload: Dict[str, Any]) -> None:
@@ -339,8 +366,9 @@ class LocalSnapshotStore:
                 if not path.is_file() or path.name.endswith(".syncing"):
                     continue
                 key = f"{bucket}/{path.relative_to(bucket_root).as_posix()}"
-                files[key] = path
-                storage[key] = _metadata(path)
+                snapshot_path = temporary_root / "storage" / key
+                files[key] = snapshot_path
+                storage[key] = _copy_stable_file(path, snapshot_path)
 
         database = self.data_root / "local_db.sqlite3"
         database_meta = None
@@ -392,8 +420,12 @@ class GoogleDriveSyncService:
             manifest = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise GoogleDriveSyncError("ERROR", f"manifest.json trên Drive không hợp lệ: {exc}") from exc
-        if manifest.get("schema_version") != SCHEMA_VERSION or not isinstance(manifest.get("storage"), dict):
+        if not isinstance(manifest, dict) or manifest.get("schema_version") != SCHEMA_VERSION or not isinstance(manifest.get("storage"), dict):
             raise GoogleDriveSyncError("ERROR", "manifest.json không tương thích.")
+        for key, metadata in manifest["storage"].items():
+            if not isinstance(key, str) or not isinstance(metadata, dict):
+                raise GoogleDriveSyncError("ERROR", "manifest.json chứa entry không hợp lệ.")
+            _safe_key(GoogleDriveSyncService._canonical_storage_key(key))
         return manifest
 
     @staticmethod
@@ -419,9 +451,18 @@ class GoogleDriveSyncService:
 
     @staticmethod
     def _to_local_target(store: LocalSnapshotStore, key: str) -> Path:
-        if key == DATABASE_KEY or key.startswith("database/"):
-            return store.data_root / "local_db.sqlite3"
-        return store.storage_root / key.removeprefix("storage/")
+        safe_key = _safe_key(key)
+        if safe_key == DATABASE_KEY or safe_key.startswith("database/"):
+            target = store.data_root / "local_db.sqlite3"
+            root = store.data_root.resolve()
+        else:
+            target = store.storage_root / safe_key.removeprefix("storage/")
+            root = store.storage_root.resolve()
+        try:
+            target.resolve().relative_to(root)
+        except ValueError as exc:
+            raise GoogleDriveSyncError("ERROR", f"Sync target ngoài phạm vi cho phép: {key}") from exc
+        return target
 
     def _compare(self, local: Dict[str, Dict[str, Any]], remote: Dict[str, Dict[str, Any]], baseline: Dict[str, Dict[str, Any]]) -> Dict[str, list[str]]:
         result = {"upload": [], "download": [], "local_deletions": [], "remote_deletions": [], "conflicts": []}

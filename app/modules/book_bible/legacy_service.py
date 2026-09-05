@@ -34,7 +34,7 @@ class LegacyBookBibleService:
         return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:20]
 
     @staticmethod
-    def ensure_timeline(bible: BookBible) -> BookBible:
+    def ensure_timeline(bible: BookBible, chapter_index: Optional[int] = None) -> BookBible:
         for character in bible.characters:
             if not character.character_id:
                 character.character_id = BookBibleService.character_id(
@@ -44,6 +44,30 @@ class LegacyBookBibleService:
         for character in bible.characters:
             for index, term in enumerate(character.address_terms):
                 if not is_valid_address_term(term):
+                    continue
+                # A materialized address term may already have a dated or pending
+                # observation. Never turn it back into an undated legacy rule.
+                counterpart_ids = {
+                    c.character_id for c in bible.characters
+                    if any(BookBibleService._key(name) == BookBibleService._key(term.with_person)
+                           for name in [c.original_name, c.vi_name, *c.aliases] if name)
+                }
+                counterpart_names = {BookBibleService._key(term.with_person)}
+                for counterpart in bible.characters:
+                    if counterpart.character_id in counterpart_ids:
+                        counterpart_names.update(
+                            BookBibleService._key(name)
+                            for name in [counterpart.original_name, counterpart.vi_name, *counterpart.aliases]
+                            if name
+                        )
+                if any(
+                    observation.character_id == character.character_id
+                    and observation.self_term == term.self_term
+                    and observation.other_term == term.other_term
+                    and (BookBibleService._key(observation.counterpart_text) in counterpart_names
+                         or observation.counterpart_id in counterpart_ids)
+                    for observation in bible.address_observations
+                ):
                     continue
                 observation_id = hashlib.sha256(
                     f"legacy:{character.character_id}:{index}:{term.with_person}:{term.self_term}:{term.other_term}".encode(
@@ -61,7 +85,8 @@ class LegacyBookBibleService:
                         other_term=term.other_term,
                         context=term.context,
                         resolution="confirmed",
-                        source="legacy",
+                        source="legacy" if chapter_index is None else "llm",
+                        chapter_index=chapter_index,
                         confidence=1.0,
                     )
                 )
@@ -123,25 +148,27 @@ class LegacyBookBibleService:
                     if existing.locked:
                         if new_char.vi_name not in existing.forbidden_variants:
                             existing.forbidden_variants.append(new_char.vi_name)
-                        change_id = f"change-char-{BookBibleService._key(existing.original_name)}-{chapter_index or 0}"
-                        if not any(c.change_id == change_id for c in bible.pending_changes):
-                            bible.pending_changes.append(
-                                PendingBibleChange(
-                                    change_id=change_id,
-                                    change_type="canonical_correction",
-                                    target_id=existing.character_id or existing.original_name,
-                                    old_value=existing.vi_name,
-                                    proposed_value=new_char.vi_name,
-                                    evidence=f"Chương {chapter_index or 0}",
-                                    confidence=0.8,
-                                    chapter_index=chapter_index,
-                                    status="pending",
-                                )
-                            )
                     else:
                         # Character canonical vi_name is preserved, alternative name added to aliases
                         if new_char.vi_name not in existing.aliases:
                             existing.aliases.append(new_char.vi_name)
+
+                if (new_char.vi_name and existing.vi_name
+                        and BookBibleService._key(new_char.vi_name) != BookBibleService._key(existing.vi_name)):
+                    change_id = hashlib.sha256(
+                        f"canonical:{existing.character_id}:{new_char.vi_name}".encode("utf-8")
+                    ).hexdigest()[:24]
+                    if not any(c.change_id == change_id for c in bible.pending_changes):
+                        bible.pending_changes.append(PendingBibleChange(
+                            change_id=change_id,
+                            change_type="canonical_correction",
+                            target_id=existing.character_id,
+                            old_value=existing.vi_name,
+                            proposed_value=new_char.vi_name,
+                            evidence=f"Chương {chapter_index or 0}",
+                            confidence=0.8 if existing.locked else 0.0,
+                            chapter_index=chapter_index,
+                        ))
 
                 if new_char.role and not existing.role:
                     existing.role = new_char.role
@@ -346,7 +373,7 @@ class LegacyBookBibleService:
                 bible.source_profile.mode = delta.source_profile.mode
             if delta.source_profile.language:
                 bible.source_profile.language = delta.source_profile.language
-        return BookBibleService.ensure_timeline(bible)
+        return BookBibleService.ensure_timeline(bible, chapter_index)
 
     @staticmethod
     def get_known_names_index(bible: BookBible) -> str:
@@ -389,8 +416,10 @@ class LegacyBookBibleService:
         ]
         filtered_terms = [
             term for term in bible.terms
-            if BookBibleService._key(term.original_name) in text_key
-            or (term.vi_name and BookBibleService._key(term.vi_name) in text_key)
+            if any(
+                BookBibleService._key(name) and BookBibleService._key(name) in text_key
+                for name in [term.original_name, term.vi_name, *term.aliases]
+            )
         ]
         visible_ids = {item.character_id for item in filtered_chars}
         observations = [

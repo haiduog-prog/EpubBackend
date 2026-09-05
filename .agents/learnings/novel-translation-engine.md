@@ -1,11 +1,21 @@
 # Novel Translation Engine
 
 > Tổng hợp kiến thức về hệ thống dịch truyện thuần Việt (v2) hỗ trợ EPUB/HTML/TXT với Structured Outputs, Prompt Caching và Decoupled LLM Providers.
-> Cập nhật lần cuối: 2026-09-04
+> Cập nhật lần cuối: 2026-09-05
 
 ---
 
 ## Architecture
+
+### Local SQLite Chapter-only Commit Contract
+- **Ngày**: 2026-09-05
+- **Chi tiết**: Luồng dịch chỉ ghi chapter đang thay đổi. Repository dùng `UPDATE ... WHERE revision = expected_revision` và tính lại aggregate chapter trong cùng transaction; legacy `metadata.json` merge theo `chapter_index` từ snapshot mới nhất thay vì ghi đè toàn bộ snapshot của caller. Nhờ vậy các worker dịch khác chương không mất nhau, còn worker stale bị từ chối rõ ràng.
+- **Files liên quan**: `app/modules/library/persistence/legacy_repository.py`, `app/modules/library/legacy_service.py`
+
+### Revision-aware Book Bible Snapshot Merge
+- **Ngày**: 2026-09-05
+- **Chi tiết**: `bible_revision` tăng theo revision đã commit. Full snapshot chỉ được thay thế entity/metadata hiện có khi revision incoming mới hơn; snapshot cũ chỉ đóng góp entity mới, không rollback canonical name, observation hoặc review state của Book Bible hiện tại.
+- **Files liên quan**: `app/modules/book_bible/persistence/legacy_repository.py`, `app/infrastructure/cache/direct_translation.py`
 
 ### Actionable Draft Review System with 1-Click Fix Contract
 - **Ngày**: 2026-09-04
@@ -154,6 +164,27 @@
 - **Files liên quan**: `app/modules/library/api.py`, `app/modules/library/legacy_service.py`, `app/static/index.html`
 
 ## Bugs & Solutions
+
+### Batch Translation Stale Worker Overwrote the Winning File
+- **Ngày**: 2026-09-05
+- **Vấn đề**: Dịch từng chương thành công nhưng chạy nhiều chương tạo lỗi/conflict; request stale vẫn có thể ghi `translated/ch_XXXX.txt` trước khi DB từ chối revision.
+- **Root cause**: SELECT và UPDATE không có điều kiện revision; file storage được ghi trước optimistic DB save.
+- **Fix**: Conditional UPDATE tại repository; service claim chapter revision trước khi ghi file, serialize local worker theo truyện, và giữ metadata mirror theo chapter. Conflict xảy ra trước `_save_raw_file`, bản dịch cũ không bị ghi đè.
+- **Files liên quan**: `app/modules/library/persistence/legacy_repository.py`, `app/modules/library/legacy_service.py`
+
+### Book Bible Snapshot Rolled Back a New Canonical Term
+- **Ngày**: 2026-09-05
+- **Vấn đề**: Snapshot cũ sau khi merge vẫn làm tên thuật ngữ/nhân vật mới quay lại tên cũ dù revision tiếp tục tăng.
+- **Root cause**: `_overlay_snapshot_entities` coi mọi item trong full snapshot là authoritative, không xét revision nguồn.
+- **Fix**: Chỉ overlay entity, metadata, observation và pending state khi incoming snapshot mới hơn revision DB; snapshot stale vẫn được merge append-only cho entity mới.
+- **Files liên quan**: `app/modules/book_bible/persistence/legacy_repository.py`
+
+### HTML Marker `close` Bị QA Nhận Nhầm Là Từ Ngoại Lai
+- **Ngày**: 2026-09-05
+- **Vấn đề**: Bản dịch HTML giữ đúng marker inline nhưng QA báo từ ngoại lai `close`, khiến EPUB hợp lệ bị chặn hoặc correction làm hỏng marker.
+- **Root cause**: Marker dạng `⟦html:node_1:close:1⟧` đi thẳng qua foreign-token regex.
+- **Fix**: Đổi marker sang token private-use khi QA/correction, khôi phục strict và từ chối nếu token bị mất, lặp hoặc xuất hiện marker lạ trước khi dựng lại HTML.
+- **Files liên quan**: `app/parsers/html_merger.py`, `app/modules/translation/legacy_pipeline.py`
 
 ### Pronoun Drift in Cultivation Dialogue ("chúng em / bọn em / anh em")
 - **Ngày**: 2026-09-04
@@ -389,6 +420,15 @@ esponse_schema vào 	ypes.GenerateContentConfig, bổ sung regex dọn dẹp tra
 
 ## How-To
 
+### Kiểm thử an toàn lỗi dịch hàng loạt trên local
+- **Ngày**: 2026-09-05
+- **Bước thực hiện**:
+  1. Để `tests/conftest.py` tạo SQLite và storage path duy nhất cho session; không chạy test trên `data/local_db.sqlite3` hay `storage/novels` thật.
+  2. Dùng hai kết nối cùng đọc một chapter, rồi ghi với cùng `expected_revision`; kết quả phải là một `saved` và một `conflict`.
+  3. Test snapshot Book Bible cũ không được rollback canonical name và test HTML marker phải round-trip đúng.
+  4. Chạy pytest với `--basetemp` trong thư mục tạm được cấp quyền, sau đó kiểm tra hash dữ liệu production và `git diff --check`.
+- **Files liên quan**: `tests/conftest.py`, `tests/test_local_database_translation_regressions.py`
+
 ### Vá và Chuẩn Hóa Tự Động Các Chương Dịch Cũ Bị Lỗi
 - **Ngày**: 2026-09-03
 - **Bước thực hiện**:
@@ -537,6 +577,16 @@ esponse_schema vào 	ypes.GenerateContentConfig, bổ sung regex dọn dẹp tra
 - **Files liên quan**: `scripts/repair_cjk_address_terms.py`, `app/infrastructure/storage/legacy_storage.py`, `app/infrastructure/cache/direct_translation.py`
 
 ## Patterns
+
+### Claim-before-Publish for Chapter Translation
+- **Ngày**: 2026-09-05
+- **Chi tiết**: Với artifact có key ổn định, hãy commit quyền sở hữu bằng optimistic revision trước khi ghi blob. Giữ khóa local ở phạm vi truyện để các worker trong process đi theo thứ tự; repository conditional update vẫn là rào chắn cuối cho session/process stale. Nếu ghi blob thất bại, khôi phục pointer bản dịch trước đó và lưu trạng thái lỗi mà không che exception chính.
+- **Files liên quan**: `app/modules/library/legacy_service.py`, `app/modules/library/persistence/legacy_repository.py`
+
+### Strict Protect/Restore Boundary for Structured HTML
+- **Ngày**: 2026-09-05
+- **Chi tiết**: Tách text hiển thị khỏi marker cấu trúc: trước QA/correction thay marker bằng token private-use không chứa ASCII; sau correction yêu cầu mỗi token xuất hiện đúng một lần và không có marker ngoài danh sách. Chỉ text đã restore mới được đưa vào `reconstruct_html(strict_markers=True)`.
+- **Files liên quan**: `app/parsers/html_merger.py`, `app/modules/translation/legacy_pipeline.py`
 
 ### One-Click Draft Fix Application Pattern
 - **Ngày**: 2026-09-04

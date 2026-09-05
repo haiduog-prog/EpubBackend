@@ -51,7 +51,7 @@ app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__
 
 
 LOCAL_APP_ENVS = {"development", "dev", "local", "test"}
-DEFAULT_STORAGE_DIR = Path(__file__).resolve().parent.parent / "storage"
+DEFAULT_STORAGE_DIR = Path(settings.local_storage_root)
 
 
 def _mount_local_storage(target_app: FastAPI, storage_dir: Path = DEFAULT_STORAGE_DIR) -> bool:

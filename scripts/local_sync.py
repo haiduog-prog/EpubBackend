@@ -429,7 +429,7 @@ def check(project_root: Path, sync_root: Path) -> Dict[str, Any]:
     local_state = load_local_state(project_root)
     local_storage = collect_storage_manifest(local_storage_root(project_root))
     remote_storage = remote_storage_manifest(sync_root)
-    baseline_manifest = local_state or (manifest if manifest is None else {"storage": {}, "database": None})
+    baseline_manifest = local_state or (manifest if manifest is not None else {"storage": {}, "database": None})
     baseline_storage = baseline_manifest.get("storage", {})
     comparison = compare_entries(local_storage, remote_storage, baseline_storage)
     local_db = sqlite_metadata(local_database_path(project_root))

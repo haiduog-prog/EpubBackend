@@ -269,7 +269,19 @@ class EPUBParser:
         book = read_epub_safe(epub_path)
         chapters: List[Tuple[str, List[HTMLInputItem], BeautifulSoup]] = []
 
-        for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
+        # The OPF manifest is an inventory, not the reading order.
+        documents = list(book.get_items_of_type(ebooklib.ITEM_DOCUMENT))
+        by_id = {item.get_id(): item for item in documents}
+        ordered = []
+        seen = set()
+        for item_id, linear in book.spine:
+            if item_id in by_id and item_id not in seen and linear != "no":
+                ordered.append(by_id[item_id])
+                seen.add(item_id)
+        # Some legacy EPUBs have no usable spine. Keep their previous fallback.
+        if not ordered:
+            ordered = documents
+        for item in ordered:
             try:
                 content_bytes = item.get_content() or b""
             except Exception as read_err:
@@ -304,7 +316,7 @@ class EPUBParser:
                     continue
                 original_content = content_bytes.decode("utf-8", errors="ignore")
                 _, soup = HTMLMerger.extract_semantic_nodes(original_content)
-                new_html = HTMLMerger.reconstruct_html(soup, translations)
+                new_html = HTMLMerger.reconstruct_html(soup, translations, strict_markers=True)
                 item.set_content(new_html.encode("utf-8"))
 
         epub.write_epub(output_epub_path, book)

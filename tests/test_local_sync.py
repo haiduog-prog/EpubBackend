@@ -51,6 +51,15 @@ def test_backup_creates_manifest_and_excludes_cache(tmp_path):
     restored_db.close()
 
 
+def test_check_without_existing_manifest_reports_pending_changes(tmp_path):
+    project = make_project(tmp_path)
+    sync_root = tmp_path / "drive"
+
+    result = local_sync.check(project, sync_root)
+
+    assert result["status"] == "CHANGES_PENDING"
+
+
 def test_backup_updates_only_changed_storage_file(tmp_path):
     project = make_project(tmp_path)
     sync_root = tmp_path / "drive"

@@ -2,7 +2,9 @@ import json
 import sqlite3
 from pathlib import Path
 
-from app.modules.sync.google_drive_sync import GoogleDriveSyncService
+import pytest
+
+from app.modules.sync.google_drive_sync import GoogleDriveSyncError, GoogleDriveSyncService, LocalSnapshotStore
 
 
 class FakeDrive:
@@ -53,6 +55,32 @@ def test_backup_only_uploads_changed_files(tmp_path, monkeypatch):
     assert second["uploaded"] == 1
     assert json.loads(drive.files["manifest.json"])["storage"]["novels/book-1/chapter-1.html"]["sha256"]
     assert drive.files["storage/novels/book-1/chapter-1.html"] == b"two"
+
+
+def test_snapshot_upload_uses_stable_file_copy(tmp_path):
+    project = tmp_path / "project"
+    chapter = project / "storage" / "novels" / "chapter.html"
+    chapter.parent.mkdir(parents=True)
+    chapter.write_text("before", encoding="utf-8")
+
+    snapshot = LocalSnapshotStore(project).create_snapshot(tmp_path / "snapshot")
+    chapter.write_text("after", encoding="utf-8")
+
+    assert snapshot.files["novels/chapter.html"].read_text(encoding="utf-8") == "before"
+
+
+def test_remote_manifest_rejects_windows_path_traversal(tmp_path, monkeypatch):
+    drive = FakeDrive()
+    drive.files["manifest.json"] = json.dumps(
+        {
+            "schema_version": 1,
+            "storage": {r"novels\..\..\escape.txt": {"sha256": "bad", "size": 3}},
+        }
+    ).encode("utf-8")
+    service = _service(tmp_path / "project", drive, monkeypatch)
+
+    with pytest.raises(GoogleDriveSyncError, match="key không hợp lệ"):
+        service.check()
 
 
 def test_restore_bootstraps_new_machine_and_uses_storage_root(tmp_path, monkeypatch):

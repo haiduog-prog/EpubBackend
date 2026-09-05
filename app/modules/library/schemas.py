@@ -36,6 +36,7 @@ class ChapterItem(BaseModel):
     reviewer_model: Optional[str] = None
     reviewed_at: Optional[str] = None
     review_error: Optional[str] = None
+    revision: int = 0
 
 
 class ChapterExtractionItem(BaseModel):
@@ -147,6 +148,18 @@ class ChapterTranslateRequest(BaseModel):
     provider: Optional[str] = None
     model: Optional[str] = None
     preview_only: bool = Field(default=False, description="Nếu True, chỉ trả về bản dịch để so sánh xem trước mà không ghi đè vào kho lưu trữ")
+    defer_epub_build: bool = Field(
+        default=False,
+        description="Nếu True, chưa enqueue build EPUB sau chương này; dùng cho dịch hàng loạt",
+    )
+
+
+class ChapterDraftIssue(BaseModel):
+    issue: str
+    found: str
+    replacement: str
+    location: str = ""
+    severity: str = "warning"
 
 
 class ChapterTranslatePreviewResponse(BaseModel):
@@ -159,18 +172,17 @@ class ChapterTranslatePreviewResponse(BaseModel):
     word_count: int = 0
     model: Optional[str] = None
     provider: Optional[str] = None
+    qa_status: str = "passed"
+    qa_reason: Optional[str] = None
+    qa_issues: List[ChapterDraftIssue] = Field(default_factory=list)
 
 
 class ChapterApplyTranslationRequest(BaseModel):
     content: str = Field(..., description="Nội dung bản dịch mới cần áp dụng")
-
-
-class ChapterDraftIssue(BaseModel):
-    issue: str
-    found: str
-    replacement: str
-    location: str = ""
-    severity: str = "warning"
+    allow_qa_warnings: bool = Field(
+        default=False,
+        description="Cho phép áp dụng sau khi người dùng xác nhận các cảnh báo QA còn lại",
+    )
 
 
 class ChapterDraftResponse(BaseModel):

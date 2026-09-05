@@ -12,6 +12,9 @@ class InputType(str, Enum):
 class HTMLInputItem(BaseModel):
     id: str = Field(..., description="Mã định danh cho khối text HTML")
     text: str = Field(..., description="Văn bản gốc cần dịch")
+    # Marker-protected representation used by the HTML translator.  ``text``
+    # remains the visible-text compatibility field for existing callers.
+    protected_text: Optional[str] = Field(default=None, description="Nội dung có marker bảo vệ inline HTML")
 
 
 class HTMLTranslationItem(BaseModel):

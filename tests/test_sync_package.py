@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.auth import AuthUser, get_current_user
+from app.config import settings
 from app.main import app
 from app.modules.sync.sync_package_service import SyncPackageService
 
@@ -138,6 +139,7 @@ def test_import_sync_package_zip_slip_prevention(tmp_path):
     """Verify zip slip attacks (directory traversal) are caught and rejected."""
     bad_zip = tmp_path / "malicious.zip"
     with zipfile.ZipFile(str(bad_zip), "w") as zf:
+        zf.writestr("storage/novels/should-not-be-written.txt", "must not be applied")
         zf.writestr("../../etc/passwd", "evil content")
 
     target_root = tmp_path / "target_proj"
@@ -146,6 +148,34 @@ def test_import_sync_package_zip_slip_prevention(tmp_path):
             str(bad_zip),
             restore_to_postgres_if_active=False,
             project_root=target_root,
+        )
+    assert not (target_root / "storage" / "novels" / "should-not-be-written.txt").exists()
+
+
+def test_import_sync_package_rejects_windows_path_traversal(tmp_path):
+    bad_zip = tmp_path / "malicious-windows.zip"
+    with zipfile.ZipFile(str(bad_zip), "w") as zf:
+        zf.writestr(r"storage\novels\..\..\escape.txt", "evil content")
+
+    with pytest.raises(ValueError, match="không an toàn"):
+        SyncPackageService.import_sync_package(
+            str(bad_zip),
+            restore_to_postgres_if_active=False,
+            project_root=tmp_path / "target_proj",
+        )
+
+
+def test_import_sync_package_enforces_archive_limits(tmp_path, monkeypatch):
+    package = tmp_path / "oversized.zip"
+    with zipfile.ZipFile(str(package), "w") as zf:
+        zf.writestr("storage/novels/chapter.txt", "too large")
+
+    monkeypatch.setattr(settings, "max_sync_package_uncompressed_bytes", 1)
+    with pytest.raises(ValueError, match="Tổng dung lượng"):
+        SyncPackageService.import_sync_package(
+            str(package),
+            restore_to_postgres_if_active=False,
+            project_root=tmp_path / "target_proj",
         )
 
 
@@ -173,3 +203,17 @@ def test_api_import_invalid_file_format(sync_client, tmp_path):
         )
     assert res.status_code == 400
     assert "định dạng .zip" in res.json().get("detail", "")
+
+
+def test_api_import_enforces_upload_limit(sync_client, tmp_path, monkeypatch):
+    package = tmp_path / "package.zip"
+    package.write_bytes(b"0123456789")
+    monkeypatch.setattr(settings, "max_sync_package_upload_bytes", 1)
+
+    with package.open("rb") as file_handle:
+        response = sync_client.post(
+            "/api/v1/sync/import-package",
+            files={"file": ("package.zip", file_handle, "application/zip")},
+        )
+
+    assert response.status_code == 413

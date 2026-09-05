@@ -2,12 +2,16 @@ import uuid
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Set, Any, Dict
-from sqlalchemy import select, delete, desc, or_, and_, text, case
+from sqlalchemy import select, delete, desc, or_, and_, text, case, func, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.config import settings
 
 logger = logging.getLogger("EpubBackend.LibraryRepository")
+
+
+class ChapterRevisionConflictError(RuntimeError):
+    """A chapter changed after the caller loaded its revision."""
 
 
 from app.modules.library.persistence.legacy_models import NovelModel, ChapterModel, EpubBuildJobModel
@@ -46,6 +50,7 @@ class LibraryRepository:
             reviewer_model=model.reviewer_model,
             reviewed_at=model.reviewed_at.isoformat() if model.reviewed_at else None,
             review_error=model.review_error,
+            revision=model.revision or 0,
         )
 
     @classmethod
@@ -143,8 +148,188 @@ class LibraryRepository:
         return cls.get_novel(session, novel_id)
 
     @classmethod
+    def save_novel_metadata(cls, session: Session, meta: NovelMetadata) -> NovelMetadata:
+        """Persist aggregate metadata without applying a chapter snapshot.
+
+        Translation workers use this method for status/dirty metadata so a
+        stale aggregate cannot overwrite another worker's chapter row.
+        """
+        model = session.get(NovelModel, meta.novel_id)
+        if model is not None:
+            model = session.execute(
+                select(NovelModel)
+                .where(NovelModel.novel_id == meta.novel_id)
+                .execution_options(populate_existing=True)
+            ).scalar_one()
+        now = datetime.now(timezone.utc)
+        if not model:
+            model = NovelModel(
+                novel_id=meta.novel_id,
+                title=meta.title,
+                created_at=now,
+            )
+            session.add(model)
+
+        model.title = meta.title
+        model.original_title = meta.original_title
+        model.author = meta.author
+        model.genre = meta.genre
+        model.description = meta.description
+        model.cover_r2_key = meta.cover_url
+        model.status = meta.status.value if isinstance(meta.status, NovelStatus) else str(meta.status)
+        # Build outputs are monotonic.  A stale metadata snapshot may not
+        # replace a newer key or move either revision backwards.
+        if meta.current_epub_key and (meta.built_revision or 0) >= (model.built_revision or 0):
+            model.current_epub_key = meta.current_epub_key
+        model.desired_revision = max(model.desired_revision or 0, meta.desired_revision or 0)
+        model.built_revision = max(model.built_revision or 0, meta.built_revision or 0)
+        model.is_structural_dirty = bool(model.is_structural_dirty or meta.is_structural_dirty)
+        existing_dirty = dict(model.dirty_chapters or {})
+        incoming_dirty = meta.dirty_chapters or []
+        if isinstance(incoming_dirty, dict):
+            for chapter, revision in incoming_dirty.items():
+                key = str(chapter)
+                existing_dirty[key] = max(int(existing_dirty.get(key, 0)), int(revision))
+        else:
+            for chapter in incoming_dirty:
+                existing_dirty.setdefault(str(chapter), model.desired_revision or 1)
+        model.dirty_chapters = existing_dirty
+        model.updated_at = now
+        model.revision = (model.revision or 0) + 1
+        session.flush()
+        cls._refresh_novel_counts(session, model)
+        return cls._model_to_novel_metadata(model)
+
+    @staticmethod
+    def _refresh_novel_counts(session: Session, model: NovelModel) -> None:
+        total = session.scalar(
+            select(func.count(ChapterModel.chapter_index)).where(ChapterModel.novel_id == model.novel_id)
+        ) or 0
+        translated = session.scalar(
+            select(func.count(ChapterModel.chapter_index)).where(
+                ChapterModel.novel_id == model.novel_id,
+                ChapterModel.status == ChapterStatus.COMPLETED.value,
+            )
+        ) or 0
+        model.total_chapters = int(total)
+        model.translated_chapters = int(translated)
+
+    @classmethod
+    def save_chapter(
+        cls,
+        session: Session,
+        novel_id: str,
+        chapter: ChapterItem,
+        *,
+        expected_revision: Optional[int] = None,
+    ) -> ChapterItem:
+        """Upsert one chapter and atomically advance its optimistic revision."""
+        novel = session.get(NovelModel, novel_id)
+        if not novel:
+            raise ValueError(f"Novel not found: {novel_id}")
+        novel = session.execute(
+            select(NovelModel)
+            .where(NovelModel.novel_id == novel_id)
+            .execution_options(populate_existing=True)
+        ).scalar_one()
+        now = datetime.now(timezone.utc)
+        key = (novel_id, chapter.chapter_index)
+        existing = session.execute(
+            select(ChapterModel)
+            .where(
+                ChapterModel.novel_id == novel_id,
+                ChapterModel.chapter_index == chapter.chapter_index,
+            )
+            .execution_options(populate_existing=True)
+        ).scalar_one_or_none()
+        is_new = existing is None
+        if is_new:
+            if expected_revision not in (None, 0):
+                raise ChapterRevisionConflictError(
+                    f"Chapter {novel_id}/{chapter.chapter_index} was created by another worker"
+                )
+            existing = ChapterModel(novel_id=novel_id, chapter_index=chapter.chapter_index, revision=0)
+            session.add(existing)
+            current_revision = 0
+        else:
+            current_revision = existing.revision or 0
+            if expected_revision is not None and current_revision != expected_revision:
+                raise ChapterRevisionConflictError(
+                    f"Chapter {novel_id}/{chapter.chapter_index} revision conflict: "
+                    f"expected {expected_revision}, found {current_revision}"
+                )
+
+        chapter_values = {
+            "chapter_id": chapter.chapter_id or f"ch_{chapter.chapter_index:04d}",
+            "chapter_title": chapter.chapter_title,
+            "status": chapter.status.value if isinstance(chapter.status, ChapterStatus) else str(chapter.status),
+            "word_count": chapter.word_count,
+            "original_text_preview": chapter.original_text_preview,
+            "translated_text_preview": chapter.translated_text_preview,
+            "original_r2_key": chapter.r2_original_key or None,
+            "translated_r2_key": chapter.r2_translated_key or None,
+            "translated_r2_url": chapter.r2_translated_url,
+            "review_status": chapter.review_status or "pending",
+            "review_issues": [
+            issue.model_dump() if hasattr(issue, "model_dump") else issue
+            for issue in (chapter.review_issues or [])
+            ],
+            "reviewer_model": chapter.reviewer_model,
+            "reviewed_at": datetime.fromisoformat(chapter.reviewed_at) if chapter.reviewed_at else None,
+            "review_error": chapter.review_error,
+            "updated_at": now,
+            "revision": current_revision + 1,
+        }
+
+        if is_new:
+            for field, value in chapter_values.items():
+                setattr(existing, field, value)
+            session.flush()
+        else:
+            # A prior SELECT is only a snapshot.  Protect the UPDATE itself
+            # with the revision that was read so two workers cannot both
+            # publish changes based on the same chapter state.
+            guard_revision = current_revision if expected_revision is None else expected_revision
+            result = session.execute(
+                update(ChapterModel)
+                .where(
+                    ChapterModel.novel_id == novel_id,
+                    ChapterModel.chapter_index == chapter.chapter_index,
+                    ChapterModel.revision == guard_revision,
+                )
+                .values(**chapter_values)
+            )
+            if result.rowcount != 1:
+                raise ChapterRevisionConflictError(
+                    f"Chapter {novel_id}/{chapter.chapter_index} revision conflict while saving"
+                )
+            session.expire(existing)
+            existing = session.get(
+                ChapterModel,
+                {"novel_id": novel_id, "chapter_index": chapter.chapter_index},
+            )
+            if existing is None:
+                raise ChapterRevisionConflictError(
+                    f"Chapter {novel_id}/{chapter.chapter_index} disappeared while saving"
+                )
+
+        cls._refresh_novel_counts(session, novel)
+        session.flush()
+        return cls._model_to_chapter_item(existing)
+
+    @classmethod
     def save_novel(cls, session: Session, meta: NovelMetadata) -> NovelMetadata:
         model = session.get(NovelModel, meta.novel_id)
+        if model is not None:
+            # A caller may have loaded ``meta`` in an older session.  Refresh
+            # both the aggregate and its relationship before deciding whether
+            # each chapter revision is still current.
+            model = session.execute(
+                select(NovelModel)
+                .where(NovelModel.novel_id == meta.novel_id)
+                .options(selectinload(NovelModel.chapters))
+                .execution_options(populate_existing=True)
+            ).scalar_one()
         now = datetime.now(timezone.utc)
         if not model:
             model = NovelModel(
@@ -203,8 +388,13 @@ class LibraryRepository:
                 )
                 ch_model.novel = model
                 session.add(ch_model)
+                existing_chapters[ch.chapter_index] = ch_model
+            elif (ch.revision or 0) != (ch_model.revision or 0):
+                # Full snapshots are legacy/import boundaries.  Once a row
+                # has a revision, a stale snapshot must not overwrite it.
+                continue
 
-            ch_model.chapter_id = ch.chapter_id
+            ch_model.chapter_id = ch.chapter_id or f"ch_{ch.chapter_index:04d}"
             ch_model.chapter_title = ch.chapter_title
             ch_model.status = ch.status.value if isinstance(ch.status, ChapterStatus) else str(ch.status)
             ch_model.word_count = ch.word_count
@@ -228,12 +418,10 @@ class LibraryRepository:
                     ch_model.updated_at = ch_model.updated_at or now
             elif not ch_model.updated_at:
                 ch_model.updated_at = now
+            ch_model.revision = (ch_model.revision or 0) + 1
 
         session.flush()
-        model.total_chapters = len(model.chapters or [])
-        model.translated_chapters = sum(
-            1 for chapter in (model.chapters or []) if chapter.status == ChapterStatus.COMPLETED.value
-        )
+        cls._refresh_novel_counts(session, model)
         session.flush()
         return cls._model_to_novel_metadata(model)
 
@@ -434,6 +622,7 @@ class LibraryRepository:
             status=model.status,
             strategy=model.strategy,
             dirty_chapters=cls._normalize_dirty_chapters(model.dirty_chapters),
+            claimed_dirty_chapters=cls._normalize_dirty_chapters(model.claimed_dirty_chapters),
             is_structural=bool(model.is_structural),
             target_revision=model.target_revision or 0,
             built_revision=model.built_revision,
@@ -662,47 +851,48 @@ class LibraryRepository:
         session: Session,
         worker_id: str,
         lease_duration_seconds: int = 300,
+        novel_id: Optional[str] = None,
     ) -> Optional[EpubBuildJobModel]:
         now = datetime.now(timezone.utc)
-        stmt = (
-            select(EpubBuildJobModel)
-            .where(
+        eligible = or_(
+            EpubBuildJobModel.status == "queued",
+            and_(
+                EpubBuildJobModel.status == "processing",
                 or_(
-                    EpubBuildJobModel.status == "queued",
-                    and_(
-                        EpubBuildJobModel.status == "processing",
-                        EpubBuildJobModel.lease_expires_at <= now,
-                    ),
-                )
-            )
-            .order_by(EpubBuildJobModel.created_at.asc())
+                    EpubBuildJobModel.lease_expires_at.is_(None),
+                    EpubBuildJobModel.lease_expires_at <= now,
+                ),
+            ),
         )
-        try:
-            locked_stmt = stmt.with_for_update(skip_locked=True)
-            job = session.execute(locked_stmt).scalars().first()
-        except Exception:
-            job = session.execute(stmt).scalars().first()
-
-        if not job:
+        claim_scope = [eligible]
+        if novel_id:
+            claim_scope.append(EpubBuildJobModel.novel_id == novel_id)
+        next_job = (
+            select(EpubBuildJobModel.job_id)
+            .where(*claim_scope)
+            .order_by(EpubBuildJobModel.created_at.asc(), EpubBuildJobModel.job_id.asc())
+            .limit(1)
+            .scalar_subquery()
+        )
+        claim_stmt = (
+            update(EpubBuildJobModel)
+            .where(EpubBuildJobModel.job_id == next_job, *claim_scope)
+            .values(
+                status="processing",
+                lease_token=worker_id,
+                lease_expires_at=now + timedelta(seconds=lease_duration_seconds),
+                attempts=EpubBuildJobModel.attempts + 1,
+                claimed_dirty_chapters=EpubBuildJobModel.dirty_chapters,
+                started_at=func.coalesce(EpubBuildJobModel.started_at, now),
+            )
+            .execution_options(synchronize_session=False)
+            .returning(EpubBuildJobModel.job_id)
+        )
+        claimed_id = session.execute(claim_stmt).scalar_one_or_none()
+        if not claimed_id:
             return None
-
-        job.status = "processing"
-        job.lease_token = worker_id
-        job.lease_expires_at = now + timedelta(seconds=lease_duration_seconds)
-        job.attempts = (job.attempts or 0) + 1
-
-        raw_dirty = job.dirty_chapters
-        if isinstance(raw_dirty, dict):
-            job.claimed_dirty_chapters = {str(k): int(v) for k, v in raw_dirty.items()}
-        elif isinstance(raw_dirty, (list, tuple, set)):
-            job.claimed_dirty_chapters = {str(c): job.target_revision or 0 for c in raw_dirty}
-        else:
-            job.claimed_dirty_chapters = {}
-
-        if not job.started_at:
-            job.started_at = now
         session.flush()
-        return job
+        return session.get(EpubBuildJobModel, claimed_id)
 
     @classmethod
     def heartbeat_job(
@@ -712,12 +902,20 @@ class LibraryRepository:
         lease_token: str,
         lease_duration_seconds: int = 300,
     ) -> bool:
-        job = session.get(EpubBuildJobModel, job_id)
-        if not job or job.lease_token != lease_token or job.status != "processing":
-            return False
-        job.lease_expires_at = datetime.now(timezone.utc) + timedelta(seconds=lease_duration_seconds)
+        now = datetime.now(timezone.utc)
+        result = session.execute(
+            update(EpubBuildJobModel)
+            .where(
+                EpubBuildJobModel.job_id == job_id,
+                EpubBuildJobModel.status == "processing",
+                EpubBuildJobModel.lease_token == lease_token,
+                EpubBuildJobModel.lease_expires_at > now,
+            )
+            .values(lease_expires_at=now + timedelta(seconds=lease_duration_seconds))
+            .execution_options(synchronize_session=False)
+        )
         session.flush()
-        return True
+        return result.rowcount == 1
 
     @classmethod
     def complete_job(
@@ -735,16 +933,39 @@ class LibraryRepository:
             logger.warning("Cannot complete job %s: status is '%s', expected 'processing'", job_id, getattr(job, "status", None))
             return False
 
-        if worker_id and job.lease_token and job.lease_token != worker_id:
+        lease_token = worker_id or job.lease_token
+        if not lease_token or (worker_id and job.lease_token != worker_id):
             logger.warning("Cannot complete job %s: lease token mismatch (expected %s, got %s)", job_id, job.lease_token, worker_id)
             return False
 
-        job.status = "completed"
-        job.built_revision = built_revision
-        job.epub_key = epub_key
+        completion_values = {
+            "status": "completed",
+            "built_revision": built_revision,
+            "epub_key": epub_key,
+            "completed_at": now,
+            "lease_token": None,
+            "lease_expires_at": None,
+        }
         if strategy:
-            job.strategy = strategy
-        job.completed_at = now
+            completion_values["strategy"] = strategy
+        result = session.execute(
+            update(EpubBuildJobModel)
+            .where(
+                EpubBuildJobModel.job_id == job_id,
+                EpubBuildJobModel.status == "processing",
+                EpubBuildJobModel.lease_token == lease_token,
+                EpubBuildJobModel.lease_expires_at > now,
+            )
+            .values(**completion_values)
+            .execution_options(synchronize_session=False)
+        )
+        if result.rowcount != 1:
+            logger.warning("Cannot complete job %s: lease is expired or no longer owned", job_id)
+            return False
+        session.expire(job)
+        job = session.get(EpubBuildJobModel, job_id)
+        if not job:
+            return False
         session.flush()
 
 
@@ -755,8 +976,9 @@ class LibraryRepository:
             novel = session.execute(stmt_novel).scalar_one_or_none()
 
         if novel:
-            novel.current_epub_key = epub_key
-            novel.built_revision = built_revision
+            if built_revision >= (novel.built_revision or 0):
+                novel.current_epub_key = epub_key
+                novel.built_revision = built_revision
 
             raw_claimed = job.claimed_dirty_chapters or job.dirty_chapters
             if isinstance(raw_claimed, dict):
@@ -808,10 +1030,22 @@ class LibraryRepository:
         job_id: str,
         error_message: str,
         max_attempts: int = 3,
+        lease_token: Optional[str] = None,
     ) -> None:
         now = datetime.now(timezone.utc)
         job = session.get(EpubBuildJobModel, job_id)
         if not job:
+            return
+        lease_expires = job.lease_expires_at
+        if lease_expires and lease_expires.tzinfo:
+            lease_expires = lease_expires.replace(tzinfo=None)
+        if lease_token and (
+            job.status != "processing"
+            or job.lease_token != lease_token
+            or not job.lease_expires_at
+            or lease_expires <= now.replace(tzinfo=None)
+        ):
+            logger.warning("Ignoring failure from stale worker for job %s", job_id)
             return
         if (job.attempts or 0) >= max_attempts:
             job.status = "failed"
@@ -831,7 +1065,10 @@ class LibraryRepository:
             select(EpubBuildJobModel)
             .where(
                 EpubBuildJobModel.status == "processing",
-                EpubBuildJobModel.lease_expires_at <= now,
+                or_(
+                    EpubBuildJobModel.lease_expires_at.is_(None),
+                    EpubBuildJobModel.lease_expires_at <= now,
+                ),
             )
         )
         stale_jobs = session.execute(stmt).scalars().all()
@@ -911,10 +1148,41 @@ class LibraryRepository:
         total_chapters: Optional[int] = None,
         progress_percentage: Optional[int] = None,
         strategy: Optional[str] = None,
+        lease_token: Optional[str] = None,
     ) -> bool:
         job = session.get(EpubBuildJobModel, job_id)
         if not job or job.status in ("completed", "failed", "cancelled"):
             return False
+        if lease_token:
+            now = datetime.now(timezone.utc)
+            values = {}
+            if current_step is not None:
+                values["current_step"] = current_step
+            if current_chapter is not None:
+                values["current_chapter"] = current_chapter
+            if processed_chapters is not None:
+                values["processed_chapters"] = processed_chapters
+            if total_chapters is not None:
+                values["total_chapters"] = total_chapters
+            if progress_percentage is not None:
+                values["progress_percentage"] = max(0, min(100, progress_percentage))
+            if strategy is not None:
+                values["strategy"] = strategy
+            if not values:
+                return True
+            result = session.execute(
+                update(EpubBuildJobModel)
+                .where(
+                    EpubBuildJobModel.job_id == job_id,
+                    EpubBuildJobModel.status == "processing",
+                    EpubBuildJobModel.lease_token == lease_token,
+                    EpubBuildJobModel.lease_expires_at > now,
+                )
+                .values(**values)
+                .execution_options(synchronize_session=False)
+            )
+            session.flush()
+            return result.rowcount == 1
 
         if current_step is not None:
             job.current_step = current_step
@@ -954,6 +1222,8 @@ class LibraryRepository:
         job.status = "cancelled"
         job.error_message = "Quá trình biên dịch đã bị người dùng hủy."
         job.current_step = "Đã hủy biên dịch."
+        job.lease_token = None
+        job.lease_expires_at = None
         job.completed_at = datetime.now(timezone.utc)
         session.flush()
         return cls._model_to_epub_build_job(job)

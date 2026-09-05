@@ -1,5 +1,6 @@
 import json
 import logging
+import inspect
 from typing import List, Optional, Dict, Any, Type, TypeVar
 from pydantic import BaseModel
 import anthropic
@@ -17,6 +18,7 @@ from app.prompts.templates import (
     PROMPT_5_CORRECT_TERMINOLOGY,
 )
 from app.llm.base import BaseLLMClient
+from app.llm.errors import EmptyLLMResponseError, IncompleteLLMResponseError, StructuredOutputError
 
 logger = logging.getLogger("EpubBackend.AnthropicProvider")
 T = TypeVar("T", bound=BaseModel)
@@ -34,6 +36,46 @@ class AnthropicProvider(BaseLLMClient):
         if not self.api_key:
             raise ValueError("Chưa cấu hình Anthropic API Key (sk-ant-...).")
         self.client = anthropic.AsyncAnthropic(api_key=self.api_key)
+        self._closed = False
+
+    @staticmethod
+    def _response_text(response, *, operation: str) -> str:
+        stop_reason = getattr(response, "stop_reason", None)
+        if stop_reason is not None:
+            stop_reason = getattr(stop_reason, "value", stop_reason)
+            stop_reason = getattr(stop_reason, "name", stop_reason)
+            normalized = str(stop_reason).split(".")[-1].lower()
+            if normalized not in {"end_turn", "stop_sequence", "stop"}:
+                raise IncompleteLLMResponseError(
+                    f"LLM response chưa hoàn tất (stop_reason={stop_reason}).",
+                    operation=operation,
+                    stop_reason=stop_reason,
+                )
+        text = "".join(
+            getattr(block, "text", "")
+            for block in (getattr(response, "content", None) or [])
+            if getattr(block, "type", "") == "text"
+        ).strip()
+        if not text:
+            raise EmptyLLMResponseError(
+                "LLM response không có nội dung văn bản.",
+                operation=operation,
+                stop_reason=stop_reason,
+            )
+        return text
+
+    async def aclose(self) -> None:
+        if getattr(self, "_closed", False):
+            return
+        self._closed = True
+        try:
+            close = getattr(getattr(self, "client", None), "close", None) or getattr(getattr(self, "client", None), "aclose", None)
+            if callable(close):
+                result = close()
+                if inspect.isawaitable(result):
+                    await result
+        except Exception as exc:
+            logger.warning("Failed to close Anthropic client: %s", exc)
 
     async def extract_book_bible_delta(
         self,
@@ -87,12 +129,7 @@ class AnthropicProvider(BaseLLMClient):
             messages=[{"role": "user", "content": user_content}]
         )
 
-        result_text = ""
-        for block in response.content:
-            if block.type == "text":
-                result_text += block.text
-
-        return result_text.strip()
+        return self._response_text(response, operation="translate_prose_chunk")
 
     async def correct_translation_terms(
         self,
@@ -115,11 +152,7 @@ class AnthropicProvider(BaseLLMClient):
             system="Bạn là biên tập viên hiệu đính bản dịch tiếng Việt. Chỉ sửa đúng các issue được nêu.",
             messages=[{"role": "user", "content": prompt}],
         )
-        result_text = ""
-        for block in response.content:
-            if block.type == "text":
-                result_text += block.text
-        return result_text.strip() or translated_text
+        return self._response_text(response, operation="correct_translation_terms")
 
     async def translate_html_json(
         self,
@@ -154,18 +187,18 @@ class AnthropicProvider(BaseLLMClient):
             response_model=HTMLTranslationOutput
         )
 
-        # Cross-constraint validation (Section 3): Verify set of IDs and element count
+        # Cross-constraint validation: a missing item is unsafe to publish.
         out_map = {item.id: item.text_vi for item in output_obj.translations}
-        aligned_translations: List[HTMLTranslationItem] = []
-
-        for item in input_items:
-            if item.id in out_map and out_map[item.id].strip():
-                aligned_translations.append(HTMLTranslationItem(id=item.id, text_vi=out_map[item.id]))
-            else:
-                logger.warning(f"Anthropic LLM skipped HTML ID '{item.id}'. Falling back to original text.")
-                aligned_translations.append(HTMLTranslationItem(id=item.id, text_vi=item.text))
-
-        return aligned_translations
+        expected_ids = [item.id for item in input_items]
+        if set(out_map) != set(expected_ids) or len(out_map) != len(expected_ids) or any(
+            not out_map[item_id].strip() for item_id in expected_ids
+        ):
+            raise StructuredOutputError(
+                "HTML translation output thiếu hoặc trùng node ID.",
+                operation="translate_html_json",
+                details={"expected_ids": expected_ids, "actual_ids": list(out_map)},
+            )
+        return [HTMLTranslationItem(id=item_id, text_vi=out_map[item_id]) for item_id in expected_ids]
 
     async def qa_check_chunk(
         self,
@@ -208,10 +241,7 @@ class AnthropicProvider(BaseLLMClient):
             messages=messages
         )
 
-        raw_text = ""
-        for block in response.content:
-            if block.type == "text":
-                raw_text += block.text
+        raw_text = self._response_text(response, operation=f"structured:{response_model.__name__}")
 
         clean_json_text = raw_text.strip()
         if clean_json_text.startswith("```"):
@@ -235,4 +265,8 @@ class AnthropicProvider(BaseLLMClient):
                     return response_model.model_validate(json.loads(substring_json))
                 except Exception:
                     pass
-            raise ValueError(f"Could not parse valid {response_model.__name__} from LLM response.")
+            raise StructuredOutputError(
+                f"Could not parse valid {response_model.__name__} from LLM response.",
+                operation=response_model.__name__,
+                details=raw_text[:500],
+            ) from e

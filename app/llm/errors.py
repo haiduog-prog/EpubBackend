@@ -85,3 +85,20 @@ class StructuredOutputError(ValueError):
         super().__init__(message)
         self.operation = operation
         self.details = details
+
+
+class LLMResponseError(RuntimeError):
+    """The provider answered, but the answer is not safe to persist."""
+
+    def __init__(self, message: str, *, operation: str = "", stop_reason: Any = None) -> None:
+        super().__init__(message)
+        self.operation = operation
+        self.stop_reason = stop_reason
+
+
+class IncompleteLLMResponseError(LLMResponseError):
+    """The provider stopped before producing a complete response."""
+
+
+class EmptyLLMResponseError(LLMResponseError):
+    """The provider returned no usable text."""

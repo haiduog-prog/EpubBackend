@@ -349,6 +349,7 @@ async def translate_chapter_endpoint(
             api_key=key,
             model=mod,
             preview_only=is_preview,
+            defer_epub_build=req.defer_epub_build,
         )
     except GeminiProviderError as exc:
         raise provider_http_exception(exc) from exc
@@ -370,6 +371,7 @@ def apply_chapter_translation_endpoint(
             novel_id=novel_id,
             chapter_index=chapter_index,
             content=req.content,
+            allow_qa_warnings=req.allow_qa_warnings,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))

@@ -1714,6 +1714,17 @@
                             <input type="text" id="chapter-search-input" placeholder="Tìm chương..." oninput="onChapterSearchInput(this.value)" style="background:rgba(15,23,42,0.8); border:1px solid var(--card-border); color:#fff; padding:0.25rem 0.5rem 0.25rem 1.6rem; border-radius:6px; font-size:0.75rem; width:115px; outline:none;">
                             <i class="fa-solid fa-magnifying-glass" style="position:absolute; left:0.5rem; font-size:0.7rem; color:var(--text-sub); pointer-events:none;"></i>
                         </div>
+                        <select id="chapter-status-filter" onchange="onChapterStatusFilterChange(this.value)" aria-label="Lọc trạng thái chương" title="Lọc danh sách theo trạng thái" style="background:rgba(15,23,42,0.8); border:1px solid var(--card-border); color:#cbd5e1; padding:0.3rem 0.45rem; border-radius:6px; font-size:0.75rem; max-width:145px; outline:none;">
+                            <option value="">Tất cả trạng thái</option>
+                            <option value="needs_review">Chờ duyệt</option>
+                            <option value="not_translated">Chưa dịch</option>
+                            <option value="completed">Đã dịch</option>
+                            <option value="translating">Đang dịch</option>
+                            <option value="failed">Lỗi</option>
+                        </select>
+                        <button type="button" id="chapter-needs-review-filter" class="btn btn-secondary" onclick="toggleChapterStatusFilter('needs_review')" aria-pressed="false" style="padding:0.3rem 0.6rem; font-size:0.78rem; color:#fbbf24; border-color:rgba(245,158,11,0.45);" title="Chỉ hiển thị các chương đang chờ duyệt">
+                            <i class="fa-solid fa-eye"></i> Chờ duyệt
+                        </button>
                         <button type="button" class="btn btn-secondary" onclick="selectAllChapters()" style="padding:0.3rem 0.6rem; font-size:0.78rem;" title="Chọn toàn bộ các chương trong truyện">
                             <i class="fa-solid fa-check-double"></i> Tất cả
                         </button>
@@ -1805,8 +1816,8 @@
                             <i class="fa-solid fa-list-check"></i> Đang chọn <strong id="batch-bar-count">0</strong> chương
                         </span>
                         <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.82rem; color:#cbd5e1; cursor:pointer; background:rgba(255,255,255,0.05); padding:0.3rem 0.6rem; border-radius:6px; border:1px solid rgba(255,255,255,0.1);">
-                            <input type="checkbox" id="batch-auto-rebuild-checkbox" checked style="accent-color:#10b981; width:15px; height:15px; cursor:pointer;">
-                            <span>Tự động <strong>[🔄 Biên Dịch Lại EPUB]</strong> sau khi dịch xong</span>
+                            <input type="checkbox" id="batch-auto-rebuild-checkbox" style="accent-color:#10b981; width:15px; height:15px; cursor:pointer;">
+                            <span>Tự động <strong>[🔄 Biên Dịch Lại EPUB]</strong> sau khi hoàn tất toàn bộ hàng đợi</span>
                         </label>
                     </div>
                     <div style="display:flex; gap:0.5rem; align-items:center;">
@@ -2076,7 +2087,7 @@
                     <section id="chapter-draft-review-banner" class="chapter-draft-banner" style="display:none;" aria-live="polite">
                         <div class="chapter-draft-banner-header">
                             <div style="display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap;">
-                                <span class="tag" style="background:rgba(245,158,11,0.2); border:1px solid rgba(245,158,11,0.45); color:#fbbf24; font-weight:700; font-size:0.78rem; padding:0.2rem 0.55rem;">
+                                <span id="chapter-draft-banner-label" class="tag" style="background:rgba(245,158,11,0.2); border:1px solid rgba(245,158,11,0.45); color:#fbbf24; font-weight:700; font-size:0.78rem; padding:0.2rem 0.55rem;">
                                     <i class="fa-solid fa-triangle-exclamation"></i> LÝ DO CẦN DUYỆT
                                 </span>
                                 <span id="chapter-draft-reason-text" style="font-size:0.85rem; color:#f8fafc; font-weight:600;"></span>
@@ -2675,6 +2686,61 @@
             }
         };
 
+        function formatApiError(detail, fallback = 'Yêu cầu thất bại') {
+            const fallbackText = String(fallback || 'Yêu cầu thất bại');
+            if (detail === null || detail === undefined || detail === '') return fallbackText;
+
+            if (typeof detail === 'string') {
+                return detail.trim() || fallbackText;
+            }
+
+            if (Array.isArray(detail)) {
+                const messages = detail.map((item) => {
+                    if (typeof item === 'string') return item.trim();
+                    if (item === null || item === undefined) return '';
+                    if (typeof item !== 'object') return String(item);
+
+                    const message = item.message ?? item.msg ?? item.detail;
+                    const location = Array.isArray(item.loc) && item.loc.length
+                        ? ` (${item.loc.join('.')})`
+                        : '';
+                    if (message !== null && message !== undefined) {
+                        return `${formatApiError(message, '')}${location}`;
+                    }
+                    try {
+                        return JSON.stringify(item);
+                    } catch (_) {
+                        return String(item);
+                    }
+                }).filter(Boolean);
+                return messages.length ? messages.join('; ') : fallbackText;
+            }
+
+            if (typeof detail === 'object') {
+                const message = detail.message ?? detail.error ?? detail.detail;
+                let messageText = message !== null && message !== undefined
+                    ? formatApiError(message, '')
+                    : '';
+                if (!messageText) {
+                    try {
+                        messageText = JSON.stringify(detail);
+                    } catch (_) {
+                        messageText = String(detail);
+                    }
+                }
+
+                const context = [];
+                if (detail.model) context.push(`model: ${detail.model}`);
+                if (detail.retryable && Number(detail.retry_after_seconds) > 0) {
+                    context.push(`thử lại sau ${Math.ceil(Number(detail.retry_after_seconds))} giây`);
+                }
+                const code = detail.code ? `[${detail.code}] ` : '';
+                return `${code}${messageText || fallbackText}${context.length ? ` (${context.join(', ')})` : ''}`;
+            }
+
+            return String(detail);
+        }
+
         async function fetchWithCache(url, options = {}, ttlMs = 60000, forceRefresh = false) {
             const cacheKey = typeof url === 'string' ? url : url.toString();
 
@@ -2690,7 +2756,7 @@
                 let errorMsg = `HTTP ${res.status}`;
                 try {
                     const err = await res.json();
-                    if (err && err.detail) errorMsg = err.detail;
+                    if (err && err.detail) errorMsg = formatApiError(err.detail, errorMsg);
                 } catch (_) {}
                 throw new Error(errorMsg);
             }
@@ -2984,7 +3050,7 @@
 
                     if (!response.ok) {
                         const err = await response.json();
-                        throw new Error(err.detail || "Lỗi khi gọi API dịch");
+                        throw new Error(formatApiError(err?.detail, "Lỗi khi gọi API dịch"));
                     }
 
                     const data = await response.json();
@@ -3070,7 +3136,7 @@
 
                 if (!res.ok) {
                     const err = await res.json();
-                    throw new Error(err.detail || "Không thể upload file");
+                    throw new Error(formatApiError(err?.detail, "Không thể upload file"));
                 }
 
                 const job = await res.json();
@@ -3106,7 +3172,7 @@
                         document.getElementById('btn-download-link').href = apiUrl(`/api/v1/translate/download/${jobId}`);
                     } else if (job.status === 'failed') {
                         clearInterval(activePollInterval);
-                        stepText.innerHTML = `<i class="fa-solid fa-circle-xmark" style="color:#ef4444;"></i> Thất bại: ${escapeHtml(job.error_message)}`;
+                        stepText.innerHTML = `<i class="fa-solid fa-circle-xmark" style="color:#ef4444;"></i> Thất bại: ${escapeHtml(formatApiError(job.error_message, 'Không xác định'))}`;
                     }
                 } catch (e) {
                     console.error("Poll error", e);
@@ -3292,7 +3358,7 @@
                     });
                     if (!res.ok) {
                         const errData = await res.json().catch(() => ({}));
-                        throw new Error(errData.detail || "Không thể xóa truyện");
+                        throw new Error(formatApiError(errData?.detail, "Không thể xóa truyện"));
                     }
                     showToast(`Đã xóa thành công bộ truyện "${novelId}"!`, "success");
                 } else {
@@ -3303,7 +3369,7 @@
                     });
                     if (!res.ok) {
                         const errData = await res.json().catch(() => ({}));
-                        throw new Error(errData.detail || "Không thể xóa hàng loạt");
+                        throw new Error(formatApiError(errData?.detail, "Không thể xóa hàng loạt"));
                     }
                     const data = await res.json();
                     showToast(data.message || `Đã xóa thành công ${data.deleted_count} bộ truyện!`, "success");
@@ -3490,7 +3556,7 @@
                 });
                 if (!res.ok) {
                     const err = await res.json();
-                    throw new Error(err.detail || "Khởi động nhập file thất bại");
+                    throw new Error(formatApiError(err?.detail, "Khởi động nhập file thất bại"));
                 }
                 const job = await res.json();
                 pollImportJob(job.job_id);
@@ -3528,7 +3594,7 @@
                         }, 800);
                     } else if (job.status === 'failed') {
                         clearInterval(activeImportPoll);
-                        document.getElementById('import-progress-step').innerHTML = `<i class="fa-solid fa-circle-xmark" style="color:#ef4444;"></i> Lỗi: ${escapeHtml(job.error_message)}`;
+                        document.getElementById('import-progress-step').innerHTML = `<i class="fa-solid fa-circle-xmark" style="color:#ef4444;"></i> Lỗi: ${escapeHtml(formatApiError(job.error_message, 'Không xác định'))}`;
                         document.getElementById('btn-submit-import-epub').disabled = false;
                     }
                 } catch (e) {
@@ -3566,7 +3632,7 @@
                 });
                 if (!res.ok) {
                     const err = await res.json();
-                    throw new Error(err.detail || "Không thể tạo bộ truyện");
+                    throw new Error(formatApiError(err?.detail, "Không thể tạo bộ truyện"));
                 }
                 closeModal('modal-create-novel');
                 loadLibraryNovels();
@@ -3681,6 +3747,7 @@
 
         async function openNovelDetail(novelId, forceRefresh = false) {
             currentNovelId = novelId;
+            const switchingNovel = !currentNovelData || currentNovelData.novel_id !== novelId;
             const modal = document.getElementById('modal-novel-detail');
             modal.classList.add('active');
 
@@ -3755,6 +3822,10 @@
                 chapterFilterSearch = '';
                 const searchInp = document.getElementById('chapter-search-input');
                 if (searchInp) searchInp.value = '';
+                if (switchingNovel) {
+                    chapterFilterStatus = '';
+                    updateChapterStatusFilterUI();
+                }
 
                 // Fast Paginated Chapter Rendering with Event Delegation
                 renderNovelChaptersTable();
@@ -3774,6 +3845,7 @@
         let chapterPageSize = 50;
         let currentChapterPage = 1;
         let chapterFilterSearch = '';
+        let chapterFilterStatus = '';
         let isChaptersDelegationAttached = false;
 
         function ensureChaptersTableDelegation() {
@@ -3818,6 +3890,9 @@
                     (ch.chapter_title && ch.chapter_title.toLowerCase().includes(q))
                 );
             }
+            if (chapterFilterStatus) {
+                list = list.filter(ch => ch.status === chapterFilterStatus);
+            }
             return list;
         }
 
@@ -3834,8 +3909,8 @@
             if (countSpan) countSpan.innerText = currentNovelData.chapters ? currentNovelData.chapters.length : 0;
 
             if (totalCount === 0) {
-                if (chapterFilterSearch) {
-                    tbody.innerHTML = '<tr><td colspan="7" style="padding:1.5rem; text-align:center; color:var(--text-sub);">Không tìm thấy chương nào khớp với từ khóa tìm kiếm.</td></tr>';
+                if (chapterFilterSearch || chapterFilterStatus) {
+                    tbody.innerHTML = '<tr><td colspan="7" style="padding:1.5rem; text-align:center; color:var(--text-sub);">Không tìm thấy chương nào khớp với bộ lọc hiện tại.</td></tr>';
                 } else {
                     tbody.innerHTML = '<tr><td colspan="7" style="padding:1.5rem; text-align:center; color:var(--text-sub);">Chưa có chương nào trong kho. Hãy thêm chương mới ở khung phía trên!</td></tr>';
                 }
@@ -3994,6 +4069,34 @@
             renderNovelChaptersTable();
         }
 
+        function onChapterStatusFilterChange(val) {
+            chapterFilterStatus = (val || '').trim();
+            updateChapterStatusFilterUI();
+            currentChapterPage = 1;
+            renderNovelChaptersTable();
+        }
+
+        function toggleChapterStatusFilter(status) {
+            chapterFilterStatus = chapterFilterStatus === status ? '' : status;
+            updateChapterStatusFilterUI();
+            currentChapterPage = 1;
+            renderNovelChaptersTable();
+        }
+
+        function updateChapterStatusFilterUI() {
+            const statusFilter = document.getElementById('chapter-status-filter');
+            if (statusFilter && statusFilter.value !== chapterFilterStatus) {
+                statusFilter.value = chapterFilterStatus;
+            }
+
+            const pendingFilter = document.getElementById('chapter-needs-review-filter');
+            if (!pendingFilter) return;
+
+            const isActive = chapterFilterStatus === 'needs_review';
+            pendingFilter.setAttribute('aria-pressed', String(isActive));
+            pendingFilter.style.background = isActive ? 'rgba(245,158,11,0.2)' : 'rgba(15,23,42,0.8)';
+        }
+
         function toggleBibleCollapse() {
             const container = document.getElementById('detail-bible-container');
             const icon = document.getElementById('bible-collapse-icon');
@@ -4068,7 +4171,7 @@
 
                     if (!res.ok) {
                         const err = await res.json();
-                        throw new Error(err.detail || "Quét nhân vật thất bại");
+                        throw new Error(formatApiError(err?.detail, "Quét nhân vật thất bại"));
                     }
 
                     // Invalidate bible & snapshot cache
@@ -4214,7 +4317,7 @@
                 });
                 if (!res.ok) {
                     const err = await res.json();
-                    throw new Error(err.detail || "Không thể lưu chương");
+                    throw new Error(formatApiError(err?.detail, "Không thể lưu chương"));
                 }
                 selectedChapterFile = null;
                 document.getElementById('add-chapter-file').value = '';
@@ -4267,7 +4370,11 @@
             const retryBtn = document.getElementById('btn-retranslate-retry');
             if (retryBtn) retryBtn.style.display = '';
             const applyBtn = document.getElementById('btn-retranslate-apply');
-            if (applyBtn) applyBtn.innerHTML = '<i class="fa-solid fa-check"></i> ✓ Áp Dụng Bản Dịch Mới';
+            if (applyBtn) {
+                applyBtn.disabled = false;
+                applyBtn.title = '';
+                applyBtn.innerHTML = '<i class="fa-solid fa-check"></i> ✓ Áp Dụng Bản Dịch Mới';
+            }
             const draftBanner = document.getElementById('chapter-draft-review-banner');
             if (draftBanner) draftBanner.style.display = 'none';
             currentRetranslateData = null;
@@ -4356,9 +4463,13 @@
                     novelId,
                     chapterIndex,
                     chapterTitle,
+                    mode: 'preview',
                     provider,
                     apiKey,
                     model,
+                    qaStatus: 'pending',
+                    qaReason: '',
+                    draftIssues: [],
                     extractionStats: null
                 };
 
@@ -4395,7 +4506,7 @@
 
                 if (!res.ok) {
                     const err = await res.json();
-                    throw new Error(err.detail || "Dịch chương thất bại");
+                    throw new Error(formatApiError(err?.detail, "Dịch chương thất bại"));
                 }
 
                 const data = await res.json();
@@ -4404,6 +4515,9 @@
                 currentRetranslateData.originalText = data.original_text || '';
                 currentRetranslateData.prevText = data.previous_translated_text || '';
                 currentRetranslateData.newText = data.new_translated_text || '';
+                currentRetranslateData.qaStatus = data.qa_status || 'passed';
+                currentRetranslateData.qaReason = data.qa_reason || '';
+                currentRetranslateData.draftIssues = Array.isArray(data.qa_issues) ? data.qa_issues : [];
                 currentRetranslateData.extractionStats = extractionStats;
 
                 renderRetranslateDiffView();
@@ -4420,36 +4534,48 @@
             const banner = document.getElementById('chapter-draft-review-banner');
             if (!banner) return;
             const isReview = currentRetranslateData && currentRetranslateData.mode === 'review';
-            const reasonText = currentRetranslateData ? (currentRetranslateData.reviewReason || '') : '';
+            const isPreview = currentRetranslateData && currentRetranslateData.mode === 'preview';
+            const reasonText = currentRetranslateData
+                ? (isReview ? (currentRetranslateData.reviewReason || '') : (currentRetranslateData.qaReason || ''))
+                : '';
             const issues = currentRetranslateData && Array.isArray(currentRetranslateData.draftIssues) ? currentRetranslateData.draftIssues : [];
 
-            if (!isReview || (!reasonText && issues.length === 0)) {
+            const shouldShow = isReview
+                ? Boolean(reasonText || issues.length)
+                : isPreview && Boolean(reasonText || issues.length || currentRetranslateData.qaStatus === 'needs_review');
+            if (!shouldShow) {
                 banner.style.display = 'none';
                 return;
             }
 
             banner.style.display = 'block';
+            const labelEl = document.getElementById('chapter-draft-banner-label');
+            if (labelEl) {
+                labelEl.innerHTML = isReview
+                    ? '<i class="fa-solid fa-triangle-exclamation"></i> LÝ DO CẦN DUYỆT'
+                    : '<i class="fa-solid fa-shield-halved"></i> QA PHÁT HIỆN LỖI';
+            }
             const reasonEl = document.getElementById('chapter-draft-reason-text');
             if (reasonEl) {
-                reasonEl.innerText = reasonText || 'Bản nháp cần kiểm duyệt lại trước khi xuất bản.';
+                reasonEl.innerText = reasonText || 'Bản dịch cần được kiểm tra lại trước khi áp dụng.';
             }
 
             const applyAllBtn = document.getElementById('btn-apply-all-draft-fixes');
             const container = document.getElementById('chapter-draft-issues-container');
 
-            const actionableIssues = issues.filter(i => (i.found || i.replacement));
+            const actionableIssues = issues.filter(i => Boolean(i.replacement));
             if (applyAllBtn) {
                 applyAllBtn.style.display = actionableIssues.length > 0 ? 'inline-flex' : 'none';
             }
 
             if (!container) return;
             if (issues.length === 0) {
-                container.innerHTML = '<div style="font-size:0.8rem; color:#94a3b8; font-style:italic;">Không phát hiện lỗi thuật ngữ tự động. Hãy đối soát bản dịch và bấm Duyệt.</div>';
+                container.innerHTML = '<div style="font-size:0.8rem; color:#94a3b8; font-style:italic;">QA chưa tạo được patch tự động. Hãy kiểm tra thủ công trước khi áp dụng.</div>';
                 return;
             }
 
             container.innerHTML = issues.map((item, idx) => {
-                const canFix = Boolean(item.found || item.replacement);
+                const canFix = Boolean(item.replacement);
                 const repText = item.replacement ? item.replacement : '(xóa bỏ)';
                 const locHtml = item.location ? `<div class="chapter-draft-loc">${escapeHtml(item.location)}</div>` : '';
                 const fixBtn = canFix
@@ -4492,19 +4618,22 @@
             if (!textarea) return;
 
             const text = textarea.value;
-            if (issue.found) {
+            if (issue.found && issue.replacement) {
                 if (!text.includes(issue.found)) {
                     showToast(`Không tìm thấy "${issue.found}" trong bản dịch hiện tại.`, 'info');
                     return;
                 }
                 const escaped = issue.found.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                textarea.value = text.replace(new RegExp(escaped, 'g'), issue.replacement || '');
-                showToast(`✓ Đã thay "${issue.found}" thành "${issue.replacement || '(xóa)'}"!`, 'success');
+                textarea.value = text.replace(new RegExp(escaped, 'g'), issue.replacement);
+                showToast(`✓ Đã thay "${issue.found}" thành "${issue.replacement}"!`, 'success');
             } else if (issue.replacement && issue.replacement.startsWith('Chương ')) {
                 if (!/^\s*(?:chương|hồi|tiết)\s+\d+/i.test(text)) {
                     textarea.value = issue.replacement + text;
                     showToast(`✓ Đã gắn lại tiêu đề chương!`, 'success');
                 }
+            } else {
+                showToast('Issue này chưa có gợi ý thay thế an toàn; hãy sửa thủ công.', 'info');
+                return;
             }
 
             textarea.dispatchEvent(new Event('input'));
@@ -4527,11 +4656,11 @@
             let count = 0;
 
             currentRetranslateData.draftIssues.forEach(issue => {
-                if (issue.found && issue.found !== issue.replacement) {
+                if (issue.found && issue.replacement && issue.found !== issue.replacement) {
                     const escaped = issue.found.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
                     const rx = new RegExp(escaped, 'g');
                     if (rx.test(text)) {
-                        text = text.replace(rx, issue.replacement || '');
+                        text = text.replace(rx, issue.replacement);
                         count++;
                     }
                 } else if (!issue.found && issue.replacement && issue.replacement.startsWith('Chương ')) {
@@ -4553,6 +4682,37 @@
                 btn.style.borderColor = 'transparent';
                 btn.style.background = 'rgba(255,255,255,0.05)';
             });
+        }
+
+        function getUnresolvedRetranslateQaIssues() {
+            if (!currentRetranslateData) return [];
+            const issues = Array.isArray(currentRetranslateData.draftIssues)
+                ? currentRetranslateData.draftIssues
+                : [];
+            const text = document.getElementById('diff-new-text')?.value || '';
+            if (currentRetranslateData.mode === 'preview' && currentRetranslateData.qaStatus === 'needs_review' && issues.length === 0) {
+                return [{ issue: currentRetranslateData.qaReason || 'Bản dịch cần kiểm tra lại.' }];
+            }
+            return issues.filter(issue => {
+                const found = issue.found || '';
+                if (!found || found === '<missing>') return true;
+                return text.includes(found);
+            });
+        }
+
+        function updateRetranslateApplyButton() {
+            const applyBtn = document.getElementById('btn-retranslate-apply');
+            if (!applyBtn || !currentRetranslateData) return;
+
+            const isReview = currentRetranslateData.mode === 'review';
+            const unresolved = getUnresolvedRetranslateQaIssues();
+            applyBtn.disabled = false;
+            applyBtn.title = unresolved.length > 0
+                ? 'Sẽ hỏi xác nhận trước khi áp dụng dù còn cảnh báo QA.'
+                : '';
+            applyBtn.innerHTML = isReview
+                ? '<i class="fa-solid fa-check"></i> ✓ Duyệt & Áp dụng'
+                : '<i class="fa-solid fa-check"></i> ✓ Áp Dụng Bản Dịch Mới';
         }
 
         function renderChapterExtractionStats(stats) {
@@ -4642,8 +4802,14 @@
             document.getElementById('diff-prev-text').value = currentRetranslateData.prevText || '(Chưa có bản dịch trước đó)';
             document.getElementById('diff-new-text').value = currentRetranslateData.newText || '';
             document.getElementById('diff-orig-text').value = currentRetranslateData.originalText || '';
+            const newTextArea = document.getElementById('diff-new-text');
+            if (newTextArea && !newTextArea.dataset.qaStateHandlerAttached) {
+                newTextArea.addEventListener('input', updateRetranslateApplyButton);
+                newTextArea.dataset.qaStateHandlerAttached = 'true';
+            }
             renderChapterExtractionStats(currentRetranslateData.extractionStats);
             renderChapterDraftIssues();
+            updateRetranslateApplyButton();
 
             // Switch to Diff view
             document.getElementById('retranslate-loading-view').style.display = 'none';
@@ -4688,6 +4854,26 @@
                 return;
             }
 
+            const unresolvedQaIssues = getUnresolvedRetranslateQaIssues();
+            let allowQaWarnings = false;
+            if (unresolvedQaIssues.length > 0) {
+                const issueSummary = unresolvedQaIssues
+                    .slice(0, 3)
+                    .map(issue => issue.issue || 'Cảnh báo QA')
+                    .join('\n- ');
+                const remaining = unresolvedQaIssues.length > 3
+                    ? `\n(và ${unresolvedQaIssues.length - 3} cảnh báo khác)`
+                    : '';
+                allowQaWarnings = window.confirm(
+                    `QA còn ${unresolvedQaIssues.length} cảnh báo:\n- ${issueSummary}${remaining}` +
+                    '\n\nVẫn duyệt và áp dụng bản dịch này không?'
+                );
+                if (!allowQaWarnings) {
+                    updateRetranslateApplyButton();
+                    return;
+                }
+            }
+
             const btn = document.getElementById('btn-retranslate-apply');
             btn.disabled = true;
             btn.innerHTML = '<i class="fa-solid fa-spinner spinner"></i> Đang áp dụng...';
@@ -4699,13 +4885,14 @@
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        content: content
+                        content: content,
+                        allow_qa_warnings: allowQaWarnings
                     })
                 });
 
                 if (!res.ok) {
                     const err = await res.json();
-                    throw new Error(err.detail || "Không thể áp dụng bản dịch");
+                    throw new Error(formatApiError(err?.detail, "Không thể áp dụng bản dịch"));
                 }
 
                 const isReview = currentRetranslateData.mode === 'review';
@@ -4720,8 +4907,7 @@
             } catch (err) {
                 alert("Lỗi: " + err.message);
             } finally {
-                btn.disabled = false;
-                btn.innerHTML = '<i class="fa-solid fa-check"></i> ✓ Áp Dụng Bản Dịch Mới';
+                updateRetranslateApplyButton();
             }
         }
 
@@ -5053,6 +5239,7 @@
             let completed = 0;
             let processed = 0;
             let needsReview = 0;
+            let failed = 0;
 
             for (let i = 0; i < total; i++) {
                 if (!batchTranslateRunning) break;
@@ -5084,13 +5271,16 @@
                             api_key: apiKey,
                             provider: provider,
                             model: model,
-                            preview_only: false
+                            preview_only: false,
+                            // Keep EPUB builds paused while the batch queue is running.
+                            // If requested, one consolidated build is queued below.
+                            defer_epub_build: true
                         })
                     });
 
                     if (!res.ok) {
                         const err = await res.json();
-                        throw new Error(err.detail || `Lỗi HTTP ${res.status}`);
+                        throw new Error(formatApiError(err?.detail, `Lỗi HTTP ${res.status}`));
                     }
 
                     const chData = await res.json();
@@ -5104,6 +5294,7 @@
                     item.status = 'failed';
                     item.error = err.message;
                     item.durationSeconds = Math.round((Date.now() - startItemTime) / 1000);
+                    failed++;
                 }
                 processed++;
 
@@ -5117,8 +5308,9 @@
 
             // Check if Auto Rebuild EPUB is requested
             const autoRebuild = document.getElementById('batch-auto-rebuild-checkbox') && document.getElementById('batch-auto-rebuild-checkbox').checked;
+            const rebuildBlocked = failed > 0 || needsReview > 0;
 
-            if (autoRebuild && completed > 0) {
+            if (autoRebuild && completed > 0 && !rebuildBlocked) {
                 const rebuildBox = document.getElementById('batch-rebuild-status-box');
                 const rebuildText = document.getElementById('batch-rebuild-status-text');
                 if (rebuildBox) rebuildBox.style.display = 'flex';
@@ -5126,8 +5318,6 @@
 
                 try {
                     const completedIndexes = batchTranslateQueue.filter(q => q.status === 'completed').map(q => q.chapterIndex);
-                    const minCh = completedIndexes.length > 0 ? Math.min(...completedIndexes) : null;
-                    const maxCh = completedIndexes.length > 0 ? Math.max(...completedIndexes) : null;
 
                     const rebuildHeaders = { 'Content-Type': 'application/json' };
                     if (window.EpubAuth && typeof window.EpubAuth.getAccessToken === 'function') {
@@ -5138,7 +5328,9 @@
                     }
 
                     const buildPayload = {
-                        target_chapters: (minCh !== null && maxCh !== null) ? `${minCh}-${maxCh}` : null,
+                        // Send only the chapters that actually completed. A range
+                        // could accidentally include an unselected/failed chapter.
+                        target_chapters: completedIndexes.length > 0 ? completedIndexes.join(',') : null,
                         force_rebuild: false,
                     };
 
@@ -5167,7 +5359,7 @@
                                         document.getElementById('btn-batch-download-epub').style.display = 'inline-block';
                                     } else if (stData.status === 'failed') {
                                         isDone = true;
-                                        if (rebuildText) rebuildText.innerText = "⚠️ Quá trình build EPUB nền gặp lỗi: " + (stData.error_message || "Không xác định");
+                                        if (rebuildText) rebuildText.innerText = "⚠️ Quá trình build EPUB nền gặp lỗi: " + formatApiError(stData.error_message, "Không xác định");
                                     } else {
                                         if (rebuildText) rebuildText.innerHTML = `<i class="fa-solid fa-spinner spinner"></i> Đang nạp ${completedIndexes.length} chương vào EPUB (${stData.strategy || 'fast_patch'})...`;
                                     }
@@ -5181,25 +5373,44 @@
                     }
  else {
                         const err = await rebuildRes.json().catch(() => ({ detail: `HTTP ${rebuildRes.status}` }));
-                        if (rebuildText) rebuildText.innerText = "⚠️ Lỗi rebuild EPUB: " + (err.detail || `HTTP ${rebuildRes.status}`);
+                        if (rebuildText) rebuildText.innerText = "⚠️ Lỗi rebuild EPUB: " + formatApiError(err?.detail, `HTTP ${rebuildRes.status}`);
                     }
                 } catch (rebuildErr) {
                     console.error("Auto rebuild failed", rebuildErr);
                     if (rebuildText) rebuildText.innerText = "⚠️ Dịch xong nhưng không thể tự động rebuild EPUB: " + rebuildErr.message;
                 }
+            } else if (autoRebuild && rebuildBlocked) {
+                const rebuildBox = document.getElementById('batch-rebuild-status-box');
+                const rebuildText = document.getElementById('batch-rebuild-status-text');
+                if (rebuildBox) rebuildBox.style.display = 'flex';
+                if (rebuildText) {
+                    const reasons = [];
+                    if (failed > 0) reasons.push(`${failed} chương lỗi`);
+                    if (needsReview > 0) reasons.push(`${needsReview} chương cần duyệt`);
+                    rebuildText.innerText = `⚠️ Không tự động build EPUB vì ${reasons.join(' và ')}. Hãy xử lý xong rồi build thủ công.`;
+                }
             }
 
 
-            document.getElementById('batch-progress-status-text').innerHTML = `<span style="color:#10b981; font-weight:700;"><i class="fa-solid fa-circle-check"></i> Đã xử lý ${processed}/${total} chương${needsReview ? ` (cần duyệt: ${needsReview})` : ''}!</span>`;
+            const batchResultParts = [];
+            if (needsReview > 0) batchResultParts.push(`cần duyệt: ${needsReview}`);
+            if (failed > 0) batchResultParts.push(`lỗi: ${failed}`);
+            const batchResultSuffix = batchResultParts.length ? ` (${batchResultParts.join(', ')})` : '';
+            const batchResultColor = failed > 0 || needsReview > 0 ? '#fbbf24' : '#10b981';
+            const batchResultIcon = failed > 0 || needsReview > 0 ? 'fa-triangle-exclamation' : 'fa-circle-check';
+            document.getElementById('batch-progress-status-text').innerHTML = `<span style="color:${batchResultColor}; font-weight:700;"><i class="fa-solid fa-${batchResultIcon}"></i> Đã xử lý ${processed}/${total} chương${batchResultSuffix}!</span>`;
             const batchFooterInfo = document.getElementById('batch-footer-info');
             if (batchFooterInfo) {
-                batchFooterInfo.innerHTML = needsReview
-                    ? '<i class="fa-solid fa-eye" style="color:#fbbf24;"></i> Đóng cửa sổ, sau đó bấm <strong>Duyệt draft</strong> ở từng chương cần duyệt để sửa và áp dụng.'
+                batchFooterInfo.innerHTML = (needsReview || failed)
+                    ? `<i class="fa-solid fa-triangle-exclamation" style="color:#fbbf24;"></i> ${needsReview ? `Duyệt ${needsReview} chương cần duyệt` : ''}${needsReview && failed ? '; ' : ''}${failed ? `kiểm tra ${failed} chương lỗi` : ''}. EPUB chưa được tự động build.`
                     : 'Đã xử lý xong hàng đợi dịch.';
             }
             document.getElementById('btn-batch-abort').style.display = 'none';
             document.getElementById('btn-batch-done-close').style.display = 'inline-block';
-            showToast(`✓ Đã xử lý ${processed} chương${needsReview ? `; cần duyệt ${needsReview}` : ''}!`, needsReview ? "warning" : "success");
+            const toastDetails = [];
+            if (needsReview > 0) toastDetails.push(`cần duyệt ${needsReview}`);
+            if (failed > 0) toastDetails.push(`lỗi ${failed}`);
+            showToast(`✓ Đã xử lý ${processed} chương${toastDetails.length ? `; ${toastDetails.join(', ')}` : ''}!`, needsReview || failed ? "warning" : "success");
         }
 
         function downloadCompiledEpubNow() {
@@ -5533,7 +5744,7 @@
                             document.getElementById('btn-epub-build-close').style.display = 'inline-flex';
                             break;
                         } else if (stData.status === 'failed') {
-                            throw new Error(stData.error_message || "Quá trình build EPUB thất bại.");
+                            throw new Error(formatApiError(stData.error_message, "Quá trình build EPUB thất bại."));
                         }
                     } else if (stRes.status === 404) {
                         throw new Error(`Tác vụ #${targetJobId.slice(0, 8)} không tồn tại hoặc đã bị xóa.`);
@@ -5651,7 +5862,7 @@
 
                 if (!enqueueRes.ok && enqueueRes.status !== 202) {
                     const err = await enqueueRes.json().catch(() => ({ detail: `Lỗi hàng đợi build (HTTP ${enqueueRes.status})` }));
-                    throw new Error(err.detail || `HTTP ${enqueueRes.status}`);
+                    throw new Error(formatApiError(err?.detail, `HTTP ${enqueueRes.status}`));
                 }
 
                 const jobData = await enqueueRes.json().catch(() => ({}));
@@ -6019,7 +6230,7 @@
 
                 if (!res.ok) {
                     const err = await res.json();
-                    throw new Error(err.detail || "Nộp chương thất bại");
+                    throw new Error(formatApiError(err?.detail, "Nộp chương thất bại"));
                 }
 
                 const sub = await res.json();
@@ -6061,7 +6272,7 @@
                             clearInterval(interval);
                             btn.disabled = false;
                             btn.innerHTML = '<i class="fa-solid fa-brain"></i> Gửi Phân Tích AI';
-                            statusSpan.innerHTML = `<span style="color:#ef4444;"><i class="fa-solid fa-triangle-exclamation"></i> Lỗi: ${escapeHtml(data.error_message || 'Trích xuất thất bại')}</span>`;
+                            statusSpan.innerHTML = `<span style="color:#ef4444;"><i class="fa-solid fa-triangle-exclamation"></i> Lỗi: ${escapeHtml(formatApiError(data.error_message, 'Trích xuất thất bại'))}</span>`;
                         } else {
                             statusSpan.innerHTML = `<span style="color:#f59e0b;"><i class="fa-solid fa-spinner spinner"></i> Trạng thái AI: ${escapeHtml(data.status)}... (${attempts*2}s)</span>`;
                         }
@@ -6255,7 +6466,7 @@
 
                 if (!res.ok) {
                     const err = await res.json();
-                    throw new Error(err.detail || "Không thể duyệt sự kiện");
+                    throw new Error(formatApiError(err?.detail, "Không thể duyệt sự kiện"));
                 }
 
                 apiCache.invalidatePattern('/api/v1/book-bible');
@@ -6293,7 +6504,7 @@
 
                 if (!res.ok) {
                     const err = await res.json();
-                    throw new Error(err.detail || "Không thể lưu sự kiện");
+                    throw new Error(formatApiError(err?.detail, "Không thể lưu sự kiện"));
                 }
 
                 apiCache.invalidatePattern('/api/v1/book-bible');
@@ -6578,7 +6789,7 @@
                                     activeFloatingBuildJob = null;
                                 } else if (finalJob.status === 'failed') {
                                     document.getElementById('fbb-fill').style.background = '#ef4444';
-                                    const errMsg = escapeHtml(finalJob.error_message || 'Biên dịch thất bại');
+                                    const errMsg = escapeHtml(formatApiError(finalJob.error_message, 'Biên dịch thất bại'));
                                     document.getElementById('fbb-step').innerHTML = `<span style="color:#f87171; font-weight:600;">❌ ${errMsg}</span>`;
                                     document.getElementById('fbb-spinner').style.display = 'none';
                                     document.getElementById('fbb-btn-detail').style.display = 'none';
@@ -6879,7 +7090,7 @@
                     await loadBookBibleEditor(currentBibleEditorNovelId, true);
                 } else {
                     const errData = await res.json().catch(() => ({}));
-                    showToast(errData.detail || 'Lỗi nhập Book Bible JSON', 'error');
+                    showToast(formatApiError(errData?.detail, 'Lỗi nhập Book Bible JSON'), 'error');
                 }
             } catch (err) {
                 showToast(`File JSON không hợp lệ: ${err.message}`, 'error');

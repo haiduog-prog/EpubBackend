@@ -16,11 +16,15 @@ logger = logging.getLogger("EpubBackend.TranslationCache")
 class DirectTranslationCache:
     """Atomic local cache adapter for repeated direct-text translations."""
 
-    CACHE_VERSION = 2
-    TRANSLATION_POLICY_VERSION = "cjk-qa-v1"
+    CACHE_VERSION = 3
+    TRANSLATION_POLICY_VERSION = "cjk-qa-v2"
 
     def __init__(self, cache_dir: Optional[str] = None):
-        self.cache_dir = Path(cache_dir or "storage/cache/direct-text")
+        self.cache_dir = (
+            Path(cache_dir)
+            if cache_dir is not None
+            else Path(settings.local_storage_root) / "cache" / "direct-text"
+        )
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
 
@@ -90,9 +94,7 @@ class DirectTranslationCache:
             if is_expired:
                 path.unlink(missing_ok=True)
                 return None
-            source_revision = data.get("source_bible_revision")
-            result_revision = data.get("result_bible_revision")
-            if current_bible_revision not in {source_revision, result_revision}:
+            if data.get("bible_revision") != current_bible_revision:
                 return None
             return data
 
@@ -111,6 +113,9 @@ class DirectTranslationCache:
         if cjk_sequences(translated_text):
             logger.warning("[CACHE] refusing to persist translation with CJK output")
             return
+        if not translated_text.strip() or not book_bible.novel_id:
+            logger.warning("[CACHE] refusing to persist empty or unbound translation")
+            return
         key = self._key(novel_id, text, chapter_index, chapter_id, provider, model)
         path = self.cache_dir / f"{key}.json"
         temporary_path = path.with_suffix(".tmp")
@@ -121,6 +126,7 @@ class DirectTranslationCache:
             "created_at": time.time(),
             "source_bible_revision": source_bible_revision,
             "result_bible_revision": book_bible.bible_revision,
+            "bible_revision": book_bible.bible_revision,
             "translated_text": translated_text,
             "book_bible": book_bible.model_dump(mode="json"),
         }

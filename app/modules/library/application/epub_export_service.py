@@ -99,7 +99,7 @@ class EpubExportService:
                 pass
             return -1
 
-        exports_dir = os.path.join("storage", "novels", novel_id, "exports")
+        exports_dir = os.path.join(settings.local_storage_root, "novels", novel_id, "exports")
         if os.path.exists(exports_dir):
             try:
                 local_epubs = sorted(
@@ -224,9 +224,9 @@ class EpubExportService:
                                     total_patch,
                                     85,
                                 )
-                            os.makedirs(os.path.join("storage", "outputs"), exist_ok=True)
+                            os.makedirs(os.path.join(settings.local_storage_root, "outputs"), exist_ok=True)
                             patched_out_path = os.path.join(
-                                "storage",
+                                settings.local_storage_root,
                                 "outputs",
                                 f"{novel_id}_patch_r{(novel.built_revision or 0) + 1}_{artifact_token}.epub",
                             )

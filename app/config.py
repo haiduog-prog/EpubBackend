@@ -2,8 +2,8 @@ import os
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
-# Load .env file automatically
-load_dotenv(override=True)
+# Load .env file automatically without overriding explicitly supplied environment variables.
+load_dotenv(override=False)
 
 
 class Settings(BaseModel):
@@ -19,6 +19,7 @@ class Settings(BaseModel):
 
     # Blob Storage Provider ('supabase' | 'r2' | 'local')
     storage_provider: str = Field(default_factory=lambda: os.getenv("STORAGE_PROVIDER", "supabase").lower())
+    local_storage_root: str = Field(default_factory=lambda: os.getenv("LOCAL_STORAGE_ROOT", "storage"))
 
     # Supabase Storage Configuration
     supabase_url: str = Field(default_factory=lambda: os.getenv("SUPABASE_URL", ""))
@@ -116,6 +117,22 @@ class Settings(BaseModel):
 
     max_upload_bytes: int = Field(
         default_factory=lambda: int(os.getenv("MAX_UPLOAD_BYTES", str(50 * 1024 * 1024)))
+    )
+    max_sync_package_upload_bytes: int = Field(
+        default_factory=lambda: int(os.getenv("MAX_SYNC_PACKAGE_UPLOAD_BYTES", str(512 * 1024 * 1024)))
+    )
+    max_sync_package_entries: int = Field(
+        default_factory=lambda: int(os.getenv("MAX_SYNC_PACKAGE_ENTRIES", "50000"))
+    )
+    max_sync_package_uncompressed_bytes: int = Field(
+        default_factory=lambda: int(
+            os.getenv("MAX_SYNC_PACKAGE_UNCOMPRESSED_BYTES", str(2 * 1024 * 1024 * 1024))
+        )
+    )
+    max_sync_package_entry_bytes: int = Field(
+        default_factory=lambda: int(
+            os.getenv("MAX_SYNC_PACKAGE_ENTRY_BYTES", str(1024 * 1024 * 1024))
+        )
     )
     max_text_input_chars: int = Field(
         default_factory=lambda: int(os.getenv("MAX_TEXT_INPUT_CHARS", str(2 * 1024 * 1024)))
